@@ -1,0 +1,35 @@
+{
+    "timeZone": "America/New_York",
+    "dependencies": {
+      "enabledAdvancedServices": []
+    },
+    "exceptionLogging": "STACKDRIVER",
+    "runtimeVersion": "V8",
+    "webapp": {
+      "executeAs": "USER_ACCESSING",
+      "access": "ANYONE"
+    },
+    "oauthScopes": [
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/script.container.ui",
+      "https://www.googleapis.com/auth/script.scriptapp",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/script.container.ui"
+    ],
+    "urlFetchWhitelist": ["https://*.pipedrive.com/"],
+    "addOns": {
+      "common": {
+        "name": "Pipedrive for Sheets",
+        "logoUrl": "https://www.example.com/logo.png",
+        "universalActions": [{
+          "label": "Open Pipedrive Sync",
+          "runFunction": "onOpen"
+        }]
+      },
+      "sheets": {
+        "homepageTrigger": {
+          "runFunction": "onOpen"
+        }
+      }
+    }
+  }

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 20px;
+      }
+      .section {
+        margin-bottom: 20px;
+      }
+      h3 {
+        margin-top: 0;
+        color: #4285F4;
+      }
+      h4 {
+        margin-top: 15px;
+        margin-bottom: 5px;
+      }
+      p {
+        margin: 8px 0;
+      }
+      .version {
+        font-size: 12px;
+        color: #666;
+      }
+      .footer {
+        margin-top: 20px;
+        border-top: 1px solid #eee;
+        padding-top: 10px;
+        font-size: 12px;
+        color: #666;
+        text-align: center;
+      }
+      ul {
+        padding-left: 20px;
+      }
+      .tab-container {
+        margin-bottom: 20px;
+      }
+      .tab-buttons {
+        display: flex;
+        border-bottom: 1px solid #ddd;
+        margin-bottom: 15px;
+      }
+      .tab-button {
+        padding: 8px 15px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+        opacity: 0.7;
+      }
+      .tab-button.active {
+        opacity: 1;
+        border-bottom: 2px solid #4285F4;
+        font-weight: bold;
+      }
+      .tab-content {
+        display: none;
+      }
+      .tab-content.active {
+        display: block;
+      }
+      .version-history {
+        max-height: 150px;
+        overflow-y: auto;
+        border: 1px solid #eee;
+        padding: 10px;
+        background: #f9f9f9;
+      }
+      .version-item {
+        margin-bottom: 10px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #eee;
+      }
+      .version-item:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+      }
+      .version-date {
+        font-size: 12px;
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="section">
+      <h3>Pipedrive for Sheets</h3>
+      <div class="version">Version <?= currentVersion ?></div>
+    </div>
+    
+    <div class="tab-container">
+      <div class="tab-buttons">
+        <button class="tab-button active" onclick="openTab(event, 'help')">Help</button>
+        <button class="tab-button" onclick="openTab(event, 'about')">About</button>
+        <button class="tab-button" onclick="openTab(event, 'version')">Version History</button>
+      </div>
+      
+      <div id="help" class="tab-content active">
+        <div class="section">
+          <h4>Getting Started</h4>
+          <ol>
+            <li>Configure your Pipedrive API key and settings in the <b>Filter Settings</b> menu</li>
+            <li>Select which columns to display using the <b>Select Columns</b> menu</li>
+            <li>Click <b>Sync Data</b> to fetch data from Pipedrive</li>
+          </ol>
+        </div>
+        
+        <div class="section">
+          <h4>Team Features</h4>
+          <p>Use the <b>Team Management</b> option to create or join a team. Team members can share:</p>
+          <ul>
+            <li>Column preferences</li>
+            <li>Filter configurations</li>
+            <li>Access to synchronized data</li>
+          </ul>
+        </div>
+        
+        <div class="section">
+          <h4>Two-Way Sync</h4>
+          <p>Enable <b>Two-Way Sync</b> to push your changes back to Pipedrive:</p>
+          <ol>
+            <li>Configure two-way sync settings</li>
+            <li>Edit data in the sheet</li>
+            <li>Click <b>Push Changes to Pipedrive</b> to update your Pipedrive data</li>
+          </ol>
+        </div>
+      </div>
+      
+      <div id="about" class="tab-content">
+        <div class="section">
+          <h4>About This Add-on</h4>
+          <p>Pipedrive for Sheets seamlessly connects your Google Sheets with Pipedrive CRM.</p>
+          <p>Key features:</p>
+          <ul>
+            <li>Fetch data from any saved Pipedrive filter</li>
+            <li>Customize which fields to display</li>
+            <li>Collaborate with team members</li>
+            <li>Schedule automatic synchronization</li>
+            <li>Push updates back to Pipedrive</li>
+          </ul>
+        </div>
+        
+        <div class="section">
+          <h4>Support</h4>
+          <p>For support or suggestions, please contact:</p>
+          <p><a href="mailto:your-email@example.com">your-email@example.com</a></p>
+        </div>
+      </div>
+      
+      <div id="version" class="tab-content">
+        <div class="section">
+          <h4>Version History</h4>
+          <div class="version-history">
+            <? if (versionHistory && versionHistory.length > 0) { ?>
+              <? versionHistory.forEach(function(version) { ?>
+                <div class="version-item">
+                  <div><b><?= version.version ?></b> <span class="version-date"><?= version.date ?></span></div>
+                  <ul>
+                    <? version.changes.forEach(function(change) { ?>
+                      <li><?= change ?></li>
+                    <? }); ?>
+                  </ul>
+                </div>
+              <? }); ?>
+            <? } else { ?>
+              <div class="version-item">
+                <div><b>1.0.0</b> <span class="version-date">Initial Release</span></div>
+                <ul>
+                  <li>First public release</li>
+                </ul>
+              </div>
+            <? } ?>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="footer">
+      &copy; <?= new Date().getFullYear() ?> Your Company Name. All rights reserved.
+    </div>
+    
+    <script>
+      function openTab(evt, tabName) {
+        // Hide all tab content
+        var tabContents = document.getElementsByClassName('tab-content');
+        for (var i = 0; i < tabContents.length; i++) {
+          tabContents[i].classList.remove('active');
+        }
+        
+        // Remove active class from all tab buttons
+        var tabButtons = document.getElementsByClassName('tab-button');
+        for (var i = 0; i < tabButtons.length; i++) {
+          tabButtons[i].classList.remove('active');
+        }
+        
+        // Show the specific tab content
+        document.getElementById(tabName).classList.add('active');
+        
+        // Add active class to the button that opened the tab
+        evt.currentTarget.classList.add('active');
+      }
+    </script>
+  </body>
+</html> 

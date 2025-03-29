@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 20px;
+      }
+      .grid-container {
+        display: grid;
+        grid-template-columns: 1fr 80px 1fr;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+      .column-list {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        height: 400px;
+        overflow-y: auto;
+        padding: 10px;
+      }
+      .column-item {
+        padding: 8px;
+        margin-bottom: 5px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      }
+      .column-item:hover {
+        background-color: #f5f5f5;
+      }
+      .selected {
+        background-color: #e8f0fe;
+      }
+      .button-column {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 10px;
+      }
+      button {
+        background-color: #4285F4;
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      }
+      button:hover {
+        background-color: #3367D6;
+      }
+      button:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
+      }
+      .column-header {
+        font-weight: bold;
+        margin-bottom: 10px;
+        text-align: center;
+      }
+      .footer {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 10px;
+      }
+      .search-box {
+        width: 100%;
+        padding: 8px;
+        margin-bottom: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-sizing: border-box;
+      }
+      .category {
+        font-weight: bold;
+        margin-top: 15px;
+        margin-bottom: 5px;
+        padding-bottom: 5px;
+        border-bottom: 1px solid #eee;
+      }
+      .title {
+        margin-bottom: 10px;
+        font-size: 16px;
+      }
+      .type-tag {
+        font-size: 11px;
+        color: #666;
+        background-color: #f0f0f0;
+        padding: 2px 6px;
+        border-radius: 10px;
+        margin-left: 5px;
+      }
+      .help-text {
+        margin-top: 10px;
+        font-size: 12px;
+        color: #666;
+      }
+      .drag-item {
+        cursor: move;
+        padding: 8px;
+        margin-bottom: 5px;
+        background-color: #e8f0fe;
+        border-radius: 4px;
+        position: relative;
+      }
+      .drag-item .remove-icon {
+        position: absolute;
+        right: 8px;
+        top: 8px;
+        cursor: pointer;
+        color: #d33;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>Select <?= entityTypeLabel ?> Columns</h3>
+    <div class="title">Choose which fields to display in your sheet</div>
+    
+    <div class="grid-container">
+      <div>
+        <div class="column-header">Available Columns</div>
+        <input type="text" id="search-available" class="search-box" placeholder="Search available columns...">
+        <div id="available-columns" class="column-list">
+          <? 
+            // Group fields by type for better organization
+            const groups = {};
+            availableColumns.forEach(column => {
+              const parts = column.name.split(' > ');
+              const group = parts.length > 1 ? parts[0] : 'General';
+              if (!groups[group]) groups[group] = [];
+              groups[group].push(column);
+            });
+            
+            // Display fields grouped by category
+            Object.keys(groups).sort().forEach(group => {
+          ?>
+            <div class="category"><?= group ?></div>
+            <? groups[group].forEach(column => { ?>
+              <div class="column-item" 
+                   data-path="<?= column.path ?>" 
+                   data-name="<?= column.name ?>"
+                   data-selected="<?= selectedColumns.includes(column.path) ? 'true' : 'false' ?>">
+                <?= column.name ?>
+                <span class="type-tag"><?= column.type || 'text' ?></span>
+              </div>
+            <? }); ?>
+          <? }); ?>
+        </div>
+      </div>
+      
+      <div class="button-column">
+        <button id="add-button" title="Add selected column">&rarr;</button>
+        <button id="add-all-button" title="Add all columns">&rArr;</button>
+        <button id="remove-button" title="Remove selected column">&larr;</button>
+        <button id="remove-all-button" title="Remove all columns">&lArr;</button>
+      </div>
+      
+      <div>
+        <div class="column-header">Selected Columns</div>
+        <input type="text" id="search-selected" class="search-box" placeholder="Search selected columns...">
+        <div id="selected-columns" class="column-list">
+          <? selectedColumns.forEach(path => { 
+              // Find the column info
+              const column = availableColumns.find(c => c.path === path);
+              if (column) {
+          ?>
+            <div class="drag-item" data-path="<?= column.path ?>" data-name="<?= column.name ?>">
+              <?= column.name ?>
+              <span class="remove-icon" title="Remove">×</span>
+            </div>
+          <? }}); ?>
+        </div>
+      </div>
+    </div>
+    
+    <div class="help-text">
+      <strong>Tip:</strong> You can drag to reorder selected columns. The order here will be the order in your sheet.
+    </div>
+    
+    <div class="footer">
+      <button id="save-button">Save Columns</button>
+    </div>
+    
+    <script>
+      // Initialize drag and drop for reordering
+      let draggedItem = null;
+      
+      // Handle column selection
+      document.querySelectorAll('.column-item').forEach(item => {
+        // Skip already selected items
+        if (item.dataset.selected === 'true') return;
+        
+        item.addEventListener('click', function() {
+          const selected = this.classList.contains('selected');
+          document.querySelectorAll('.column-item').forEach(i => i.classList.remove('selected'));
+          if (!selected) this.classList.add('selected');
+        });
+        
+        item.addEventListener('dblclick', function() {
+          addSelectedColumn();
+        });
+      });
+      
+      // Search available columns
+      document.getElementById('search-available').addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase();
+        document.querySelectorAll('#available-columns .column-item').forEach(item => {
+          const name = item.dataset.name.toLowerCase();
+          const isVisible = name.includes(searchTerm);
+          item.style.display = isVisible ? 'block' : 'none';
+        });
+        
+        // Show/hide categories based on visible items
+        document.querySelectorAll('#available-columns .category').forEach(category => {
+          const categoryName = category.textContent.toLowerCase();
+          let hasVisibleItems = false;
+          
+          // Find the next category
+          let nextCategory = category.nextElementSibling;
+          while (nextCategory && !nextCategory.classList.contains('category')) {
+            if (nextCategory.classList.contains('column-item') && 
+                nextCategory.style.display !== 'none') {
+              hasVisibleItems = true;
+              break;
+            }
+            nextCategory = nextCategory.nextElementSibling;
+          }
+          
+          category.style.display = hasVisibleItems || categoryName.includes(searchTerm) ? 'block' : 'none';
+        });
+      });
+      
+      // Search selected columns
+      document.getElementById('search-selected').addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase();
+        document.querySelectorAll('#selected-columns .drag-item').forEach(item => {
+          const name = item.dataset.name.toLowerCase();
+          item.style.display = name.includes(searchTerm) ? 'block' : 'none';
+        });
+      });
+      
+      // Add button
+      document.getElementById('add-button').addEventListener('click', addSelectedColumn);
+      
+      function addSelectedColumn() {
+        const selectedItem = document.querySelector('.column-item.selected');
+        if (!selectedItem) return;
+        
+        // Check if already in selected list
+        const path = selectedItem.dataset.path;
+        if (document.querySelector(`#selected-columns .drag-item[data-path="${path}"]`)) {
+          return;
+        }
+        
+        // Create new drag item
+        const newItem = document.createElement('div');
+        newItem.className = 'drag-item';
+        newItem.dataset.path = path;
+        newItem.dataset.name = selectedItem.dataset.name;
+        newItem.innerHTML = selectedItem.dataset.name + '<span class="remove-icon" title="Remove">×</span>';
+        
+        // Add drag and drop functionality
+        setupDragItem(newItem);
+        
+        // Add to selected columns
+        document.getElementById('selected-columns').appendChild(newItem);
+        
+        // Mark as selected
+        selectedItem.dataset.selected = 'true';
+        selectedItem.classList.remove('selected');
+      }
+      
+      // Add all button
+      document.getElementById('add-all-button').addEventListener('click', function() {
+        // Get all visible available columns
+        const visibleItems = Array.from(document.querySelectorAll('#available-columns .column-item'))
+          .filter(item => item.style.display !== 'none' && item.dataset.selected !== 'true');
+        
+        visibleItems.forEach(item => {
+          // Check if already in selected list
+          const path = item.dataset.path;
+          if (document.querySelector(`#selected-columns .drag-item[data-path="${path}"]`)) {
+            return;
+          }
+          
+          // Create new drag item
+          const newItem = document.createElement('div');
+          newItem.className = 'drag-item';
+          newItem.dataset.path = path;
+          newItem.dataset.name = item.dataset.name;
+          newItem.innerHTML = item.dataset.name + '<span class="remove-icon" title="Remove">×</span>';
+          
+          // Add drag and drop functionality
+          setupDragItem(newItem);
+          
+          // Add to selected columns
+          document.getElementById('selected-columns').appendChild(newItem);
+          
+          // Mark as selected
+          item.dataset.selected = 'true';
+        });
+      });
+      
+      // Remove button
+      document.getElementById('remove-button').addEventListener('click', function() {
+        const selectedItems = document.querySelectorAll('#selected-columns .drag-item.selected');
+        if (selectedItems.length === 0) return;
+        
+        selectedItems.forEach(item => {
+          const path = item.dataset.path;
+          
+          // Find the corresponding available item and mark as unselected
+          const availableItem = document.querySelector(`#available-columns .column-item[data-path="${path}"]`);
+          if (availableItem) {
+            availableItem.dataset.selected = 'false';
+          }
+          
+          // Remove from selected list
+          item.remove();
+        });
+      });
+      
+      // Remove all button
+      document.getElementById('remove-all-button').addEventListener('click', function() {
+        // Get all visible selected columns
+        const visibleItems = Array.from(document.querySelectorAll('#selected-columns .drag-item'))
+          .filter(item => item.style.display !== 'none');
+        
+        visibleItems.forEach(item => {
+          const path = item.dataset.path;
+          
+          // Find the corresponding available item and mark as unselected
+          const availableItem = document.querySelector(`#available-columns .column-item[data-path="${path}"]`);
+          if (availableItem) {
+            availableItem.dataset.selected = 'false';
+          }
+          
+          // Remove from selected list
+          item.remove();
+        });
+      });
+      
+      // Save button
+      document.getElementById('save-button').addEventListener('click', function() {
+        // Get all selected columns in current order
+        const selectedColumns = Array.from(document.querySelectorAll('#selected-columns .drag-item'))
+          .map(item => item.dataset.path);
+        
+        // Save to server
+        google.script.run
+          .withSuccessHandler(onSaveSuccess)
+          .withFailureHandler(onSaveFailure)
+          .saveColumnPreferences(selectedColumns, '<?= entityType ?>', '<?= sheetName ?>');
+      });
+      
+      function onSaveSuccess() {
+        alert('Column preferences saved successfully.');
+        google.script.host.close();
+      }
+      
+      function onSaveFailure(error) {
+        alert('Error saving column preferences: ' + error.message);
+      }
+      
+      // Set up drag and drop for an item
+      function setupDragItem(item) {
+        // Add click handler for selection
+        item.addEventListener('click', function(e) {
+          if (e.target.classList.contains('remove-icon')) {
+            // Handle remove icon click
+            const path = this.dataset.path;
+            
+            // Find the corresponding available item and mark as unselected
+            const availableItem = document.querySelector(`#available-columns .column-item[data-path="${path}"]`);
+            if (availableItem) {
+              availableItem.dataset.selected = 'false';
+            }
+            
+            // Remove this item
+            this.remove();
+            return;
+          }
+          
+          // Toggle selection
+          const selected = this.classList.contains('selected');
+          document.querySelectorAll('#selected-columns .drag-item').forEach(i => i.classList.remove('selected'));
+          if (!selected) this.classList.add('selected');
+        });
+        
+        // Add drag handlers
+        item.draggable = true;
+        
+        item.addEventListener('dragstart', function(e) {
+          draggedItem = this;
+          setTimeout(() => this.classList.add('dragging'), 0);
+        });
+        
+        item.addEventListener('dragend', function() {
+          this.classList.remove('dragging');
+          draggedItem = null;
+        });
+        
+        item.addEventListener('dragover', function(e) {
+          e.preventDefault();
+          if (draggedItem === this) return;
+          
+          const container = document.getElementById('selected-columns');
+          const afterElement = getDragAfterElement(container, e.clientY);
+          
+          if (afterElement) {
+            container.insertBefore(draggedItem, afterElement);
+          } else {
+            container.appendChild(draggedItem);
+          }
+        });
+      }
+      
+      // Initialize drag and drop for existing items
+      document.querySelectorAll('#selected-columns .drag-item').forEach(setupDragItem);
+      
+      // Helper function to determine where to drop the dragged item
+      function getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('.drag-item:not(.dragging)')];
+        
+        return draggableElements.reduce((closest, child) => {
+          const box = child.getBoundingClientRect();
+          const offset = y - box.top - box.height / 2;
+          
+          if (offset < 0 && offset > closest.offset) {
+            return { offset: offset, element: child };
+          } else {
+            return closest;
+          }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+      }
+    </script>
+  </body>
+</html> 

@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 20px;
+      }
+      h3 {
+        margin-top: 0;
+        margin-bottom: 15px;
+      }
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+      }
+      .card {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 15px;
+        margin-bottom: 20px;
+        background-color: #f9f9f9;
+      }
+      .warning {
+        background-color: #fff3cd;
+        border: 1px solid #ffeeba;
+        color: #856404;
+        padding: 10px 15px;
+        margin-bottom: 20px;
+        border-radius: 4px;
+      }
+      .section {
+        margin-bottom: 20px;
+      }
+      .section-title {
+        font-weight: bold;
+        margin-bottom: 10px;
+      }
+      .form-group {
+        margin-bottom: 15px;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+      }
+      select, input[type="text"], input[type="number"] {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-sizing: border-box;
+      }
+      .checkbox-group {
+        margin-top: 5px;
+      }
+      .checkbox-container {
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      .checkbox-container input[type="checkbox"] {
+        margin-right: 10px;
+      }
+      button {
+        background-color: #4285F4;
+        color: white;
+        border: none;
+        padding: 8px 15px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-right: 10px;
+      }
+      button:hover {
+        background-color: #3367D6;
+      }
+      button.secondary {
+        background-color: #f1f1f1;
+        color: #333;
+      }
+      button.secondary:hover {
+        background-color: #e4e4e4;
+      }
+      .footer {
+        margin-top: 20px;
+        display: flex;
+        justify-content: flex-end;
+      }
+      .help-text {
+        font-size: 12px;
+        color: #666;
+        margin-top: 4px;
+      }
+      .field-map-container {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 10px;
+        margin-bottom: 15px;
+        background-color: #fff;
+      }
+      .field-map-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 10px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #eee;
+      }
+      .field-map-row:last-child {
+        margin-bottom: 0;
+        padding-bottom: 0;
+        border-bottom: none;
+      }
+      .field-map-column {
+        flex: 1;
+      }
+      .field-map-arrow {
+        margin: 0 10px;
+        color: #999;
+      }
+      .add-mapping-btn {
+        margin-top: 10px;
+        width: 100%;
+        padding: 8px;
+        background-color: #f1f1f1;
+        border: 1px dashed #ccc;
+        color: #333;
+        cursor: pointer;
+        text-align: center;
+        border-radius: 4px;
+      }
+      .add-mapping-btn:hover {
+        background-color: #e4e4e4;
+      }
+      .remove-mapping {
+        color: #d33;
+        cursor: pointer;
+        margin-left: 10px;
+      }
+      .status-message {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+      }
+      .status-success {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+      .status-error {
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+      .status-info {
+        background-color: #e1f5fe;
+        color: #0277bd;
+        border: 1px solid #b3e5fc;
+      }
+      .loading {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(255, 255, 255, 0.7);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+      }
+      .spinner {
+        border: 4px solid #f3f3f3;
+        border-radius: 50%;
+        border-top: 4px solid #4285F4;
+        width: 30px;
+        height: 30px;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      .toggle-container {
+        position: relative;
+        display: inline-block;
+        width: 60px;
+        height: 34px;
+      }
+      .toggle-container input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        transition: .4s;
+        border-radius: 34px;
+      }
+      .toggle-slider:before {
+        position: absolute;
+        content: "";
+        height: 26px;
+        width: 26px;
+        left: 4px;
+        bottom: 4px;
+        background-color: white;
+        transition: .4s;
+        border-radius: 50%;
+      }
+      input:checked + .toggle-slider {
+        background-color: #4285F4;
+      }
+      input:checked + .toggle-slider:before {
+        transform: translateX(26px);
+      }
+      .toggle-label {
+        display: flex;
+        align-items: center;
+      }
+      .toggle-label span {
+        margin-left: 15px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h3>Two-Way Sync Settings</h3>
+      
+      <div class="warning">
+        <strong>Note:</strong> Two-way sync allows changes in Google Sheets to update your Pipedrive data. 
+        Please use with caution as this can modify your CRM data.
+      </div>
+      
+      <div id="status-container"></div>
+      
+      <div class="card">
+        <div class="section">
+          <div class="form-group">
+            <div class="toggle-label">
+              <label class="toggle-container">
+                <input type="checkbox" id="enable-two-way-sync" <?= settings.enabled ? 'checked' : '' ?>>
+                <span class="toggle-slider"></span>
+              </label>
+              <span>Enable Two-Way Sync</span>
+            </div>
+            <div class="help-text">When enabled, changes made in the sheet will be synced back to Pipedrive</div>
+          </div>
+        </div>
+        
+        <div id="settings-container" class="<?= settings.enabled ? '' : 'hidden' ?>">
+          <div class="section">
+            <div class="section-title">Sync Behavior</div>
+            
+            <div class="form-group">
+              <label>Sheet Detection Column</label>
+              <select id="key-column">
+                <? availableColumns.forEach(function(column) { ?>
+                  <option value="<?= column.path ?>" <?= settings.keyColumn === column.path ? 'selected' : '' ?>>
+                    <?= column.name ?>
+                  </option>
+                <? }); ?>
+              </select>
+              <div class="help-text">This column is used to identify records in Pipedrive (usually ID)</div>
+            </div>
+            
+            <div class="form-group">
+              <label>Change Detection Method</label>
+              <select id="change-detection">
+                <option value="cell" <?= settings.changeDetection === 'cell' ? 'selected' : '' ?>>Cell Edit (Detect individual cell changes)</option>
+                <option value="row" <?= settings.changeDetection === 'row' ? 'selected' : '' ?>>Row Edit (Sync entire row when any cell changes)</option>
+              </select>
+              <div class="help-text">How changes are detected and synced back to Pipedrive</div>
+            </div>
+            
+            <div class="form-group">
+              <div class="checkbox-container">
+                <input type="checkbox" id="create-new-records" <?= settings.createNewRecords ? 'checked' : '' ?>>
+                <label for="create-new-records">Allow creating new records in Pipedrive</label>
+              </div>
+              <div class="help-text">When enabled, new rows in the sheet will create new records in Pipedrive</div>
+            </div>
+            
+            <div class="form-group">
+              <div class="checkbox-container">
+                <input type="checkbox" id="sync-on-edit" <?= settings.syncOnEdit ? 'checked' : '' ?>>
+                <label for="sync-on-edit">Sync immediately on edit</label>
+              </div>
+              <div class="help-text">Changes will be synced as soon as they are made. If disabled, changes will be queued for the next scheduled sync.</div>
+            </div>
+          </div>
+          
+          <div class="section">
+            <div class="section-title">Field Mappings</div>
+            <p>Define how sheet columns map to Pipedrive fields for two-way sync:</p>
+            
+            <div id="field-mappings-container" class="field-map-container">
+              <? if (settings.fieldMappings && settings.fieldMappings.length > 0) { ?>
+                <? settings.fieldMappings.forEach(function(mapping, index) { ?>
+                  <div class="field-map-row" data-index="<?= index ?>">
+                    <div class="field-map-column">
+                      <select class="sheet-column-select">
+                        <option value="">Select Sheet Column</option>
+                        <? availableColumns.forEach(function(column) { ?>
+                          <option value="<?= column.path ?>" <?= mapping.sheetColumn === column.path ? 'selected' : '' ?>>
+                            <?= column.name ?>
+                          </option>
+                        <? }); ?>
+                      </select>
+                    </div>
+                    <div class="field-map-arrow">→</div>
+                    <div class="field-map-column">
+                      <select class="pipedrive-field-select">
+                        <option value="">Select Pipedrive Field</option>
+                        <? pipedriveFields.forEach(function(field) { ?>
+                          <option value="<?= field.key ?>" <?= mapping.pipedriveField === field.key ? 'selected' : '' ?>>
+                            <?= field.name ?>
+                          </option>
+                        <? }); ?>
+                      </select>
+                    </div>
+                    <div class="remove-mapping" title="Remove mapping">×</div>
+                  </div>
+                <? }); ?>
+              <? } else { ?>
+                <div class="field-map-row" data-index="0">
+                  <div class="field-map-column">
+                    <select class="sheet-column-select">
+                      <option value="">Select Sheet Column</option>
+                      <? availableColumns.forEach(function(column) { ?>
+                        <option value="<?= column.path ?>"><?= column.name ?></option>
+                      <? }); ?>
+                    </select>
+                  </div>
+                  <div class="field-map-arrow">→</div>
+                  <div class="field-map-column">
+                    <select class="pipedrive-field-select">
+                      <option value="">Select Pipedrive Field</option>
+                      <? pipedriveFields.forEach(function(field) { ?>
+                        <option value="<?= field.key ?>"><?= field.name ?></option>
+                      <? }); ?>
+                    </select>
+                  </div>
+                  <div class="remove-mapping" title="Remove mapping">×</div>
+                </div>
+              <? } ?>
+            </div>
+            
+            <button id="add-mapping-btn" class="add-mapping-btn">+ Add Field Mapping</button>
+          </div>
+        </div>
+      </div>
+      
+      <div class="footer">
+        <button id="save-button">Save Settings</button>
+        <button id="cancel-button" class="secondary">Cancel</button>
+      </div>
+    </div>
+    
+    <div id="loading-indicator" class="loading hidden">
+      <div class="spinner"></div>
+    </div>
+    
+    <script>
+      // Helper function to show status messages
+      function showStatus(message, type) {
+        const container = document.getElementById('status-container');
+        const statusDiv = document.createElement('div');
+        statusDiv.className = `status-message status-${type}`;
+        statusDiv.textContent = message;
+        container.innerHTML = '';
+        container.appendChild(statusDiv);
+        
+        // Auto-dismiss after 5 seconds for success messages
+        if (type === 'success') {
+          setTimeout(() => {
+            statusDiv.remove();
+          }, 5000);
+        }
+      }
+      
+      // Show/hide loading indicator
+      function showLoading() {
+        document.getElementById('loading-indicator').classList.remove('hidden');
+      }
+      
+      function hideLoading() {
+        document.getElementById('loading-indicator').classList.add('hidden');
+      }
+      
+      // Toggle two-way sync settings visibility
+      document.getElementById('enable-two-way-sync').addEventListener('change', function() {
+        const settingsContainer = document.getElementById('settings-container');
+        if (this.checked) {
+          settingsContainer.classList.remove('hidden');
+        } else {
+          settingsContainer.classList.add('hidden');
+        }
+      });
+      
+      // Add field mapping row
+      document.getElementById('add-mapping-btn').addEventListener('click', function() {
+        const container = document.getElementById('field-mappings-container');
+        const rowCount = container.querySelectorAll('.field-map-row').length;
+        
+        const newRow = document.createElement('div');
+        newRow.className = 'field-map-row';
+        newRow.dataset.index = rowCount;
+        
+        newRow.innerHTML = `
+          <div class="field-map-column">
+            <select class="sheet-column-select">
+              <option value="">Select Sheet Column</option>
+              <?= availableColumns.map(function(column) { return '<option value="' + column.path + '">' + column.name + '</option>'; }).join('') ?>
+            </select>
+          </div>
+          <div class="field-map-arrow">→</div>
+          <div class="field-map-column">
+            <select class="pipedrive-field-select">
+              <option value="">Select Pipedrive Field</option>
+              <?= pipedriveFields.map(function(field) { return '<option value="' + field.key + '">' + field.name + '</option>'; }).join('') ?>
+            </select>
+          </div>
+          <div class="remove-mapping" title="Remove mapping">×</div>
+        `;
+        
+        container.appendChild(newRow);
+        attachRemoveMappingHandler(newRow.querySelector('.remove-mapping'));
+      });
+      
+      // Remove field mapping row
+      function attachRemoveMappingHandler(removeButton) {
+        removeButton.addEventListener('click', function() {
+          const row = this.closest('.field-map-row');
+          row.remove();
+        });
+      }
+      
+      // Initialize remove buttons
+      document.querySelectorAll('.remove-mapping').forEach(attachRemoveMappingHandler);
+      
+      // Save settings
+      document.getElementById('save-button').addEventListener('click', function() {
+        // Gather settings
+        const settings = {
+          enabled: document.getElementById('enable-two-way-sync').checked,
+          keyColumn: document.getElementById('key-column').value,
+          changeDetection: document.getElementById('change-detection').value,
+          createNewRecords: document.getElementById('create-new-records').checked,
+          syncOnEdit: document.getElementById('sync-on-edit').checked,
+          fieldMappings: []
+        };
+        
+        // Validate key column if enabled
+        if (settings.enabled && !settings.keyColumn) {
+          showStatus('Please select a key column for record identification', 'error');
+          return;
+        }
+        
+        // Gather field mappings
+        const mappingRows = document.querySelectorAll('.field-map-row');
+        let hasInvalidMapping = false;
+        
+        mappingRows.forEach(row => {
+          const sheetColumn = row.querySelector('.sheet-column-select').value;
+          const pipedriveField = row.querySelector('.pipedrive-field-select').value;
+          
+          if (settings.enabled && (sheetColumn && pipedriveField)) {
+            settings.fieldMappings.push({
+              sheetColumn: sheetColumn,
+              pipedriveField: pipedriveField
+            });
+          } else if (settings.enabled && (sheetColumn || pipedriveField)) {
+            hasInvalidMapping = true;
+          }
+        });
+        
+        if (hasInvalidMapping) {
+          showStatus('Please complete or remove incomplete field mappings', 'error');
+          return;
+        }
+        
+        // Validate at least one mapping if enabled
+        if (settings.enabled && settings.fieldMappings.length === 0) {
+          showStatus('Please add at least one field mapping for two-way sync', 'error');
+          return;
+        }
+        
+        // Save settings
+        showLoading();
+        google.script.run
+          .withSuccessHandler(function(result) {
+            hideLoading();
+            if (result.success) {
+              showStatus('Two-way sync settings saved successfully', 'success');
+            } else {
+              showStatus(result.message || 'Error saving settings', 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            hideLoading();
+            showStatus('Error: ' + error.message, 'error');
+          })
+          .saveTwoWaySyncSettings(settings, '<?= entityType ?>', '<?= sheetName ?>');
+      });
+      
+      // Cancel button
+      document.getElementById('cancel-button').addEventListener('click', function() {
+        google.script.host.close();
+      });
+    </script>
+  </body>
+</html>
