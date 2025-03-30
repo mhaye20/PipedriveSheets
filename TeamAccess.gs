@@ -299,15 +299,13 @@ function checkAndVerifyTeamMembership() {
  * Shows the team join request dialog
  */
 function showTeamJoinRequest() {
-  // This is now properly implemented in UI.gs
-  // The proper implementation is called directly
-  if (typeof UI !== 'undefined' && UI.showTeamJoinRequest) {
-    UI.showTeamJoinRequest();
+  // Delegate to the UI.gs implementation
+  if (typeof showTeamManager === 'function') {
+    showTeamManager(true); // Show team manager in join-only mode
   } else {
-    // Fall back to the global function
-    if (typeof window !== 'undefined') {
-      window.showTeamJoinRequest();
-    }
+    // This is a fallback but the UI.gs implementation should be used
+    Logger.log('Delegating to UI.gs showTeamJoinRequest');
+    UI.showTeamJoinRequest();
   }
 }
 

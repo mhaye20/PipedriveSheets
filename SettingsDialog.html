@@ -94,18 +94,38 @@
       <select id="filterId">
         <option value="">-- Select a filter --</option>
         <? if (filters && filters.length > 0) { ?>
-          <? filters.forEach(function(filter) { ?>
-            <? if (filter.type === entityType) { ?>
+          <? 
+            // Debug - Log entity type being used for comparison
+            console.log("Current entity type: " + entityType);
+            
+            filters.forEach(function(filter) { 
+              // Debug - Log each filter type for comparison
+              console.log("Filter: " + filter.name + ", Type: " + filter.type + ", Normalized: " + filter.normalizedType);
+              
+              // Use normalizedType instead of type for comparison
+              if (filter.normalizedType === entityType || filter.type === entityType) { 
+          ?>
               <option value="<?= filter.id ?>" <?= filterId == filter.id ? 'selected' : '' ?>><?= filter.name ?></option>
-            <? } ?>
-          <? }); ?>
+          <?  } 
+            }); 
+          ?>
         <? } ?>
       </select>
       <div class="help-text">
         <? if (!filters || filters.length === 0) { ?>
           Please enter your API key and subdomain first, then click "Load Filters"
         <? } else { ?>
-          Select one of your saved filters from Pipedrive
+          <? 
+            // Count filters that match the current entity type using normalized type
+            var matchingFilters = filters.filter(function(f) { 
+              return f.normalizedType === entityType || f.type === entityType; 
+            }).length;
+          ?>
+          <? if (matchingFilters === 0) { ?>
+            No filters found for this entity type. You may need to create filters in Pipedrive first.
+          <? } else { ?>
+            Select one of your saved filters from Pipedrive
+          <? } ?>
         <? } ?>
       </div>
     </div>
@@ -124,7 +144,7 @@
       <div class="help-text">Adds a column showing when the data was last synced</div>
     </div>
     
-    <? if (error) { ?>
+    <? if (error !== null && error !== undefined) { ?>
       <div class="error"><?= error ?></div>
     <? } ?>
     
@@ -211,4 +231,4 @@
       });
     </script>
   </body>
-</html> 
+</html>

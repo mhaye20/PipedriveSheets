@@ -11,31 +11,31 @@
  */
 
 /**
- * Main entry point
- * 
- * This module contains:
- * - onOpen trigger
- * - Menu creation and initialization
- * - Main entry point functions
+ * Define the OAuth scopes the script needs
+ * @OnlyCurrentDoc
  */
 
 /**
  * Constants
  */
-const API_KEY = ''; // Default empty, user will provide
+const API_KEY = ''; // Default API key
 const FILTER_ID = ''; // Default filter ID
-const DEFAULT_PIPEDRIVE_SUBDOMAIN = '';
-const DEFAULT_SHEET_NAME = 'Pipedrive Data';
+const DEFAULT_PIPEDRIVE_SUBDOMAIN = 'api';
+const DEFAULT_SHEET_NAME = 'PDexport'; // Default sheet name
 const PIPEDRIVE_API_URL_PREFIX = 'https://';
-const PIPEDRIVE_API_URL_SUFFIX = '.pipedrive.com/api/v2';
+const PIPEDRIVE_API_URL_SUFFIX = '.pipedrive.com/v1';
 const ENTITY_TYPES = {
   DEALS: 'deals',
   PERSONS: 'persons',
   ORGANIZATIONS: 'organizations',
   ACTIVITIES: 'activities',
-  LEADS: 'leads',
-  PRODUCTS: 'products'
+  LEADS: 'leads'
 };
+
+// OAuth Constants - YOU NEED TO REGISTER YOUR APP WITH PIPEDRIVE TO GET THESE
+// Go to https://developers.pipedrive.com/docs/api/v1/oauth2/auth and create an app
+const PIPEDRIVE_CLIENT_ID = 'f48c99e028029bab'; // Client ID from Pipedrive
+const PIPEDRIVE_CLIENT_SECRET = '2d245de02052108d8c22d8f7ea8004bc00e7aac7'; // Client Secret from Pipedrive
 
 /**
  * Cache for verified users
@@ -48,95 +48,56 @@ let VERIFIED_USERS = {};
 const fieldDefinitionsCache = {};
 
 /**
- * Runs when the sheet is opened
- * Creates the Pipedrive menu and initializes the application
+ * This function runs when a user opens any spreadsheet with your add-on
  */
 function onOpen() {
   try {
-    // Create a custom menu in Google Sheets
-    SpreadsheetApp.getActiveSpreadsheet().addMenu('Pipedrive', [
-      {name: 'Initialize Pipedrive', functionName: 'initializePipedriveMenu'},
-    ]);
+    Logger.log(`onOpen running, creating initial menu`);
+    const ui = SpreadsheetApp.getUi();
+    
+    // Always create a basic menu first, regardless of verification
+    const menu = ui.createMenu('Pipedrive');
+    
+    // Add a verification check item that will then create the full menu
+    menu.addItem('Initialize Pipedrive Menu', 'initializePipedriveMenu');
+    menu.addToUi();
+    
+    // Always try to detect column shifts
+    detectColumnShifts();
   } catch (e) {
     Logger.log(`Error in onOpen: ${e.message}`);
+    try {
+      // Maintain your existing error handling
+      detectColumnShifts();
+    } catch (shiftError) {
+      Logger.log(`Error in detectColumnShifts: ${shiftError.message}`);
+    }
   }
 }
 
 /**
- * Initializes the Pipedrive menu
- * Always the first function that runs when user clicks the menu
+ * This function will be called when the user clicks "Initialize Pipedrive Menu"
+ * At this point, we'll definitely have their email and can do proper verification
  */
 function initializePipedriveMenu() {
   try {
     const userEmail = Session.getActiveUser().getEmail();
-    if (!userEmail) {
-      throw new Error('Unable to determine your email address. Please ensure you are signed in.');
-    }
+    Logger.log(`Initializing Pipedrive menu for user: ${userEmail}`);
     
-    Logger.log('Initializing Pipedrive menu for user: ' + userEmail);
+    // Preload verified users
+    preloadVerifiedUsers();
     
-    // First check if the user is the script installer/owner
-    let isScriptOwner = false;
-    try {
-      const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
-      isScriptOwner = (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED);
-      if (isScriptOwner) {
-        Logger.log('User is the script owner/installer with full authorization');
-      }
-    } catch (e) {
-      Logger.log('Error checking script owner: ' + e.message);
-    }
-    
-    // Check if user is in any team - getting a direct team check
-    // instead of using checkAnyUserAccess which might return true for script owners
-    // even if they don't have a team yet
-    const userTeam = getUserTeam(userEmail);
-    const hasTeamAccess = userTeam !== null;
-    
-    // If user is the script owner and doesn't have a team yet, create one automatically
-    if (isScriptOwner && !hasTeamAccess) {
-      Logger.log('Script owner detected without a team. Auto-creating team for ' + userEmail);
-      const teamName = 'My Pipedrive Team';
-      const result = createTeam(teamName);
+    // Now perform access checks
+    if (checkAnyUserAccess(userEmail) || 
+        hasVerifiedTeamAccess() || 
+        forceTeamMembershipCheck(userEmail)) {
       
-      if (result.success) {
-        Logger.log('Successfully created team for script owner: ' + result.teamId);
-        // Team created successfully, now create the full menu
-        createPipedriveMenu();
-        
-        // Show success message
-        const html = HtmlService.createHtmlOutput(`
-          <p>Welcome to Pipedrive for Sheets!</p>
-          <p>A team has been automatically created for you with ID: <strong>${result.teamId}</strong></p>
-          <p>Share this Team ID with your colleagues to let them join your team.</p>
-          <script>
-            setTimeout(function() {
-              google.script.host.close();
-            }, 5000);
-          </script>
-        `)
-        .setWidth(400)
-        .setHeight(150);
-        
-        SpreadsheetApp.getUi().showModalDialog(html, 'Team Created');
-        
-        return true;
-      } else {
-        Logger.log('Failed to create team for script owner: ' + result.message);
-      }
-    }
-    
-    // After potential team creation, check team access again
-    const finalTeamAccess = getUserTeam(userEmail) !== null;
-    
-    // If user has team access, show regular menu
-    if (finalTeamAccess) {
-      // User has team access, create the full menu
+      // Replace the menu with the full Pipedrive menu
       createPipedriveMenu();
       
-      // Show success message
+      // Show a brief confirmation that initialization was successful
       const html = HtmlService.createHtmlOutput(`
-        <p>Pipedrive menu has been initialized successfully.</p>
+        <p>Pipedrive menu has been successfully initialized!</p>
         <script>
           setTimeout(function() {
             google.script.host.close();
@@ -147,76 +108,19 @@ function initializePipedriveMenu() {
       .setHeight(80);
       
       SpreadsheetApp.getUi().showModalDialog(html, 'Pipedrive Ready');
-      
       return true;
     } else {
-      // User is not in a team, show join team dialog
-      Logger.log('User not in any team, showing join team request');
-      createBasicMenu();
-      showTeamJoinRequest();
+      // Show the team access request dialog
+      verifyTeamAccess();
       return false;
     }
   } catch (e) {
-    Logger.log('Error in initializePipedriveMenu: ' + e.message);
+    Logger.log(`Error in initializePipedriveMenu: ${e.message}`);
     
-    // Show error message
-    SpreadsheetApp.getUi().alert(
-      'Initialization Error',
-      'Failed to initialize Pipedrive menu: ' + e.message,
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
-    
-    // Fallback to basic menu on error
-    try {
-      createBasicMenu();
-    } catch (menuError) {
-      Logger.log('Error creating basic menu: ' + menuError.message);
-    }
-    
-    return false;
-  }
-}
-
-/**
- * Clears all team data for testing purposes
- * CAUTION: This will remove all teams and team memberships
- */
-function clearTeamDataForTesting() {
-  try {
+    // Show error to user
     const ui = SpreadsheetApp.getUi();
-    
-    // Get confirmation from user
-    const response = ui.alert(
-      'Clear All Team Data',
-      'This will permanently delete ALL team data. This action cannot be undone.\n\n' + 
-      'Are you sure you want to proceed?',
-      ui.ButtonSet.YES_NO
-    );
-    
-    if (response !== ui.Button.YES) {
-      ui.alert('Cancelled', 'No data was deleted.', ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Clear the team data
-    PropertiesService.getDocumentProperties().deleteProperty('TEAMS_DATA');
-    PropertiesService.getDocumentProperties().deleteProperty('EMAIL_TO_TEAM_MAP');
-    
-    // Clear verified users
-    PropertiesService.getDocumentProperties().deleteProperty('VERIFIED_USER_IDS');
-    PropertiesService.getDocumentProperties().deleteProperty('VERIFIED_TEAM_USERS');
-    
-    Logger.log('All team data has been cleared');
-    
-    // Show confirmation
-    ui.alert(
-      'Data Cleared',
-      'All team data has been successfully deleted. Please reload the page to see the changes.',
-      ui.ButtonSet.OK
-    );
-  } catch (e) {
-    Logger.log('Error in clearTeamDataForTesting: ' + e.message);
-    SpreadsheetApp.getUi().alert('Error', 'Failed to clear team data: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+    ui.alert('Error', 'An error occurred while initializing Pipedrive menu: ' + e.message, ui.ButtonSet.OK);
+    return false;
   }
 }
 
@@ -255,7 +159,6 @@ function createPipedriveMenu() {
       .addSeparator()
       .addItem('⏱️ Schedule Sync', 'showTriggerManager')
       .addSeparator()
-      .addItem('Force Reauthorize', 'forceReauthorize')
       .addItem('ℹ️ Help & About', 'showHelp');
       
   menu.addToUi();
@@ -270,107 +173,129 @@ function checkAnyUserAccess(userEmail) {
   try {
     if (!userEmail) return false;
     
-    // Normalize email for case-insensitive comparison
-    const normalizedEmail = userEmail.toLowerCase();
-    
-    // Check if we've already verified this user in this session
-    if (VERIFIED_USERS[normalizedEmail]) {
-      return true;
+    // APPROACH 1: Direct ownership check
+    try {
+      const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
+      if (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED) {
+        Logger.log(`${userEmail} is the script owner, granting access`);
+        return true;
+      }
+    } catch (e) {
+      Logger.log(`Error checking script owner: ${e.message}`);
     }
     
-    // Try fast path using email-to-team map
-    const emailMapStr = PropertiesService.getDocumentProperties().getProperty('EMAIL_TO_TEAM_MAP');
-    if (emailMapStr) {
-      try {
+    // APPROACH 2: Check email map in document properties
+    try {
+      const docProps = PropertiesService.getDocumentProperties();
+      const emailMapStr = docProps.getProperty('EMAIL_TO_TEAM_MAP');
+      
+      if (emailMapStr) {
         const emailMap = JSON.parse(emailMapStr);
-        if (emailMap[normalizedEmail]) {
-          // Save to verified users cache
-          VERIFIED_USERS[normalizedEmail] = true;
+        
+        // Simplified check - just use lowercase consistently
+        if (emailMap[userEmail.toLowerCase()]) {
+          Logger.log(`${userEmail} found in email map`);
           return true;
         }
-      } catch (e) {
-        Logger.log('Error parsing email map: ' + e.message);
       }
+    } catch (mapError) {
+      Logger.log(`Error checking email map: ${mapError.message}`);
     }
     
-    // Slower path - check if user is in any team
-    if (isUserInTeam(userEmail)) {
-      // Save to verified users cache
-      VERIFIED_USERS[normalizedEmail] = true;
-      return true;
+    // APPROACH 3: Direct check of teams data
+    try {
+      if (isUserInTeam(userEmail)) {
+        Logger.log(`${userEmail} found in team members list`);
+        return true;
+      }
+    } catch (teamError) {
+      Logger.log(`Error checking teams data: ${teamError.message}`);
     }
     
-    Logger.log('User ' + userEmail + ' does not have access');
+    Logger.log(`${userEmail} not found in any access list`);
     return false;
   } catch (e) {
-    Logger.log('Error in checkAnyUserAccess: ' + e.message);
+    Logger.log(`Error in checkAnyUserAccess: ${e.message}`);
     return false;
   }
 }
 
 /**
  * Forces a check of team membership for a user
- * @param {string} userEmail Email address of the user
- * @returns {boolean} True if the user is in a team, false otherwise
+ * @param {string} userEmail - The email address of the user
+ * @return {boolean} True if user is in a team, false otherwise
  */
 function forceTeamMembershipCheck(userEmail) {
   try {
     if (!userEmail) return false;
     
-    // Try fast path using email-to-team map
-    const emailMapStr = PropertiesService.getDocumentProperties().getProperty('EMAIL_TO_TEAM_MAP');
-    if (emailMapStr) {
-      try {
-        const emailMap = JSON.parse(emailMapStr);
-        if (emailMap[userEmail.toLowerCase()]) {
-          // User is in a team - create the full menu
-          createPipedriveMenu();
-          
-          // Add to verified users cache
-          VERIFIED_USERS[userEmail.toLowerCase()] = true;
-          
-          return true;
-        }
-      } catch (e) {
-        Logger.log('Error parsing email map: ' + e.message);
+    Logger.log(`Force checking team membership for: ${userEmail}`);
+    
+    // Try getting from document properties directly
+    const docProps = PropertiesService.getDocumentProperties();
+    const emailToTeamMapStr = docProps.getProperty('EMAIL_TO_TEAM_MAP');
+    
+    if (emailToTeamMapStr) {
+      const emailToTeamMap = JSON.parse(emailToTeamMapStr);
+      Logger.log(`Current email map: ${JSON.stringify(emailToTeamMap)}`);
+      
+      if (emailToTeamMap[userEmail.toLowerCase()]) {
+        Logger.log(`User found in email map, creating Pipedrive menu`);
+        return true;
       }
     }
     
-    // Try checking if user is in any team directly
-    if (isUserInTeam(userEmail)) {
-      // User is in a team - create the full menu
-      createPipedriveMenu();
+    // Direct check of teams data
+    const teamsData = getTeamsData();
+    for (const teamId in teamsData) {
+      const team = teamsData[teamId];
+      const memberEmails = team.memberEmails || [];
       
-      // Add to verified users cache
-      VERIFIED_USERS[userEmail.toLowerCase()] = true;
-      
-      return true;
+      // Case-insensitive check
+      for (let i = 0; i < memberEmails.length; i++) {
+        if (memberEmails[i].toLowerCase() === userEmail.toLowerCase()) {
+          Logger.log(`User found in team ${teamId}, creating Pipedrive menu`);
+          return true;
+        }
+      }
     }
     
-    // User is not in a team - show the basic menu and team join dialog
-    createBasicMenu();
-    showTeamJoinRequest();
-    
+    Logger.log(`User ${userEmail} not found in any team`);
     return false;
   } catch (e) {
-    Logger.log('Error in forceTeamMembershipCheck: ' + e.message);
-    createBasicMenu();
+    Logger.log(`Error in forceTeamMembershipCheck: ${e.message}`);
     return false;
   }
 }
 
 /**
  * Checks if the user has verified team access
- * @return {boolean} True if the user has verified access, false otherwise
+ * @return {boolean} True if user has verified team access, false otherwise
  */
 function hasVerifiedTeamAccess() {
   try {
+    // Get current user email
     const userEmail = Session.getActiveUser().getEmail();
-    if (!userEmail) {
-      return false;
+    if (!userEmail) return false;
+    
+    // First check if the user installed the add-on (always give access to installer)
+    try {
+      const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
+      if (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED) {
+        Logger.log(`User ${userEmail} is the script owner/installer, granting full access`);
+        return true;
+      }
+    } catch (e) {
+      Logger.log(`Error checking if user is script owner: ${e.message}`);
     }
     
-    return checkAnyUserAccess(userEmail);
+    // Directly check if user is in a team
+    if (isUserInTeam(userEmail)) {
+      Logger.log(`User ${userEmail} found in teams data`);
+      return true;
+    }
+    
+    return false;
   } catch (e) {
     Logger.log(`Error in hasVerifiedTeamAccess: ${e.message}`);
     return false;
@@ -378,7 +303,8 @@ function hasVerifiedTeamAccess() {
 }
 
 /**
- * Preloads verified users for faster access checks
+ * Preloads verified user data to ensure faster access checks
+ * @return {boolean} True if preload was successful, false otherwise
  */
 function preloadVerifiedUsers() {
   try {
@@ -399,53 +325,211 @@ function preloadVerifiedUsers() {
       
       Logger.log('Teams data preloaded successfully');
     }
+    return true;
   } catch (e) {
     Logger.log(`Error in preloadVerifiedUsers: ${e.message}`);
-  }
-}
-
-/**
- * Verifies team access and refreshes the menu accordingly
- */
-function verifyTeamAccess() {
-  try {
-    const userEmail = Session.getActiveUser().getEmail();
-    if (!userEmail) {
-      return false;
-    }
-    
-    // Force a fresh check by ignoring the cached result
-    const normalizedEmail = userEmail.toLowerCase();
-    delete VERIFIED_USERS[normalizedEmail];
-    
-    // Check access again
-    if (checkAnyUserAccess(userEmail)) {
-      // User has access, refresh the menu
-      createPipedriveMenu();
-      return true;
-    } else {
-      // User doesn't have access, show the basic menu
-      createBasicMenu();
-      return false;
-    }
-  } catch (e) {
-    Logger.log(`Error in verifyTeamAccess: ${e.message}`);
     return false;
   }
 }
 
 /**
- * Refreshes the menu after team verification
+ * Shows a dialog for users to verify their team membership
+ */
+function verifyTeamAccess() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const userEmail = Session.getActiveUser().getEmail();
+    
+    // Check if user is already in a team
+    if (isUserInTeam(userEmail)) {
+      // Add user to verified list
+      try {
+        const verifiedUsersStr = PropertiesService.getDocumentProperties().getProperty('VERIFIED_USER_IDS') || '[]';
+        const verifiedUsers = JSON.parse(verifiedUsersStr);
+        
+        // Only add if not already in list
+        if (!verifiedUsers.includes(userEmail.toLowerCase())) {
+          verifiedUsers.push(userEmail.toLowerCase());
+          PropertiesService.getDocumentProperties().setProperty('VERIFIED_USER_IDS', JSON.stringify(verifiedUsers));
+          // Update the email-to-team map to ensure persistence between sessions
+          updateEmailToTeamMap();
+          // Also store in cache for faster lookup
+          Logger.log(`Added ${userEmail} to verified users list`);
+        }
+      } catch (e) {
+        Logger.log(`Error adding to verified users: ${e.message}`);
+      }
+      
+      // Show success with forced reload
+      const html = HtmlService.createHtmlOutput(`
+        <p>Your team access has been verified!</p>
+        <p>Please click the button below to reload the page and see the Pipedrive menu.</p>
+        <script>
+          function forceReload() {
+            google.script.run.withSuccessHandler(function(result) {
+              google.script.host.close();
+              window.top.location.reload(true);
+            }).refreshMenuAfterVerification();
+          }
+        </script>
+        <div style="text-align: center; margin-top: 20px;">
+          <button 
+            style="padding: 10px 20px; background: #4285F4; color: white; border: none; border-radius: 4px; cursor: pointer;"
+            onclick="forceReload()">Reload Page</button>
+        </div>
+      `)
+      .setWidth(350)
+      .setHeight(180);
+      
+      ui.showModalDialog(html, 'Team Access Verified');
+      return;
+    }
+    
+    // Show team join dialog for non-members
+    showTeamJoinRequest();
+  } catch (e) {
+    Logger.log(`Error in verifyTeamAccess: ${e.message}`);
+    ui.alert('Error', 'An error occurred: ' + e.message, ui.ButtonSet.OK);
+  }
+}
+
+/**
+ * Refreshes the menu after verification
+ * @return {boolean} True if refresh was successful, false otherwise
  */
 function refreshMenuAfterVerification() {
   try {
-    if (hasVerifiedTeamAccess()) {
-      createPipedriveMenu();
+    // Clear existing menus by creating an entirely new menu
+    const ui = SpreadsheetApp.getUi();
+    
+    // Force update the email-to-team map
+    updateEmailToTeamMap();
+    
+    // Create the full menu directly instead of calling onOpen
+    createPipedriveMenu();
+    
+    SpreadsheetApp.getActiveSpreadsheet().toast(
+      'Team access verified successfully!',
+      'Success',
+      5
+    );
+    return true;
+  } catch (e) {
+    Logger.log(`Error refreshing menu: ${e.message}`);
+    return false;
+  }
+}
+
+/**
+ * Checks if the user is a team member and verifies their status
+ * @return {Object} Object with success status and error message if applicable
+ */
+function checkAndVerifyTeamMembership() {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return { success: false, error: 'Unable to determine your email. Please make sure you are signed in.' };
+    }
+    
+    // Check if user is in a team
+    if (isUserInTeam(userEmail)) {
+      // Mark as verified in both UserProperties and DocumentProperties for persistence
+      try {
+        // Update user properties
+        const userProps = PropertiesService.getUserProperties();
+        userProps.setProperty('VERIFIED_TEAM_ACCESS', 'true');
+        
+        // Update document properties for master list of verified users
+        const docProps = PropertiesService.getDocumentProperties();
+        const verifiedUsersJson = docProps.getProperty('VERIFIED_TEAM_USERS');
+        const verifiedUsers = verifiedUsersJson ? JSON.parse(verifiedUsersJson) : [];
+        
+        if (!verifiedUsers.includes(userEmail)) {
+          verifiedUsers.push(userEmail);
+          docProps.setProperty('VERIFIED_TEAM_USERS', JSON.stringify(verifiedUsers));
+        }
+        
+        Logger.log(`User ${userEmail} verified successfully`);
+      } catch (e) {
+        Logger.log(`Error setting verification properties: ${e.message}`);
+      }
+      
+      return { success: true };
     } else {
-      createBasicMenu();
+      return { success: false, error: 'You are not a member of any team. Please join a team first.' };
     }
   } catch (e) {
-    Logger.log(`Error in refreshMenuAfterVerification: ${e.message}`);
+    Logger.log(`Error verifying team membership: ${e.message}`);
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * Shows the team join request dialog
+ */
+function showTeamJoinRequest() {
+  // Delegate to the UI.gs implementation
+  if (typeof UI !== 'undefined' && typeof UI.showTeamJoinRequest === 'function') {
+    UI.showTeamJoinRequest();
+  } else {
+    // Fallback to team manager if UI.gs not properly loaded
+    showTeamManager(true); // Show team manager in join-only mode
+  }
+}
+
+/**
+ * Refreshes the menu after joining a team
+ */
+function refreshMenuAfterJoin() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const userEmail = Session.getActiveUser().getEmail();
+    const teamsData = getTeamsData();
+    const userTeam = getUserTeam(userEmail, teamsData);
+
+    // Show debug info
+    Logger.log(`Menu refresh - User: ${userEmail}, Has team: ${userTeam !== null}`);
+    if (userTeam) {
+      Logger.log(`Team ID: ${userTeam.teamId}, Members: ${userTeam.memberEmails.length}`);
+    }
+
+    // Force proper menu creation
+    onOpen();
+
+    // Show confirmation toast
+    SpreadsheetApp.getActiveSpreadsheet().toast(
+      userTeam ? 'Full Pipedrive menu activated.' : 'Limited menu shown - no team membership found.',
+      'Menu Refreshed',
+      5
+    );
+  } catch (e) {
+    Logger.log(`Error in refreshMenuAfterJoin: ${e.message}`);
+  }
+}
+
+/**
+ * Fixes the menu after joining a team
+ * @returns {boolean} True if successful, false otherwise
+ */
+function fixMenuAfterJoin() {
+  try {
+    // First reapply team verification
+    verifyTeamAccess();
+    
+    // Create the Pipedrive menu
+    createPipedriveMenu();
+    
+    // Create a toast notification
+    SpreadsheetApp.getActiveSpreadsheet().toast(
+      'Team access granted successfully! Menu has been updated.',
+      'Success',
+      5
+    );
+    
+    return true;
+  } catch (e) {
+    Logger.log('Error in fixMenuAfterJoin: ' + e.message);
+    return false;
   }
 }
 
@@ -554,55 +638,45 @@ function testUIPermission() {
 }
 
 /**
- * Refreshes the menu after joining a team
- * This function is called after successful team join/create operations
+ * Clears all team data for testing purposes
+ * CAUTION: This will remove all teams and team memberships
  */
-function refreshMenuAfterJoin() {
+function clearTeamDataForTesting() {
   try {
-    // Force a fresh verification
-    verifyTeamAccess();
+    const ui = SpreadsheetApp.getUi();
     
-    // Show confirmation
-    const html = HtmlService.createHtmlOutput(`
-      <p>Team access verified. Initializing Pipedrive menu...</p>
-      <script>
-        setTimeout(function() {
-          window.top.location.reload();
-        }, 1500);
-      </script>
-    `)
-    .setWidth(300)
-    .setHeight(80);
-    
-    SpreadsheetApp.getUi().showModalDialog(html, 'Access Granted');
-  } catch (e) {
-    Logger.log(`Error in refreshMenuAfterJoin: ${e.message}`);
-  }
-}
-
-/**
- * Fixes the menu after joining a team
- * @returns {boolean} True if successful, false otherwise
- */
-function fixMenuAfterJoin() {
-  try {
-    // First reapply team verification
-    verifyTeamAccess();
-    
-    // Create the Pipedrive menu
-    createPipedriveMenu();
-    
-    // Create a toast notification
-    SpreadsheetApp.getActiveSpreadsheet().toast(
-      'Team access granted successfully! Menu has been updated.',
-      'Success',
-      5
+    // Get confirmation from user
+    const response = ui.alert(
+      'Clear All Team Data',
+      'This will permanently delete ALL team data. This action cannot be undone.\n\n' + 
+      'Are you sure you want to proceed?',
+      ui.ButtonSet.YES_NO
     );
     
-    return true;
+    if (response !== ui.Button.YES) {
+      ui.alert('Cancelled', 'No data was deleted.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Clear the team data
+    PropertiesService.getDocumentProperties().deleteProperty('TEAMS_DATA');
+    PropertiesService.getDocumentProperties().deleteProperty('EMAIL_TO_TEAM_MAP');
+    
+    // Clear verified users
+    PropertiesService.getDocumentProperties().deleteProperty('VERIFIED_USER_IDS');
+    PropertiesService.getDocumentProperties().deleteProperty('VERIFIED_TEAM_USERS');
+    
+    Logger.log('All team data has been cleared');
+    
+    // Show confirmation
+    ui.alert(
+      'Data Cleared',
+      'All team data has been successfully deleted. Please reload the page to see the changes.',
+      ui.ButtonSet.OK
+    );
   } catch (e) {
-    Logger.log('Error in fixMenuAfterJoin: ' + e.message);
-    return false;
+    Logger.log('Error in clearTeamDataForTesting: ' + e.message);
+    SpreadsheetApp.getUi().alert('Error', 'Failed to clear team data: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
@@ -742,4 +816,4 @@ function testCreateTeamForOwner() {
     Logger.log('Error in testCreateTeamForOwner: ' + e.message);
     throw e;
   }
-} 
+}

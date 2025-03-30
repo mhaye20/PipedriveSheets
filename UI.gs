@@ -33,10 +33,32 @@ function showSettings() {
     htmlTemplate.sheetName = sheetName;
     htmlTemplate.enableTimestamp = enableTimestamp;
     
+    // Initialize error to null - this fixes the "error is not defined" issue
+    htmlTemplate.error = null;
+    
     // Get filters if API key and subdomain are configured
     if (apiKey && subdomain) {
       try {
-        htmlTemplate.filters = getPipedriveFilters();
+        const filters = getPipedriveFilters();
+        htmlTemplate.filters = filters;
+        
+        // Debug - Log filter types and count
+        const filtersByType = {};
+        filters.forEach(filter => {
+          // Log both original and normalized types
+          Logger.log(`Filter "${filter.name}": original type = ${filter.type}, normalized type = ${filter.normalizedType}`);
+          
+          // Group by normalized type for more accurate counting
+          const typeKey = filter.normalizedType || filter.type;
+          if (!filtersByType[typeKey]) {
+            filtersByType[typeKey] = [];
+          }
+          filtersByType[typeKey].push(filter.name);
+        });
+        
+        Logger.log("Current entity type: " + entityType);
+        Logger.log("Filters by normalized type: " + JSON.stringify(filtersByType));
+        Logger.log("Total filters: " + filters.length);
       } catch (e) {
         htmlTemplate.error = `Failed to load filters: ${e.message}`;
         htmlTemplate.filters = [];
@@ -979,12 +1001,23 @@ function saveSettings(apiKey, entityType, filterId, subdomain, sheetName, enable
     
     // Save the settings
     if (apiKey) docProps.setProperty('PIPEDRIVE_API_KEY', apiKey);
-    if (entityType) docProps.setProperty('PIPEDRIVE_ENTITY_TYPE', entityType);
     if (subdomain) docProps.setProperty('PIPEDRIVE_SUBDOMAIN', subdomain);
     if (sheetName) docProps.setProperty('EXPORT_SHEET_NAME', sheetName);
     
+    // Save sheet-specific entity type (this is the key fix)
+    if (entityType && sheetName) {
+      const sheetEntityTypeKey = `ENTITY_TYPE_${sheetName}`;
+      docProps.setProperty(sheetEntityTypeKey, entityType);
+      // Still save global entity type for backward compatibility
+      docProps.setProperty('PIPEDRIVE_ENTITY_TYPE', entityType);
+    }
+    
     // Only update filter ID if provided (may be empty intentionally)
-    if (filterId !== undefined) {
+    if (filterId !== undefined && sheetName) {
+      // Also save filter ID with sheet-specific key
+      const sheetFilterIdKey = `FILTER_ID_${sheetName}`;
+      docProps.setProperty(sheetFilterIdKey, filterId);
+      // Global filter ID for backward compatibility
       docProps.setProperty('PIPEDRIVE_FILTER_ID', filterId);
     }
     
@@ -1165,10 +1198,19 @@ function getTriggerInfo(trigger) {
 function showTwoWaySyncSettings() {
   try {
     const docProps = PropertiesService.getDocumentProperties();
+    const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const activeSheetName = activeSheet.getName();
     
     // Get current settings
     const enableTwoWaySync = docProps.getProperty('ENABLE_TWO_WAY_SYNC') === 'true';
     const trackingColumn = docProps.getProperty('SYNC_TRACKING_COLUMN') || '';
+    
+    // Create a settings object with all properties the template might need
+    const settings = {
+      enableTwoWaySync: enableTwoWaySync,
+      trackingColumn: trackingColumn,
+      sheetName: activeSheetName
+    };
     
     // Create the HTML template
     const htmlTemplate = HtmlService.createTemplateFromFile('TwoWaySyncSettings');
@@ -1176,6 +1218,7 @@ function showTwoWaySyncSettings() {
     // Pass data to the template
     htmlTemplate.enableTwoWaySync = enableTwoWaySync;
     htmlTemplate.trackingColumn = trackingColumn;
+    htmlTemplate.settings = settings; // Pass the entire settings object
     
     // Create the HTML from the template
     const html = htmlTemplate.evaluate()
@@ -1199,22 +1242,43 @@ function showTwoWaySyncSettings() {
  */
 function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
   try {
-    const docProps = PropertiesService.getDocumentProperties();
+    const docProps = PropertiesService.getDocumentProperties(); // Make sure we use DocumentProperties
+    const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const activeSheetName = activeSheet.getName();
     
-    // Save settings
+    // Save settings with sheet-specific keys (matching original script)
+    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
+    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
+    
+    // Save the settings
+    docProps.setProperty(twoWaySyncEnabledKey, enableTwoWaySync ? 'true' : 'false');
+    
+    // Also save global setting for backward compatibility
     docProps.setProperty('ENABLE_TWO_WAY_SYNC', enableTwoWaySync ? 'true' : 'false');
     
+    // Debug log to verify what we're saving
+    Logger.log(`Saving two-way sync setting: ${twoWaySyncEnabledKey} = ${enableTwoWaySync ? 'true' : 'false'}`);
+    
     if (trackingColumn) {
+      // Save both sheet-specific and global tracking column
+      docProps.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
       docProps.setProperty('SYNC_TRACKING_COLUMN', trackingColumn);
     } else {
+      // If no column specified, clean up the properties
+      docProps.deleteProperty(twoWaySyncTrackingColumnKey);
       docProps.deleteProperty('SYNC_TRACKING_COLUMN');
     }
     
-    // If two-way sync is enabled, set up the onEdit trigger
+    // If two-way sync is enabled, set up the onEdit trigger and immediately add the Sync Status column
     if (enableTwoWaySync) {
+      // Set up the onEdit trigger
       setupOnEditTrigger();
+      
+      // Add Sync Status column if it doesn't exist yet
+      addSyncStatusColumn(activeSheet, trackingColumn);
     } else {
       removeOnEditTrigger();
+      // Consider removing the Sync Status column?
     }
     
     return true;
@@ -1222,6 +1286,169 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
     Logger.log(`Error in saveTwoWaySyncSettings: ${e.message}`);
     throw e;
   }
+}
+
+/**
+ * Adds a Sync Status column to the sheet
+ * @param {Sheet} sheet - The sheet to add the column to
+ * @param {string} specificColumn - Optional specific column letter to use
+ */
+function addSyncStatusColumn(sheet, specificColumn = '') {
+  try {
+    // First, check if there's already a Sync Status column
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    let syncStatusColumnIndex = -1;
+    
+    // Search for existing Sync Status column
+    for (let i = 0; i < headers.length; i++) {
+      if (headers[i] === 'Sync Status') {
+        syncStatusColumnIndex = i;
+        break;
+      }
+    }
+    
+    // If we found an existing column, use it
+    if (syncStatusColumnIndex >= 0) {
+      const columnLetter = columnToLetter(syncStatusColumnIndex + 1); // +1 because it's 1-based
+      Logger.log(`Found existing Sync Status column at ${columnLetter}`);
+      return;
+    }
+    
+    // If we specified a specific column, use that
+    if (specificColumn) {
+      const columnIndex = columnLetterToIndex(specificColumn);
+      
+      // Check if this column already has a header
+      if (columnIndex <= sheet.getLastColumn()) {
+        const existingHeader = sheet.getRange(1, columnIndex).getValue();
+        if (existingHeader) {
+          // If there's already a header, append to the end instead
+          Logger.log(`Column ${specificColumn} already has header "${existingHeader}". Will append Sync Status to the end instead.`);
+          specificColumn = '';
+        }
+      }
+    }
+    
+    // Add the Sync Status column
+    let targetColumnIndex;
+    if (specificColumn) {
+      // Use the specified column
+      targetColumnIndex = columnLetterToIndex(specificColumn);
+    } else {
+      // Append to the end
+      targetColumnIndex = sheet.getLastColumn() + 1;
+    }
+    
+    // Set the header
+    sheet.getRange(1, targetColumnIndex).setValue('Sync Status');
+    
+    // Format the header cell
+    sheet.getRange(1, targetColumnIndex)
+         .setFontWeight('bold')
+         .setBackground('#E8F0FE');
+    
+    // Save the column location for later
+    const sheetName = sheet.getName();
+    const trackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
+    const columnLetter = columnToLetter(targetColumnIndex);
+    PropertiesService.getDocumentProperties().setProperty(trackingColumnKey, columnLetter);
+    
+    Logger.log(`Added Sync Status column at column ${columnLetter}`);
+    
+    // Add conditional formatting for the Sync Status column
+    const lastRow = Math.max(sheet.getLastRow(), 100); // Format at least 100 rows
+    if (lastRow > 1) {
+      const statusRange = sheet.getRange(2, targetColumnIndex, lastRow - 1, 1);
+      const rules = sheet.getConditionalFormatRules();
+      
+      // Create rule for "Modified" cells
+      const modifiedRule = SpreadsheetApp.newConditionalFormatRule()
+        .whenTextEqualTo('Modified')
+        .setBackground('#FCE8E6') // Light red
+        .setBold(true)
+        .setRanges([statusRange])
+        .build();
+      
+      // Create rule for "Synced" cells
+      const syncedRule = SpreadsheetApp.newConditionalFormatRule()
+        .whenTextEqualTo('Synced')
+        .setBackground('#E6F4EA') // Light green
+        .setRanges([statusRange])
+        .build();
+      
+      // Create rule for "Error" cells
+      const errorRule = SpreadsheetApp.newConditionalFormatRule()
+        .whenTextContains('Error')
+        .setBackground('#FCE8E6') // Light red
+        .setBold(true)
+        .setRanges([statusRange])
+        .build();
+      
+      // Add the new rules to the existing rules
+      rules.push(modifiedRule);
+      rules.push(syncedRule);
+      rules.push(errorRule);
+      sheet.setConditionalFormatRules(rules);
+    }
+    
+    // Add data validation for the Sync Status column
+    const validationRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['Modified', 'Synced'], true)
+      .build();
+    
+    if (lastRow > 1) {
+      sheet.getRange(2, targetColumnIndex, lastRow - 1, 1).setDataValidation(validationRule);
+    }
+    
+    return true;
+  } catch (e) {
+    Logger.log(`Error adding Sync Status column: ${e.message}`);
+    return false;
+  }
+}
+
+/**
+ * Removes the onEdit trigger for two-way sync
+ */
+function removeOnEditTrigger() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (const trigger of triggers) {
+    if (trigger.getHandlerFunction() === 'onEdit') {
+      ScriptApp.deleteTrigger(trigger);
+      Logger.log('onEdit trigger removed');
+      break;
+    }
+  }
+}
+
+// Make sure this exists in your Utilities.gs file or add it here
+/**
+ * Converts a column index to letter format (e.g., 1 = A, 27 = AA)
+ * @param {number} column - The column index (1-based)
+ * @return {string} The column letter
+ */
+function columnToLetter(column) {
+  let temp, letter = '';
+  while (column > 0) {
+    temp = (column - 1) % 26;
+    letter = String.fromCharCode(temp + 65) + letter;
+    column = (column - temp - 1) / 26;
+  }
+  return letter;
+}
+
+/**
+ * Converts a column letter to index format (e.g., A = 1, AA = 27)
+ * @param {string} letter - The column letter
+ * @return {number} The column index (1-based)
+ */
+function columnLetterToIndex(letter) {
+  let column = 0;
+  const length = letter.length;
+  for (let i = 0; i < length; i++) {
+    column += (letter.charCodeAt(i) - 64) * Math.pow(26, length - i - 1);
+  }
+  return column;
 }
 
 /**
@@ -1352,4 +1579,4 @@ function showTeamJoinRequest() {
     Logger.log('Error in showTeamJoinRequest: ' + e.message);
     SpreadsheetApp.getUi().alert('Error', 'Failed to show join request: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
-} 
+}
