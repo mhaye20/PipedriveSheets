@@ -43,128 +43,20 @@ function showSettings() {
   const savedFilterId = scriptProperties.getProperty(sheetFilterIdKey) || '';
   const savedEntityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
   
-  // Create HTML content for the settings dialog
-  const htmlOutput = HtmlService.createHtmlOutput(`
-    <style>
-      body { font-family: Arial, sans-serif; margin: 0; padding: 10px; }
-      label { display: block; margin-top: 10px; font-weight: bold; }
-      input, select { width: 100%; padding: 5px; margin-top: 5px; }
-      .button-container { margin-top: 20px; text-align: right; }
-      button { padding: 8px 12px; background-color: #4285f4; color: white; border: none; border-radius: 4px; cursor: pointer; }
-      .note { font-size: 12px; color: #666; margin-top: 5px; }
-      .domain-container { display: flex; align-items: center; }
-      .domain-input { flex: 1; margin-right: 5px; }
-      .domain-suffix { padding: 5px; background: #f0f0f0; border: 1px solid #ccc; }
-      .loading { display: none; margin-right: 10px; }
-      .loader { 
-        display: inline-block;
-        width: 20px;
-        height: 20px;
-        border: 3px solid rgba(255,255,255,.3);
-        border-radius: 50%;
-        border-top-color: white;
-        animation: spin 1s ease-in-out infinite;
-        vertical-align: middle;
-      }
-      .sheet-info {
-        background-color: #f8f9fa;
-        padding: 10px;
-        border-radius: 4px;
-        margin-bottom: 15px;
-        font-size: 14px;
-        border-left: 4px solid #4285f4;
-      }
-      .connected-status {
-        background-color: #e6f4ea;
-        border-left: 4px solid #34a853;
-        padding: 10px;
-        border-radius: 4px;
-        margin-bottom: 15px;
-        display: flex;
-        align-items: center;
-      }
-      .connected-status i {
-        color: #34a853;
-        margin-right: 10px;
-        font-size: 24px;
-      }
-      @keyframes spin {
-        to { transform: rotate(360deg); }
-      }
-    </style>
-    <h3>Pipedrive Integration Settings</h3>
-    
-    <div class="connected-status">
-      <span style="color: #34a853; font-size: 24px; margin-right: 10px;">✓</span>
-      <div>
-        <strong>Connected to Pipedrive</strong><br>
-        <span style="font-size: 12px;">Company: ${savedSubdomain}.pipedrive.com</span>
-      </div>
-      <button style="margin-left: auto; background-color: #f1f3f4; color: #202124;" onclick="reconnect()">Reconnect</button>
-    </div>
-    
-    <div class="sheet-info">
-      Configuring settings for sheet: <strong>"${activeSheetName}"</strong>
-    </div>
-    
-    <form id="settingsForm">
-      <label for="entityType">Entity Type:</label>
-      <select id="entityType">
-        <option value="deals" ${savedEntityType === 'deals' ? 'selected' : ''}>Deals</option>
-        <option value="persons" ${savedEntityType === 'persons' ? 'selected' : ''}>Persons</option>
-        <option value="organizations" ${savedEntityType === 'organizations' ? 'selected' : ''}>Organizations</option>
-        <option value="activities" ${savedEntityType === 'activities' ? 'selected' : ''}>Activities</option>
-        <option value="leads" ${savedEntityType === 'leads' ? 'selected' : ''}>Leads</option>
-      </select>
-      <p class="note">Select which entity type you want to sync from Pipedrive</p>
-      
-      <label for="filterId">Filter ID:</label>
-      <input type="text" id="filterId" value="${savedFilterId}" />
-      <p class="note">The filter ID can be found in the URL when viewing your filter in Pipedrive</p>
-      
-      <input type="hidden" id="sheetName" value="${activeSheetName}" />
-      <p class="note">The data will be exported to the current sheet: "${activeSheetName}"</p>
-      
-      <div class="button-container">
-        <span class="loading" id="saveLoading"><span class="loader"></span> Saving...</span>
-        <button type="button" id="saveBtn" onclick="saveSettings()">Save Settings</button>
-      </div>
-    </form>
-    
-    <script>
-      function saveSettings() {
-        const entityType = document.getElementById('entityType').value;
-        const filterId = document.getElementById('filterId').value;
-        const sheetName = document.getElementById('sheetName').value;
-        
-        // Show loading animation
-        document.getElementById('saveLoading').style.display = 'inline-block';
-        document.getElementById('saveBtn').disabled = true;
-        
-        google.script.run
-          .withSuccessHandler(function() {
-            document.getElementById('saveLoading').style.display = 'none';
-            document.getElementById('saveBtn').disabled = false;
-            alert('Settings saved successfully!');
-            google.script.host.close();
-          })
-          .withFailureHandler(function(error) {
-            document.getElementById('saveLoading').style.display = 'none';
-            document.getElementById('saveBtn').disabled = false;
-            alert('Error saving settings: ' + error.message);
-          })
-          .saveSettings('', entityType, filterId, '', sheetName);
-      }
-      
-      function reconnect() {
-        google.script.host.close();
-        google.script.run.showAuthorizationDialog();
-      }
-    </script>
-  `)
-  .setWidth(400)
-  .setHeight(520)
-  .setTitle(`Pipedrive Settings for "${activeSheetName}"`);
+  // Create a template from the HTML file
+  const template = HtmlService.createTemplateFromFile('SettingsDialog');
+  
+  // Pass data to the template
+  template.activeSheetName = activeSheetName;
+  template.savedSubdomain = savedSubdomain;
+  template.savedFilterId = savedFilterId;
+  template.savedEntityType = savedEntityType;
+  
+  // Create the HTML output from the template
+  const htmlOutput = template.evaluate()
+    .setWidth(400)
+    .setHeight(520)
+    .setTitle(`Pipedrive Settings for "${activeSheetName}"`);
   
   SpreadsheetApp.getUi().showModalDialog(htmlOutput, `Pipedrive Settings for "${activeSheetName}"`);
 }
@@ -1339,6 +1231,21 @@ function getTeamAwarePipedriveFilters() {
     return userFilters;
   } catch (e) {
     Logger.log(`Error in getTeamAwarePipedriveFilters: ${e.message}`);
+    return [];
+  }
+}
+
+/**
+ * Gets team-aware Pipedrive filters for a specific entity type
+ * @param {string} entityType - The entity type to get filters for
+ * @return {Array} Array of filter objects
+ */
+function getFiltersForEntityType(entityType) {
+  try {
+    // Directly call the function with the same name in the PipedriveAPI.gs file
+    return PipedriveAPI.getFiltersForEntityType(entityType);
+  } catch (e) {
+    Logger.log(`Error in UI.getFiltersForEntityType: ${e.message}`);
     return [];
   }
 }

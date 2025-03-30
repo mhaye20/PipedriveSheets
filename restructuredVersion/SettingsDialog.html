@@ -45,6 +45,17 @@
         margin-right: 10px;
         font-size: 24px;
       }
+      .loading-filters {
+        font-style: italic;
+        color: #666;
+      }
+      .manual-entry {
+        margin-top: 5px;
+        text-decoration: underline;
+        cursor: pointer;
+        color: #4285f4;
+        font-size: 12px;
+      }
       @keyframes spin {
         to { transform: rotate(360deg); }
       }
@@ -68,7 +79,7 @@
     
     <form id="settingsForm">
       <label for="entityType">Entity Type:</label>
-      <select id="entityType">
+      <select id="entityType" onchange="loadFiltersForEntity()">
         <option value="deals" <?= savedEntityType === 'deals' ? 'selected' : '' ?>>Deals</option>
         <option value="persons" <?= savedEntityType === 'persons' ? 'selected' : '' ?>>Persons</option>
         <option value="organizations" <?= savedEntityType === 'organizations' ? 'selected' : '' ?>>Organizations</option>
@@ -77,9 +88,14 @@
       </select>
       <p class="note">Select which entity type you want to sync from Pipedrive</p>
       
-      <label for="filterId">Filter ID:</label>
-      <input type="text" id="filterId" value="<?= savedFilterId ?>" />
-      <p class="note">The filter ID can be found in the URL when viewing your filter in Pipedrive</p>
+      <label for="filterSelector">Pipedrive Filter:</label>
+      <div id="filterSelectorContainer">
+        <select id="filterSelector" style="display: none;"></select>
+        <input type="text" id="filterId" value="<?= savedFilterId ?>" style="display: none;" />
+        <div id="loadingFilters" class="loading-filters">Loading filters...</div>
+      </div>
+      <div class="manual-entry" id="toggleManualEntry">Switch to manual ID entry</div>
+      <p class="note">Select a saved filter from Pipedrive or enter a filter ID manually</p>
       
       <input type="hidden" id="sheetName" value="<?= activeSheetName ?>" />
       <p class="note">The data will be exported to the current sheet: "<?= activeSheetName ?>"</p>
@@ -91,9 +107,146 @@
     </form>
     
     <script>
+      let manualEntry = false;
+      let filtersForEntity = {};
+      
+      // Load filters immediately for the currently selected entity type
+      loadFiltersForEntity();
+      
+      function loadFiltersForEntity() {
+        const entityType = document.getElementById('entityType').value;
+        const loadingElement = document.getElementById('loadingFilters');
+        const filterSelector = document.getElementById('filterSelector');
+        const filterIdInput = document.getElementById('filterId');
+        
+        // Hide both selector and input initially
+        filterSelector.style.display = 'none';
+        filterIdInput.style.display = 'none';
+        loadingElement.style.display = 'block';
+        
+        // If we already have cached filters for this entity type, use them
+        if (filtersForEntity[entityType]) {
+          populateFilters(filtersForEntity[entityType]);
+          return;
+        }
+        
+        // Otherwise fetch filters from the server
+        google.script.run
+          .withSuccessHandler(function(filters) {
+            // Cache the filters
+            filtersForEntity[entityType] = filters;
+            populateFilters(filters);
+          })
+          .withFailureHandler(function(error) {
+            loadingElement.style.display = 'none';
+            if (manualEntry) {
+              filterIdInput.style.display = 'block';
+            } else {
+              filterSelector.style.display = 'block';
+              filterSelector.innerHTML = '<option value="">No filters available</option>';
+            }
+            console.error('Error loading filters:', error);
+          })
+          .getFiltersForEntityType(entityType);
+      }
+      
+      function populateFilters(filters) {
+        const loadingElement = document.getElementById('loadingFilters');
+        const filterSelector = document.getElementById('filterSelector');
+        const filterIdInput = document.getElementById('filterId');
+        const savedFilterId = "<?= savedFilterId ?>";
+        
+        loadingElement.style.display = 'none';
+        
+        // Clear existing options
+        filterSelector.innerHTML = '';
+        
+        // Add default option
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = '-- Select a filter --';
+        filterSelector.appendChild(defaultOption);
+        
+        if (filters && filters.length > 0) {
+          // Sort filters alphabetically by name
+          filters.sort((a, b) => a.name.localeCompare(b.name));
+          
+          // Add each filter as an option
+          filters.forEach(filter => {
+            const option = document.createElement('option');
+            option.value = filter.id;
+            option.textContent = filter.name;
+            
+            // Select if this matches the saved filter ID
+            if (filter.id.toString() === savedFilterId) {
+              option.selected = true;
+            }
+            
+            filterSelector.appendChild(option);
+          });
+          
+          // Display the appropriate input method
+          if (manualEntry) {
+            filterIdInput.style.display = 'block';
+            filterSelector.style.display = 'none';
+          } else {
+            filterSelector.style.display = 'block';
+            filterIdInput.style.display = 'none';
+          }
+        } else {
+          // No filters found
+          const noFiltersOption = document.createElement('option');
+          noFiltersOption.value = '';
+          noFiltersOption.textContent = 'No filters available for this entity type';
+          filterSelector.appendChild(noFiltersOption);
+          
+          // Always show manual entry if no filters
+          filterIdInput.style.display = 'block';
+          filterSelector.style.display = 'none';
+          manualEntry = true;
+          document.getElementById('toggleManualEntry').textContent = 'Switch to filter selection';
+        }
+      }
+      
+      // Toggle between dropdown and manual entry
+      document.getElementById('toggleManualEntry').addEventListener('click', function() {
+        const filterSelector = document.getElementById('filterSelector');
+        const filterIdInput = document.getElementById('filterId');
+        
+        manualEntry = !manualEntry;
+        
+        if (manualEntry) {
+          filterSelector.style.display = 'none';
+          filterIdInput.style.display = 'block';
+          this.textContent = 'Switch to filter selection';
+          
+          // Sync the selected filter ID to the input
+          if (filterSelector.value) {
+            filterIdInput.value = filterSelector.value;
+          }
+        } else {
+          filterSelector.style.display = 'block';
+          filterIdInput.style.display = 'none';
+          this.textContent = 'Switch to manual ID entry';
+          
+          // Try to select the filter with this ID
+          if (filterIdInput.value) {
+            const options = filterSelector.options;
+            for (let i = 0; i < options.length; i++) {
+              if (options[i].value === filterIdInput.value) {
+                options[i].selected = true;
+                break;
+              }
+            }
+          }
+        }
+      });
+      
       function saveSettings() {
         const entityType = document.getElementById('entityType').value;
-        const filterId = document.getElementById('filterId').value;
+        const filterId = manualEntry ? 
+          document.getElementById('filterId').value : 
+          document.getElementById('filterSelector').value;
         const sheetName = document.getElementById('sheetName').value;
         
         // Show loading animation

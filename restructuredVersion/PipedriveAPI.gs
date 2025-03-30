@@ -429,6 +429,27 @@ function normalizeFilterType(type) {
 }
 
 /**
+ * Gets filters for a specific entity type
+ * @param {string} entityType - The entity type to filter for (e.g., 'deals', 'persons')
+ * @return {Array} Array of filter objects matching the entity type
+ */
+function getFiltersForEntityType(entityType) {
+  try {
+    // Get all filters
+    const filters = getPipedriveFilters();
+    
+    // Filter based on normalized type matching the requested entity type
+    return filters.filter(filter => {
+      // Use the normalized type for comparison to handle inconsistencies in Pipedrive's API
+      return filter.normalizedType === entityType;
+    });
+  } catch (e) {
+    Logger.log(`Error in getFiltersForEntityType: ${e.message}`);
+    return [];
+  }
+}
+
+/**
  * Gets field option mappings for a specific entity type
  * @param {string} entityType - The entity type
  * @return {Object} Mapping of field keys to option mappings
@@ -554,3 +575,8 @@ function makePipedriveRequest(endpoint, options = {}) {
     throw error;
   }
 }
+
+// Export API functions to be available through the PipedriveAPI namespace
+const PipedriveAPI = {
+  getFiltersForEntityType: getFiltersForEntityType
+};
