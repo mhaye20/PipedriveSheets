@@ -2,60 +2,298 @@
 <html>
   <head>
     <base target="_top">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
     <style>
-      body { font-family: Arial, sans-serif; margin: 0; padding: 10px; }
-      label { display: block; margin-top: 10px; font-weight: bold; }
-      input, select { width: 100%; padding: 5px; margin-top: 5px; }
-      .button-container { margin-top: 20px; text-align: right; }
-      button { padding: 8px 12px; background-color: #4285f4; color: white; border: none; border-radius: 4px; cursor: pointer; }
-      .note { font-size: 12px; color: #666; margin-top: 5px; }
-      .domain-container { display: flex; align-items: center; }
-      .domain-input { flex: 1; margin-right: 5px; }
-      .domain-suffix { padding: 5px; background: #f0f0f0; border: 1px solid #ccc; }
-      .loading { display: none; margin-right: 10px; }
-      .loader { 
+      :root {
+        --primary-color: #4285f4;
+        --primary-dark: #3367d6;
+        --success-color: #0f9d58;
+        --warning-color: #f4b400;
+        --error-color: #db4437;
+        --text-dark: #202124;
+        --text-light: #5f6368;
+        --bg-light: #f8f9fa;
+        --border-color: #dadce0;
+        --section-bg: #f8f9fa;
+        --shadow: 0 1px 3px rgba(60,64,67,0.15);
+        --shadow-hover: 0 4px 8px rgba(60,64,67,0.2);
+        --transition: all 0.2s ease;
+      }
+      
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      
+      body {
+        font-family: 'Roboto', Arial, sans-serif;
+        color: var(--text-dark);
+        line-height: 1.5;
+        margin: 0;
+        padding: 16px;
+        font-size: 14px;
+      }
+      
+      h3 {
+        font-size: 18px;
+        font-weight: 500;
+        margin-bottom: 16px;
+        color: var(--text-dark);
+      }
+      
+      .section-title {
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--text-dark);
+        margin-bottom: 12px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--border-color);
+      }
+      
+      .form-container {
+        max-width: 100%;
+      }
+      
+      .sheet-info {
+        background-color: var(--bg-light);
+        padding: 10px 14px;
+        border-radius: 6px;
+        margin-bottom: 16px;
+        border-left: 4px solid var(--primary-color);
+        display: flex;
+        align-items: center;
+        font-size: 13px;
+      }
+      
+      .sheet-info svg {
+        margin-right: 12px;
+        fill: var(--primary-color);
+      }
+      
+      .section {
+        background-color: var(--section-bg);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+        border: 1px solid var(--border-color);
+      }
+      
+      .form-row {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      
+      .form-group {
+        margin-bottom: 16px;
+        flex: 1;
+      }
+      
+      .form-group:last-child {
+        margin-bottom: 0;
+      }
+      
+      label {
+        display: block;
+        font-weight: 500;
+        margin-bottom: 6px;
+        color: var(--text-dark);
+        font-size: 13px;
+      }
+      
+      input, select {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        font-size: 14px;
+        transition: var(--transition);
+      }
+      
+      input:focus, select:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+      }
+      
+      .tooltip {
+        display: block;
+        font-size: 11px;
+        color: var(--text-light);
+        margin-top: 4px;
+      }
+      
+      .button-container {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 20px;
+      }
+      
+      .button-primary {
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        padding: 8px 20px;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+      }
+      
+      .button-primary:hover {
+        background-color: var(--primary-dark);
+        box-shadow: var(--shadow-hover);
+      }
+      
+      .button-secondary {
+        background-color: transparent;
+        color: var(--primary-color);
+        border: 1px solid var(--primary-color);
+        padding: 7px 14px;
+        margin-right: 12px;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+      }
+      
+      .button-secondary:hover {
+        background-color: rgba(66, 133, 244, 0.04);
+      }
+      
+      .toggle-switch {
+        position: relative;
         display: inline-block;
-        width: 20px;
-        height: 20px;
-        border: 3px solid rgba(255,255,255,.3);
-        border-radius: 50%;
-        border-top-color: white;
-        animation: spin 1s ease-in-out infinite;
+        width: 66px;
+        height: 22px;
+        margin-right: 10px;
         vertical-align: middle;
       }
-      .sheet-info {
-        background-color: #f8f9fa;
-        padding: 10px;
-        border-radius: 4px;
-        margin-bottom: 15px;
-        font-size: 14px;
-        border-left: 4px solid #4285f4;
+      
+      .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
       }
+      
+      .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        transition: .3s;
+        border-radius: 34px;
+      }
+      
+      .toggle-slider:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 2px;
+        bottom: 2px;
+        background-color: white;
+        transition: .3s;
+        border-radius: 50%;
+      }
+      
+      input:checked + .toggle-slider {
+        background-color: var(--primary-color);
+      }
+      
+      input:focus + .toggle-slider {
+        box-shadow: 0 0 1px var(--primary-color);
+      }
+      
+      input:checked + .toggle-slider:before {
+        transform: translateX(24px);
+      }
+      
+      .toggle-wrapper {
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      
+      .toggle-label {
+        font-weight: normal;
+        cursor: pointer;
+      }
+      
+      .filter-section {
+        margin-bottom: 0;
+      }
+      
       .connected-status {
         background-color: #e6f4ea;
         border-left: 4px solid #34a853;
-        padding: 10px;
+        padding: 12px 16px;
         border-radius: 4px;
         margin-bottom: 15px;
         display: flex;
         align-items: center;
       }
-      .connected-status i {
-        color: #34a853;
+      
+      .loading {
+        display: none;
         margin-right: 10px;
-        font-size: 24px;
       }
-      .loading-filters {
-        font-style: italic;
-        color: #666;
+      
+      .loader { 
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 2px solid rgba(255,255,255,.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s ease-in-out infinite;
+        vertical-align: middle;
       }
-      .manual-entry {
-        margin-top: 5px;
-        text-decoration: underline;
-        cursor: pointer;
-        color: #4285f4;
+      
+      .filter-toggle {
+        display: inline-block;
+        color: var(--primary-color);
         font-size: 12px;
+        cursor: pointer;
+        margin-top: 10px;
+        text-decoration: none;
+        font-weight: 500;
       }
+      
+      .filter-toggle:hover {
+        text-decoration: underline;
+      }
+      
+      .status {
+        margin-top: 16px;
+        padding: 10px 14px;
+        border-radius: 4px;
+        font-size: 13px;
+        display: none;
+      }
+      
+      .status.success {
+        background-color: #e6f4ea;
+        color: var(--success-color);
+        display: block;
+      }
+      
+      .status.error {
+        background-color: #fce8e6;
+        color: var(--error-color);
+        display: block;
+      }
+      
+      .hidden {
+        display: none;
+      }
+      
       @keyframes spin {
         to { transform: rotate(360deg); }
       }
@@ -70,41 +308,55 @@
         <strong>Connected to Pipedrive</strong><br>
         <span style="font-size: 12px;">Company: <?= savedSubdomain ?>.pipedrive.com</span>
       </div>
-      <button style="margin-left: auto; background-color: #f1f3f4; color: #202124;" onclick="reconnect()">Reconnect</button>
+      <button style="margin-left: auto; background-color: #f1f3f4; color: #202124; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer;" onclick="reconnect()">Reconnect</button>
     </div>
     
     <div class="sheet-info">
-      Configuring settings for sheet: <strong>"<?= activeSheetName ?>"</strong>
+      <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+        <path d="M0 0h24v24H0z" fill="none"/>
+        <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+      </svg>
+      <div>Configuring settings for sheet: <strong>"<?= activeSheetName ?>"</strong></div>
     </div>
     
-    <form id="settingsForm">
-      <label for="entityType">Entity Type:</label>
-      <select id="entityType" onchange="loadFiltersForEntity()">
-        <option value="deals" <?= savedEntityType === 'deals' ? 'selected' : '' ?>>Deals</option>
-        <option value="persons" <?= savedEntityType === 'persons' ? 'selected' : '' ?>>Persons</option>
-        <option value="organizations" <?= savedEntityType === 'organizations' ? 'selected' : '' ?>>Organizations</option>
-        <option value="activities" <?= savedEntityType === 'activities' ? 'selected' : '' ?>>Activities</option>
-        <option value="leads" <?= savedEntityType === 'leads' ? 'selected' : '' ?>>Leads</option>
-      </select>
-      <p class="note">Select which entity type you want to sync from Pipedrive</p>
-      
-      <label for="filterSelector">Pipedrive Filter:</label>
-      <div id="filterSelectorContainer">
-        <select id="filterSelector" style="display: none;"></select>
-        <input type="text" id="filterId" value="<?= savedFilterId ?>" style="display: none;" />
-        <div id="loadingFilters" class="loading-filters">Loading filters...</div>
+    <div class="section">
+      <div class="section-title">Data Settings</div>
+      <div class="form-group">
+        <label for="entityType">Data Type</label>
+        <select id="entityType" onchange="loadFiltersForEntity()">
+          <option value="deals" <?= savedEntityType === 'deals' ? 'selected' : '' ?>>Deals</option>
+          <option value="persons" <?= savedEntityType === 'persons' ? 'selected' : '' ?>>Persons</option>
+          <option value="organizations" <?= savedEntityType === 'organizations' ? 'selected' : '' ?>>Organizations</option>
+          <option value="activities" <?= savedEntityType === 'activities' ? 'selected' : '' ?>>Activities</option>
+          <option value="leads" <?= savedEntityType === 'leads' ? 'selected' : '' ?>>Leads</option>
+          <option value="products" <?= savedEntityType === 'products' ? 'selected' : '' ?>>Products</option>
+        </select>
+        <span class="tooltip">Select the type of data to sync from Pipedrive</span>
       </div>
-      <div class="manual-entry" id="toggleManualEntry">Switch to manual ID entry</div>
-      <p class="note">Select a saved filter from Pipedrive or enter a filter ID manually</p>
-      
-      <input type="hidden" id="sheetName" value="<?= activeSheetName ?>" />
-      <p class="note">The data will be exported to the current sheet: "<?= activeSheetName ?>"</p>
-      
-      <div class="button-container">
-        <span class="loading" id="saveLoading"><span class="loader"></span> Saving...</span>
-        <button type="button" id="saveBtn" onclick="saveSettings()">Save Settings</button>
+    </div>
+    
+    <div class="section filter-section">
+      <div class="section-title">Filter Selection</div>
+      <div class="form-group">
+        <label for="filterSelector">Pipedrive Filter</label>
+        <div id="filterSelectorContainer">
+          <select id="filterSelector" style="display: none;"></select>
+          <input type="text" id="filterId" value="<?= savedFilterId ?>" style="display: none;" />
+          <div id="loadingFilters" class="loading-filters">Loading filters...</div>
+        </div>
+        <div class="filter-toggle" id="toggleManualEntry">Switch to manual ID entry</div>
+        <span class="tooltip">Select a saved filter from Pipedrive or enter a filter ID manually</span>
       </div>
-    </form>
+    </div>
+    
+    <input type="hidden" id="sheetName" value="<?= activeSheetName ?>" />
+    
+    <div id="status" class="status"></div>
+    
+    <div class="button-container">
+      <span class="loading" id="saveLoading"><span class="loader"></span> Saving...</span>
+      <button type="button" id="saveBtn" class="button-primary" onclick="saveSettings()">Save Settings</button>
+    </div>
     
     <script>
       let manualEntry = false;
@@ -146,6 +398,7 @@
               filterSelector.innerHTML = '<option value="">No filters available</option>';
             }
             console.error('Error loading filters:', error);
+            showStatus('error', 'Error loading filters: ' + error.message);
           })
           .getFiltersForEntityType(entityType);
       }
@@ -242,12 +495,25 @@
         }
       });
       
+      function showStatus(type, message) {
+        const statusElement = document.getElementById('status');
+        statusElement.textContent = message;
+        statusElement.className = 'status ' + type;
+        statusElement.style.display = 'block';
+      }
+      
       function saveSettings() {
         const entityType = document.getElementById('entityType').value;
         const filterId = manualEntry ? 
           document.getElementById('filterId').value : 
           document.getElementById('filterSelector').value;
         const sheetName = document.getElementById('sheetName').value;
+        
+        // Validate inputs
+        if (!filterId) {
+          showStatus('error', 'Filter ID is required');
+          return;
+        }
         
         // Show loading animation
         document.getElementById('saveLoading').style.display = 'inline-block';
@@ -257,13 +523,13 @@
           .withSuccessHandler(function() {
             document.getElementById('saveLoading').style.display = 'none';
             document.getElementById('saveBtn').disabled = false;
-            alert('Settings saved successfully!');
-            google.script.host.close();
+            showStatus('success', 'Settings saved successfully!');
+            setTimeout(() => google.script.host.close(), 1500);
           })
           .withFailureHandler(function(error) {
             document.getElementById('saveLoading').style.display = 'none';
             document.getElementById('saveBtn').disabled = false;
-            alert('Error saving settings: ' + error.message);
+            showStatus('error', 'Error saving settings: ' + error.message);
           })
           .saveSettings('', entityType, filterId, '', sheetName);
       }
