@@ -12,117 +12,144 @@
  * @return {string} The complete API URL with subdomain
  */
 function getPipedriveApiUrl() {
-  const docProps = PropertiesService.getDocumentProperties();
-  const subdomain = docProps.getProperty('PIPEDRIVE_SUBDOMAIN') || DEFAULT_PIPEDRIVE_SUBDOMAIN;
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const subdomain = scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') || DEFAULT_PIPEDRIVE_SUBDOMAIN;
   return PIPEDRIVE_API_URL_PREFIX + subdomain + PIPEDRIVE_API_URL_SUFFIX;
 }
 
 /**
- * Makes an authenticated request to the Pipedrive API
- * @param {string} endpoint - The API endpoint to call (without base URL)
- * @param {Object} options - Request options
- * @return {Object} The parsed JSON response
+ * Generic function to make authenticated API requests to Pipedrive
  */
-function makePipedriveRequest(endpoint, options = {}) {
+function makeAuthenticatedRequest(url, options = {}) {
+  // Ensure we have a valid token
+  if (!refreshAccessTokenIfNeeded()) {
+    throw new Error('Not authenticated with Pipedrive. Please connect your account first.');
+  }
+  
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const accessToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
+  
+  // Add authorization header
+  if (!options.headers) {
+    options.headers = {};
+  }
+  options.headers['Authorization'] = 'Bearer ' + accessToken;
+  
   try {
-    const docProps = PropertiesService.getDocumentProperties();
-    const apiKey = docProps.getProperty('PIPEDRIVE_API_KEY');
-    
-    if (!apiKey) {
-      throw new Error('API key not configured');
-    }
-    
-    // Build the URL with API token
-    const apiUrl = getPipedriveApiUrl();
-    let url = `${apiUrl}/${endpoint}`;
-    
-    // Add API token as query parameter if not using OAuth
-    if (!url.includes('?')) {
-      url += `?api_token=${apiKey}`;
-    } else {
-      url += `&api_token=${apiKey}`;
-    }
-    
-    // Set default options
-    if (!options.muteHttpExceptions) {
-      options.muteHttpExceptions = true;
-    }
-    
-    // Make the request
     const response = UrlFetchApp.fetch(url, options);
-    const responseCode = response.getResponseCode();
-    const responseText = response.getContentText();
-    
-    // Parse the response
-    try {
-      const parsedResponse = JSON.parse(responseText);
-      
-      // Check for Pipedrive API errors
-      if (!parsedResponse.success) {
-        Logger.log(`Pipedrive API error: ${parsedResponse.error || 'Unknown error'}`);
-        throw new Error(parsedResponse.error || 'Unknown Pipedrive API error');
-      }
-      
-      return parsedResponse;
-    } catch (parseError) {
-      Logger.log(`Error parsing API response: ${parseError.message}`);
-      Logger.log(`Response text: ${responseText}`);
-      throw new Error(`Invalid API response: ${parseError.message}`);
-    }
-  } catch (e) {
-    Logger.log(`Error in makePipedriveRequest: ${e.message}`);
-    throw e;
+    return JSON.parse(response.getContentText());
+  } catch (error) {
+    Logger.log('API request error: ' + error.message);
+    throw error;
   }
 }
 
 /**
- * Gets deals with a specific filter
- * @param {string} filterId - Filter ID (optional)
- * @param {number} limit - Maximum number of items to retrieve (0 for all)
- * @return {Array} Array of deal objects
+ * Gets deals using a specific filter
  */
-function getDealsWithFilter(filterId, limit = 0) {
-  return getFilteredEntityData('deals', filterId, limit);
+function getDealsWithFilter(filterId, limit = 100) {
+  return getFilteredDataFromPipedrive(ENTITY_TYPES.DEALS, filterId, limit);
 }
 
 /**
- * Gets persons with a specific filter
- * @param {string} filterId - Filter ID (optional)
- * @param {number} limit - Maximum number of items to retrieve (0 for all)
- * @return {Array} Array of person objects
+ * Gets persons using a specific filter
  */
-function getPersonsWithFilter(filterId, limit = 0) {
-  return getFilteredEntityData('persons', filterId, limit);
+function getPersonsWithFilter(filterId, limit = 100) {
+  return getFilteredDataFromPipedrive(ENTITY_TYPES.PERSONS, filterId, limit);
 }
 
 /**
- * Gets organizations with a specific filter
- * @param {string} filterId - Filter ID (optional)
- * @param {number} limit - Maximum number of items to retrieve (0 for all)
- * @return {Array} Array of organization objects
+ * Gets organizations using a specific filter
  */
-function getOrganizationsWithFilter(filterId, limit = 0) {
-  return getFilteredEntityData('organizations', filterId, limit);
+function getOrganizationsWithFilter(filterId, limit = 100) {
+  return getFilteredDataFromPipedrive(ENTITY_TYPES.ORGANIZATIONS, filterId, limit);
 }
 
 /**
- * Gets activities with a specific filter
- * @param {string} filterId - Filter ID (optional)
- * @param {number} limit - Maximum number of items to retrieve (0 for all)
- * @return {Array} Array of activity objects
+ * Gets activities using a specific filter
  */
-function getActivitiesWithFilter(filterId, limit = 0) {
-  return getFilteredEntityData('activities', filterId, limit);
+function getActivitiesWithFilter(filterId, limit = 100) {
+  return getFilteredDataFromPipedrive(ENTITY_TYPES.ACTIVITIES, filterId, limit);
 }
 
 /**
- * Gets leads with a specific filter
- * @param {string} filterId - Filter ID (optional)
- * @param {number} limit - Maximum number of items to retrieve (0 for all)
- * @return {Array} Array of lead objects
+ * Gets leads using a specific filter
  */
-function getLeadsWithFilter(filterId, limit = 0) {
-  return getFilteredEntityData('leads', filterId, limit);
+function getLeadsWithFilter(filterId, limit = 100) {
+  return getFilteredDataFromPipedrive(ENTITY_TYPES.LEADS, filterId, limit);
+}
+
+/**
+ * Gets data from Pipedrive using a specific filter based on entity type
+ */
+function getFilteredDataFromPipedrive(entityType, filterId, limit = 100) {
+  try {
+    // If we have a filter ID, use it, otherwise get all data
+    const filterParam = filterId ? `?filter_id=${filterId}` : '';
+    const url = `${getPipedriveApiUrl()}/${entityType}${filterParam}`;
+    
+    let allItems = [];
+    let hasMore = true;
+    let start = 0;
+    const pageLimit = 100; // Pipedrive API limit per page is 100
+    
+    // Handle pagination
+    while (hasMore) {
+      // Add pagination parameters
+      let paginatedUrl = url;
+      if (filterParam) {
+        paginatedUrl += `&start=${start}&limit=${pageLimit}`;
+      } else {
+        paginatedUrl += `?start=${start}&limit=${pageLimit}`;
+      }
+      
+      // Make the authenticated request
+      const responseData = makeAuthenticatedRequest(paginatedUrl);
+      
+      if (responseData.success) {
+        const items = responseData.data;
+        if (items && items.length > 0) {
+          allItems = allItems.concat(items);
+          
+          // If we have a specified limit (not 0), check if we've reached it
+          if (limit > 0 && allItems.length >= limit) {
+            allItems = allItems.slice(0, limit);
+            hasMore = false;
+          }
+          // Check if there are more results
+          else if (responseData.additional_data && 
+              responseData.additional_data.pagination && 
+              responseData.additional_data.pagination.more_items_in_collection) {
+            hasMore = true;
+            start += pageLimit;
+            
+            // Status update for large datasets
+            if (allItems.length % 500 === 0) {
+              SpreadsheetApp.getActiveSpreadsheet().toast(`Retrieved ${allItems.length} ${entityType} so far...`);
+            }
+          } else {
+            hasMore = false;
+          }
+        } else {
+          hasMore = false;
+        }
+      } else {
+        Logger.log(`Failed to retrieve ${entityType}: ${responseData.error}`);
+        hasMore = false;
+      }
+    }
+    
+    // Log completion status for large datasets
+    if (allItems.length > 100) {
+      Logger.log(`Retrieved ${allItems.length} ${entityType} from Pipedrive filter`);
+      SpreadsheetApp.getActiveSpreadsheet().toast(`Retrieved ${allItems.length} ${entityType} from Pipedrive filter. Preparing data for the sheet...`);
+    }
+    
+    return allItems;
+  } catch (error) {
+    Logger.log(`Error retrieving ${entityType}: ${error.message}`);
+    return [];
+  }
 }
 
 /**
@@ -297,16 +324,26 @@ function getEntityFields(fieldEndpoint) {
  */
 function getPipedriveFilters() {
   try {
-    const apiKey = PropertiesService.getDocumentProperties().getProperty('PIPEDRIVE_API_KEY') || API_KEY;
-    if (!apiKey) {
-      throw new Error('Pipedrive API key not configured. Please set up the API key in the settings.');
+    // Ensure we have a valid token
+    if (!refreshAccessTokenIfNeeded()) {
+      throw new Error('Not authenticated with Pipedrive. Please connect your account first.');
+    }
+    
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const accessToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
+    
+    if (!accessToken) {
+      throw new Error('Pipedrive authentication not configured. Please connect to Pipedrive first.');
     }
     
     const baseUrl = getPipedriveApiUrl();
-    const url = `${baseUrl}/filters?api_token=${apiKey}`;
+    const url = `${baseUrl}/filters`;
     
     const response = UrlFetchApp.fetch(url, {
       method: 'get',
+      headers: {
+        'Authorization': 'Bearer ' + accessToken
+      },
       muteHttpExceptions: true
     });
     
@@ -445,5 +482,75 @@ function getFieldOptionMappingsForEntity(entityType) {
   } catch (e) {
     Logger.log(`Error getting field option mappings: ${e.message}`);
     return {};
+  }
+}
+
+/**
+ * Makes an authenticated request to the Pipedrive API
+ * @param {string} endpoint - The API endpoint (without the base URL)
+ * @param {Object} options - Request options
+ * @return {Object} The parsed JSON response
+ */
+function makePipedriveRequest(endpoint, options = {}) {
+  // Ensure we have a valid token
+  if (!refreshAccessTokenIfNeeded()) {
+    throw new Error('Not authenticated with Pipedrive. Please connect your account first.');
+  }
+  
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const accessToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
+  
+  // Build the complete URL
+  const baseUrl = getPipedriveApiUrl();
+  const url = baseUrl + '/' + endpoint;
+  
+  // Set up request options
+  const requestOptions = Object.assign({
+    method: 'get',
+    headers: {
+      'Authorization': 'Bearer ' + accessToken
+    },
+    muteHttpExceptions: true
+  }, options);
+  
+  // Add authorization header if not already present
+  if (!requestOptions.headers) {
+    requestOptions.headers = {};
+  }
+  if (!requestOptions.headers['Authorization']) {
+    requestOptions.headers['Authorization'] = 'Bearer ' + accessToken;
+  }
+  
+  // Make the request
+  try {
+    const response = UrlFetchApp.fetch(url, requestOptions);
+    const statusCode = response.getResponseCode();
+    const responseText = response.getContentText();
+    const responseData = JSON.parse(responseText);
+    
+    // Check if the request was successful
+    if (statusCode >= 200 && statusCode < 300 && responseData.success) {
+      return responseData;
+    } else {
+      // If we got a 401, try to refresh the token and retry
+      if (statusCode === 401) {
+        Logger.log('Received 401 Unauthorized, attempting to refresh token and retry...');
+        
+        // Force token refresh
+        scriptProperties.deleteProperty('PIPEDRIVE_TOKEN_EXPIRES');
+        if (refreshAccessTokenIfNeeded()) {
+          // Retry the request with the new token
+          return makePipedriveRequest(endpoint, options);
+        }
+      }
+      
+      // Handle error response
+      const errorMessage = responseData.error || `API request failed with status code ${statusCode}`;
+      Logger.log(`Pipedrive API error (${endpoint}): ${errorMessage}`);
+      throw new Error(errorMessage);
+    }
+  } catch (error) {
+    Logger.log(`Error in makePipedriveRequest: ${error.message}`);
+    throw error;
   }
 }

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; padding: 10px; }
+      .container { display: flex; height: 400px; }
+      .column { width: 50%; padding: 10px; box-sizing: border-box; }
+      .scrollable { height: 340px; overflow-y: auto; border: 1px solid #ccc; padding: 5px; }
+      .header { font-weight: bold; margin-bottom: 10px; }
+      .item { padding: 5px; margin: 2px 0; cursor: pointer; border-radius: 3px; }
+      .item:hover { background-color: #f0f0f0; }
+      .selected { background-color: #e8f0fe; }
+      .footer { margin-top: 10px; display: flex; justify-content: space-between; }
+      .search { margin-bottom: 10px; width: 100%; padding: 5px; }
+      button { padding: 8px 12px; background-color: #4285f4; color: white; border: none; border-radius: 4px; cursor: pointer; }
+      button.secondary { background-color: #f0f0f0; color: #333; }
+      .action-btns { display: flex; gap: 5px; align-items: center; }
+      .category { font-weight: bold; margin-top: 5px; padding: 5px; background-color: #f0f0f0; }
+      .nested { margin-left: 15px; }
+      .info { font-size: 12px; color: #666; margin-bottom: 5px; }
+      .loading { display: none; margin-right: 10px; }
+      .loader { 
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid rgba(255,255,255,.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s ease-in-out infinite;
+        vertical-align: middle;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      .drag-handle {
+        display: inline-block;
+        width: 10px;
+        height: 16px;
+        background-image: radial-gradient(circle, #999 1px, transparent 1px);
+        background-size: 3px 3px;
+        background-position: 0 center;
+        background-repeat: repeat;
+        margin-right: 8px;
+        cursor: grab;
+        opacity: 0.5;
+      }
+      .selected:hover .drag-handle {
+        opacity: 1;
+      }
+      .dragging {
+        opacity: 0.4;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      }
+      .over {
+        border-top: 2px solid #4285f4;
+      }
+      .sheet-info {
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        margin-bottom: 15px;
+        font-size: 14px;
+        border-left: 4px solid #4285f4;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="sheet-info">
+        Configuring columns for <strong><?= entityType ?></strong> in sheet <strong>"<?= sheetName ?>"</strong>
+      </div>
+      <p class="info">Select columns from the left panel and add them to the right panel. Drag items in the right panel to reorder them.</p>
+    </div>
+    
+    <div class="container">
+      <div class="column">
+        <input type="text" id="searchBox" class="search" placeholder="Search for columns...">
+        <div class="header">Available Columns</div>
+        <div id="availableList" class="scrollable">
+          <!-- Available columns will be populated here by JavaScript -->
+        </div>
+      </div>
+      
+      <div class="column">
+        <div class="header">Selected Columns</div>
+        <div id="selectedList" class="scrollable">
+          <!-- Selected columns will be populated here by JavaScript -->
+        </div>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <div class="action-btns">
+        <button class="secondary" id="debug">View Debug Info</button>
+      </div>
+      <div class="action-btns">
+        <span class="loading" id="saveLoading"><span class="loader"></span> Saving...</span>
+        <button class="secondary" id="cancel">Cancel</button>
+        <button id="save">Save & Close</button>
+      </div>
+    </div>
+
+    <script>
+      // Initialize data
+      let availableColumns = <?= JSON.stringify(availableColumns) ?>;
+      let selectedColumns = <?= JSON.stringify(selectedColumns) ?>;
+      const entityType = "<?= entityType ?>";
+      const sheetName = "<?= sheetName ?>";
+      
+      // DOM elements
+      const availableList = document.getElementById('availableList');
+      const selectedList = document.getElementById('selectedList');
+      const searchBox = document.getElementById('searchBox');
+      
+      // Render the lists
+      function renderAvailableList(searchTerm = '') {
+        availableList.innerHTML = '';
+        
+        // Group columns by parent key or top-level
+        const topLevel = [];
+        const nested = {};
+        
+        availableColumns.forEach(col => {
+          if (!selectedColumns.some(selected => selected.key === col.key)) {
+            if (col.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+              if (!col.isNested) {
+                topLevel.push(col);
+              } else {
+                const parentKey = col.parentKey || 'unknown';
+                if (!nested[parentKey]) {
+                  nested[parentKey] = [];
+                }
+                nested[parentKey].push(col);
+              }
+            }
+          }
+        });
+        
+        // Add top-level columns first
+        if (topLevel.length > 0) {
+          const topLevelHeader = document.createElement('div');
+          topLevelHeader.className = 'category';
+          topLevelHeader.textContent = 'Main Fields';
+          availableList.appendChild(topLevelHeader);
+          
+          topLevel.forEach(col => {
+            const item = document.createElement('div');
+            item.className = 'item';
+            item.textContent = col.name;
+            item.dataset.key = col.key;
+            item.onclick = () => addColumn(col);
+            availableList.appendChild(item);
+          });
+        }
+        
+        // Then add nested columns by parent
+        for (const parentKey in nested) {
+          if (nested[parentKey].length > 0) {
+            const parentName = availableColumns.find(col => col.key === parentKey)?.name || parentKey;
+            
+            const categoryHeader = document.createElement('div');
+            categoryHeader.className = 'category';
+            categoryHeader.textContent = parentName;
+            availableList.appendChild(categoryHeader);
+            
+            nested[parentKey].forEach(col => {
+              const item = document.createElement('div');
+              item.className = 'item nested';
+              item.textContent = col.name;
+              item.dataset.key = col.key;
+              item.onclick = () => addColumn(col);
+              availableList.appendChild(item);
+            });
+          }
+        }
+      }
+      
+      function renderSelectedList() {
+        selectedList.innerHTML = '';
+        selectedColumns.forEach((col, index) => {
+          const item = document.createElement('div');
+          item.className = 'item selected';
+          item.dataset.key = col.key;
+          item.dataset.index = index;
+          item.draggable = true;
+          
+          // Add drag handle
+          const dragHandle = document.createElement('span');
+          dragHandle.className = 'drag-handle';
+          dragHandle.innerHTML = '&nbsp;&nbsp;&nbsp;';
+          item.appendChild(dragHandle);
+          
+          // Add column name
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = col.name;
+          item.appendChild(nameSpan);
+          
+          item.ondragstart = handleDragStart;
+          item.ondragover = handleDragOver;
+          item.ondrop = handleDrop;
+          item.ondragend = handleDragEnd;
+          
+          const removeBtn = document.createElement('span');
+          removeBtn.textContent = ' ✕';
+          removeBtn.style.color = 'red';
+          removeBtn.style.float = 'right';
+          removeBtn.style.cursor = 'pointer';
+          removeBtn.onclick = (e) => {
+            e.stopPropagation();
+            removeColumn(col);
+          };
+          
+          item.appendChild(removeBtn);
+          selectedList.appendChild(item);
+        });
+      }
+      
+      // Drag and drop functionality
+      let draggedItem = null;
+      
+      function handleDragStart(e) {
+        draggedItem = this;
+        this.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', this.dataset.index);
+        
+        // Add a small delay to make the visual change noticeable
+        setTimeout(() => {
+          this.style.opacity = '0.4';
+        }, 0);
+      }
+      
+      function handleDragOver(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        this.classList.add('over');
+      }
+      
+      function handleDrop(e) {
+        e.preventDefault();
+        this.classList.remove('over');
+        
+        const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+        const toIndex = parseInt(this.dataset.index);
+        
+        if (fromIndex !== toIndex) {
+          const item = selectedColumns[fromIndex];
+          selectedColumns.splice(fromIndex, 1);
+          selectedColumns.splice(toIndex, 0, item);
+          renderSelectedList();
+        }
+      }
+      
+      function handleDragEnd() {
+        this.classList.remove('dragging');
+        document.querySelectorAll('.item').forEach(item => {
+          item.classList.remove('over');
+        });
+      }
+      
+      // Column management
+      function addColumn(column) {
+        selectedColumns.push(column);
+        renderAvailableList(searchBox.value);
+        renderSelectedList();
+      }
+      
+      function removeColumn(column) {
+        selectedColumns = selectedColumns.filter(col => col.key !== column.key);
+        renderAvailableList(searchBox.value);
+        renderSelectedList();
+      }
+      
+      // Event listeners
+      document.getElementById('save').onclick = () => {
+        // Show loading animation
+        document.getElementById('saveLoading').style.display = 'inline-block';
+        document.getElementById('save').disabled = true;
+        document.getElementById('cancel').disabled = true;
+        
+        google.script.run
+          .withSuccessHandler(() => {
+            document.getElementById('saveLoading').style.display = 'none';
+            google.script.host.close();
+          })
+          .withFailureHandler((error) => {
+            document.getElementById('saveLoading').style.display = 'none';
+            document.getElementById('save').disabled = false;
+            document.getElementById('cancel').disabled = false;
+            alert('Error saving column preferences: ' + error.message);
+          })
+          .saveColumnPreferences(selectedColumns, entityType, sheetName);
+      };
+      
+      document.getElementById('cancel').onclick = () => {
+        google.script.host.close();
+      };
+      
+      document.getElementById('debug').onclick = () => {
+        google.script.run.logDebugInfo();
+        alert('Debug information has been logged to the Apps Script execution log. You can view it from View > Logs in the Apps Script editor.');
+      };
+      
+      searchBox.oninput = () => {
+        renderAvailableList(searchBox.value);
+      };
+      
+      // Initial render
+      renderAvailableList();
+      renderSelectedList();
+    </script>
+  </body>
+</html> 

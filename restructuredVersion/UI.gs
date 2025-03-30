@@ -8,77 +8,165 @@
  */
 
 /**
- * Shows the settings dialog
+ * Shows settings dialog where users can configure filter ID and entity type
  */
 function showSettings() {
-  try {
-    const docProps = PropertiesService.getDocumentProperties();
+  // Get the active sheet name
+  const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const activeSheetName = activeSheet.getName();
+  
+  // Get current settings from properties
+  const scriptProperties = PropertiesService.getScriptProperties();
+  
+  // Check if we're authenticated
+  const accessToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
+  if (!accessToken) {
+    const ui = SpreadsheetApp.getUi();
+    const result = ui.alert(
+      'Not Connected',
+      'You need to connect to Pipedrive before configuring settings. Connect now?',
+      ui.ButtonSet.YES_NO
+    );
     
-    // Get current settings
-    const apiKey = docProps.getProperty('PIPEDRIVE_API_KEY') || '';
-    const subdomain = docProps.getProperty('PIPEDRIVE_SUBDOMAIN') || DEFAULT_PIPEDRIVE_SUBDOMAIN;
-    const entityType = docProps.getProperty('PIPEDRIVE_ENTITY_TYPE') || ENTITY_TYPES.DEALS;
-    const filterId = docProps.getProperty('PIPEDRIVE_FILTER_ID') || '';
-    const sheetName = docProps.getProperty('EXPORT_SHEET_NAME') || DEFAULT_SHEET_NAME;
-    const enableTimestamp = docProps.getProperty('ENABLE_TIMESTAMP') === 'true';
-    
-    // Create the HTML from a template
-    const htmlTemplate = HtmlService.createTemplateFromFile('SettingsDialog');
-    
-    // Pass settings to the template
-    htmlTemplate.apiKey = apiKey;
-    htmlTemplate.subdomain = subdomain;
-    htmlTemplate.entityType = entityType;
-    htmlTemplate.filterId = filterId;
-    htmlTemplate.sheetName = sheetName;
-    htmlTemplate.enableTimestamp = enableTimestamp;
-    
-    // Initialize error to null - this fixes the "error is not defined" issue
-    htmlTemplate.error = null;
-    
-    // Get filters if API key and subdomain are configured
-    if (apiKey && subdomain) {
-      try {
-        const filters = getPipedriveFilters();
-        htmlTemplate.filters = filters;
-        
-        // Debug - Log filter types and count
-        const filtersByType = {};
-        filters.forEach(filter => {
-          // Log both original and normalized types
-          Logger.log(`Filter "${filter.name}": original type = ${filter.type}, normalized type = ${filter.normalizedType}`);
-          
-          // Group by normalized type for more accurate counting
-          const typeKey = filter.normalizedType || filter.type;
-          if (!filtersByType[typeKey]) {
-            filtersByType[typeKey] = [];
-          }
-          filtersByType[typeKey].push(filter.name);
-        });
-        
-        Logger.log("Current entity type: " + entityType);
-        Logger.log("Filters by normalized type: " + JSON.stringify(filtersByType));
-        Logger.log("Total filters: " + filters.length);
-      } catch (e) {
-        htmlTemplate.error = `Failed to load filters: ${e.message}`;
-        htmlTemplate.filters = [];
-      }
-    } else {
-      htmlTemplate.filters = [];
+    if (result === ui.Button.YES) {
+      showAuthorizationDialog();
     }
-    
-    // Create the HTML from the template
-    const html = htmlTemplate.evaluate()
-      .setTitle('Pipedrive Settings')
-      .setWidth(600)
-      .setHeight(550);
-    
-    // Show the dialog
-    SpreadsheetApp.getUi().showModalDialog(html, 'Pipedrive Settings');
-  } catch (e) {
-    Logger.log(`Error in showSettings: ${e.message}`);
-    SpreadsheetApp.getUi().alert('Error', 'Failed to open settings dialog: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
   }
+  
+  const savedSubdomain = scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') || DEFAULT_PIPEDRIVE_SUBDOMAIN;
+  
+  // Get sheet-specific settings using the sheet name
+  const sheetFilterIdKey = `FILTER_ID_${activeSheetName}`;
+  const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
+  
+  const savedFilterId = scriptProperties.getProperty(sheetFilterIdKey) || '';
+  const savedEntityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
+  
+  // Create HTML content for the settings dialog
+  const htmlOutput = HtmlService.createHtmlOutput(`
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; padding: 10px; }
+      label { display: block; margin-top: 10px; font-weight: bold; }
+      input, select { width: 100%; padding: 5px; margin-top: 5px; }
+      .button-container { margin-top: 20px; text-align: right; }
+      button { padding: 8px 12px; background-color: #4285f4; color: white; border: none; border-radius: 4px; cursor: pointer; }
+      .note { font-size: 12px; color: #666; margin-top: 5px; }
+      .domain-container { display: flex; align-items: center; }
+      .domain-input { flex: 1; margin-right: 5px; }
+      .domain-suffix { padding: 5px; background: #f0f0f0; border: 1px solid #ccc; }
+      .loading { display: none; margin-right: 10px; }
+      .loader { 
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid rgba(255,255,255,.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s ease-in-out infinite;
+        vertical-align: middle;
+      }
+      .sheet-info {
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        margin-bottom: 15px;
+        font-size: 14px;
+        border-left: 4px solid #4285f4;
+      }
+      .connected-status {
+        background-color: #e6f4ea;
+        border-left: 4px solid #34a853;
+        padding: 10px;
+        border-radius: 4px;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+      }
+      .connected-status i {
+        color: #34a853;
+        margin-right: 10px;
+        font-size: 24px;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+    <h3>Pipedrive Integration Settings</h3>
+    
+    <div class="connected-status">
+      <span style="color: #34a853; font-size: 24px; margin-right: 10px;">✓</span>
+      <div>
+        <strong>Connected to Pipedrive</strong><br>
+        <span style="font-size: 12px;">Company: ${savedSubdomain}.pipedrive.com</span>
+      </div>
+      <button style="margin-left: auto; background-color: #f1f3f4; color: #202124;" onclick="reconnect()">Reconnect</button>
+    </div>
+    
+    <div class="sheet-info">
+      Configuring settings for sheet: <strong>"${activeSheetName}"</strong>
+    </div>
+    
+    <form id="settingsForm">
+      <label for="entityType">Entity Type:</label>
+      <select id="entityType">
+        <option value="deals" ${savedEntityType === 'deals' ? 'selected' : ''}>Deals</option>
+        <option value="persons" ${savedEntityType === 'persons' ? 'selected' : ''}>Persons</option>
+        <option value="organizations" ${savedEntityType === 'organizations' ? 'selected' : ''}>Organizations</option>
+        <option value="activities" ${savedEntityType === 'activities' ? 'selected' : ''}>Activities</option>
+        <option value="leads" ${savedEntityType === 'leads' ? 'selected' : ''}>Leads</option>
+      </select>
+      <p class="note">Select which entity type you want to sync from Pipedrive</p>
+      
+      <label for="filterId">Filter ID:</label>
+      <input type="text" id="filterId" value="${savedFilterId}" />
+      <p class="note">The filter ID can be found in the URL when viewing your filter in Pipedrive</p>
+      
+      <input type="hidden" id="sheetName" value="${activeSheetName}" />
+      <p class="note">The data will be exported to the current sheet: "${activeSheetName}"</p>
+      
+      <div class="button-container">
+        <span class="loading" id="saveLoading"><span class="loader"></span> Saving...</span>
+        <button type="button" id="saveBtn" onclick="saveSettings()">Save Settings</button>
+      </div>
+    </form>
+    
+    <script>
+      function saveSettings() {
+        const entityType = document.getElementById('entityType').value;
+        const filterId = document.getElementById('filterId').value;
+        const sheetName = document.getElementById('sheetName').value;
+        
+        // Show loading animation
+        document.getElementById('saveLoading').style.display = 'inline-block';
+        document.getElementById('saveBtn').disabled = true;
+        
+        google.script.run
+          .withSuccessHandler(function() {
+            document.getElementById('saveLoading').style.display = 'none';
+            document.getElementById('saveBtn').disabled = false;
+            alert('Settings saved successfully!');
+            google.script.host.close();
+          })
+          .withFailureHandler(function(error) {
+            document.getElementById('saveLoading').style.display = 'none';
+            document.getElementById('saveBtn').disabled = false;
+            alert('Error saving settings: ' + error.message);
+          })
+          .saveSettings('', entityType, filterId, '', sheetName);
+      }
+      
+      function reconnect() {
+        google.script.host.close();
+        google.script.run.showAuthorizationDialog();
+      }
+    </script>
+  `)
+  .setWidth(400)
+  .setHeight(520)
+  .setTitle(`Pipedrive Settings for "${activeSheetName}"`);
+  
+  SpreadsheetApp.getUi().showModalDialog(htmlOutput, `Pipedrive Settings for "${activeSheetName}"`);
 }
 
 /**
@@ -241,52 +329,322 @@ function extractFields(fields, parentPath = '', parentName = '') {
  * @param {string} sheetName - Sheet name
  */
 function showColumnSelectorUI(availableColumns, selectedColumns, entityType, sheetName) {
-  try {
-    // Create the HTML template
-    const htmlTemplate = HtmlService.createTemplateFromFile('ColumnSelector');
+  const htmlContent = `
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; padding: 10px; }
+      .container { display: flex; height: 400px; }
+      .column { width: 50%; padding: 10px; box-sizing: border-box; }
+      .scrollable { height: 340px; overflow-y: auto; border: 1px solid #ccc; padding: 5px; }
+      .header { font-weight: bold; margin-bottom: 10px; }
+      .item { padding: 5px; margin: 2px 0; cursor: pointer; border-radius: 3px; }
+      .item:hover { background-color: #f0f0f0; }
+      .selected { background-color: #e8f0fe; }
+      .footer { margin-top: 10px; display: flex; justify-content: space-between; }
+      .search { margin-bottom: 10px; width: 100%; padding: 5px; }
+      button { padding: 8px 12px; background-color: #4285f4; color: white; border: none; border-radius: 4px; cursor: pointer; }
+      button.secondary { background-color: #f0f0f0; color: #333; }
+      .action-btns { display: flex; gap: 5px; align-items: center; }
+      .category { font-weight: bold; margin-top: 5px; padding: 5px; background-color: #f0f0f0; }
+      .nested { margin-left: 15px; }
+      .info { font-size: 12px; color: #666; margin-bottom: 5px; }
+      .loading { display: none; margin-right: 10px; }
+      .loader { 
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid rgba(255,255,255,.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s ease-in-out infinite;
+        vertical-align: middle;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      .drag-handle {
+        display: inline-block;
+        width: 10px;
+        height: 16px;
+        background-image: radial-gradient(circle, #999 1px, transparent 1px);
+        background-size: 3px 3px;
+        background-position: 0 center;
+        background-repeat: repeat;
+        margin-right: 8px;
+        cursor: grab;
+        opacity: 0.5;
+      }
+      .selected:hover .drag-handle {
+        opacity: 1;
+      }
+      .dragging {
+        opacity: 0.4;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      }
+      .over {
+        border-top: 2px solid #4285f4;
+      }
+      .sheet-info {
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        margin-bottom: 15px;
+        font-size: 14px;
+        border-left: 4px solid #4285f4;
+      }
+    </style>
     
-    // Pass data to the template
-    htmlTemplate.availableColumns = availableColumns;
-    htmlTemplate.selectedColumns = selectedColumns;
-    htmlTemplate.entityType = entityType;
-    htmlTemplate.sheetName = sheetName;
+    <div class="header">
+      <div class="sheet-info">
+        Configuring columns for <strong>${entityType}</strong> in sheet <strong>"${sheetName}"</strong>
+      </div>
+      <p class="info">Select columns from the left panel and add them to the right panel. Drag items in the right panel to reorder them.</p>
+    </div>
     
-    // Add entity type label
-    switch (entityType) {
-      case ENTITY_TYPES.DEALS:
-        htmlTemplate.entityTypeLabel = 'Deal';
-        break;
-      case ENTITY_TYPES.PERSONS:
-        htmlTemplate.entityTypeLabel = 'Person';
-        break;
-      case ENTITY_TYPES.ORGANIZATIONS:
-        htmlTemplate.entityTypeLabel = 'Organization';
-        break;
-      case ENTITY_TYPES.ACTIVITIES:
-        htmlTemplate.entityTypeLabel = 'Activity';
-        break;
-      case ENTITY_TYPES.LEADS:
-        htmlTemplate.entityTypeLabel = 'Lead';
-        break;
-      case ENTITY_TYPES.PRODUCTS:
-        htmlTemplate.entityTypeLabel = 'Product';
-        break;
-      default:
-        htmlTemplate.entityTypeLabel = 'Record';
-    }
+    <div class="container">
+      <div class="column">
+        <input type="text" id="searchBox" class="search" placeholder="Search for columns...">
+        <div class="header">Available Columns</div>
+        <div id="availableList" class="scrollable">
+          <!-- Available columns will be populated here by JavaScript -->
+        </div>
+      </div>
+      
+      <div class="column">
+        <div class="header">Selected Columns</div>
+        <div id="selectedList" class="scrollable">
+          <!-- Selected columns will be populated here by JavaScript -->
+        </div>
+      </div>
+    </div>
     
-    // Create the HTML from the template
-    const html = htmlTemplate.evaluate()
-      .setTitle('Select Columns')
-      .setWidth(800)
-      .setHeight(600);
-    
-    // Show the dialog
-    SpreadsheetApp.getUi().showModalDialog(html, 'Select Columns');
-  } catch (e) {
-    Logger.log(`Error in showColumnSelectorUI: ${e.message}`);
-    throw e;
-  }
+    <div class="footer">
+      <div class="action-btns">
+        <button class="secondary" id="debug">View Debug Info</button>
+      </div>
+      <div class="action-btns">
+        <span class="loading" id="saveLoading"><span class="loader"></span> Saving...</span>
+        <button class="secondary" id="cancel">Cancel</button>
+        <button id="save">Save & Close</button>
+      </div>
+    </div>
+
+    <script>
+      // Initialize data
+      let availableColumns = ${JSON.stringify(availableColumns)};
+      let selectedColumns = ${JSON.stringify(selectedColumns)};
+      const entityType = "${entityType}";
+      const sheetName = "${sheetName}";
+      
+      // DOM elements
+      const availableList = document.getElementById('availableList');
+      const selectedList = document.getElementById('selectedList');
+      const searchBox = document.getElementById('searchBox');
+      
+      // Render the lists
+      function renderAvailableList(searchTerm = '') {
+        availableList.innerHTML = '';
+        
+        // Group columns by parent key or top-level
+        const topLevel = [];
+        const nested = {};
+        
+        availableColumns.forEach(col => {
+          if (!selectedColumns.some(selected => selected.key === col.key)) {
+            if (col.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+              if (!col.isNested) {
+                topLevel.push(col);
+              } else {
+                const parentKey = col.parentKey || 'unknown';
+                if (!nested[parentKey]) {
+                  nested[parentKey] = [];
+                }
+                nested[parentKey].push(col);
+              }
+            }
+          }
+        });
+        
+        // Add top-level columns first
+        if (topLevel.length > 0) {
+          const topLevelHeader = document.createElement('div');
+          topLevelHeader.className = 'category';
+          topLevelHeader.textContent = 'Main Fields';
+          availableList.appendChild(topLevelHeader);
+          
+          topLevel.forEach(col => {
+            const item = document.createElement('div');
+            item.className = 'item';
+            item.textContent = col.name;
+            item.dataset.key = col.key;
+            item.onclick = () => addColumn(col);
+            availableList.appendChild(item);
+          });
+        }
+        
+        // Then add nested columns by parent
+        for (const parentKey in nested) {
+          if (nested[parentKey].length > 0) {
+            const parentName = availableColumns.find(col => col.key === parentKey)?.name || parentKey;
+            
+            const categoryHeader = document.createElement('div');
+            categoryHeader.className = 'category';
+            categoryHeader.textContent = parentName;
+            availableList.appendChild(categoryHeader);
+            
+            nested[parentKey].forEach(col => {
+              const item = document.createElement('div');
+              item.className = 'item nested';
+              item.textContent = col.name;
+              item.dataset.key = col.key;
+              item.onclick = () => addColumn(col);
+              availableList.appendChild(item);
+            });
+          }
+        }
+      }
+      
+      function renderSelectedList() {
+        selectedList.innerHTML = '';
+        selectedColumns.forEach((col, index) => {
+          const item = document.createElement('div');
+          item.className = 'item selected';
+          item.dataset.key = col.key;
+          item.dataset.index = index;
+          item.draggable = true;
+          
+          // Add drag handle
+          const dragHandle = document.createElement('span');
+          dragHandle.className = 'drag-handle';
+          dragHandle.innerHTML = '&nbsp;&nbsp;&nbsp;';
+          item.appendChild(dragHandle);
+          
+          // Add column name
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = col.name;
+          item.appendChild(nameSpan);
+          
+          item.ondragstart = handleDragStart;
+          item.ondragover = handleDragOver;
+          item.ondrop = handleDrop;
+          item.ondragend = handleDragEnd;
+          
+          const removeBtn = document.createElement('span');
+          removeBtn.textContent = ' ✕';
+          removeBtn.style.color = 'red';
+          removeBtn.style.float = 'right';
+          removeBtn.style.cursor = 'pointer';
+          removeBtn.onclick = (e) => {
+            e.stopPropagation();
+            removeColumn(col);
+          };
+          
+          item.appendChild(removeBtn);
+          selectedList.appendChild(item);
+        });
+      }
+      
+      // Drag and drop functionality
+      let draggedItem = null;
+      
+      function handleDragStart(e) {
+        draggedItem = this;
+        this.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', this.dataset.index);
+        
+        // Add a small delay to make the visual change noticeable
+        setTimeout(() => {
+          this.style.opacity = '0.4';
+        }, 0);
+      }
+      
+      function handleDragOver(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        this.classList.add('over');
+      }
+      
+      function handleDrop(e) {
+        e.preventDefault();
+        this.classList.remove('over');
+        
+        const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+        const toIndex = parseInt(this.dataset.index);
+        
+        if (fromIndex !== toIndex) {
+          const item = selectedColumns[fromIndex];
+          selectedColumns.splice(fromIndex, 1);
+          selectedColumns.splice(toIndex, 0, item);
+          renderSelectedList();
+        }
+      }
+      
+      function handleDragEnd() {
+        this.classList.remove('dragging');
+        document.querySelectorAll('.item').forEach(item => {
+          item.classList.remove('over');
+        });
+      }
+      
+      // Column management
+      function addColumn(column) {
+        selectedColumns.push(column);
+        renderAvailableList(searchBox.value);
+        renderSelectedList();
+      }
+      
+      function removeColumn(column) {
+        selectedColumns = selectedColumns.filter(col => col.key !== column.key);
+        renderAvailableList(searchBox.value);
+        renderSelectedList();
+      }
+      
+      // Event listeners
+      document.getElementById('save').onclick = () => {
+        // Show loading animation
+        document.getElementById('saveLoading').style.display = 'inline-block';
+        document.getElementById('save').disabled = true;
+        document.getElementById('cancel').disabled = true;
+        
+        google.script.run
+          .withSuccessHandler(() => {
+            document.getElementById('saveLoading').style.display = 'none';
+            google.script.host.close();
+          })
+          .withFailureHandler((error) => {
+            document.getElementById('saveLoading').style.display = 'none';
+            document.getElementById('save').disabled = false;
+            document.getElementById('cancel').disabled = false;
+            alert('Error saving column preferences: ' + error.message);
+          })
+          .saveColumnPreferences(selectedColumns, entityType, sheetName);
+      };
+      
+      document.getElementById('cancel').onclick = () => {
+        google.script.host.close();
+      };
+      
+      document.getElementById('debug').onclick = () => {
+        google.script.run.logDebugInfo();
+        alert('Debug information has been logged to the Apps Script execution log. You can view it from View > Logs in the Apps Script editor.');
+      };
+      
+      searchBox.oninput = () => {
+        renderAvailableList(searchBox.value);
+      };
+      
+      // Initial render
+      renderAvailableList();
+      renderSelectedList();
+    </script>
+  `;
+  
+  const htmlOutput = HtmlService.createHtmlOutput(htmlContent)
+    .setWidth(800)
+    .setHeight(550)
+    .setTitle(`Select Columns for ${entityType} in "${sheetName}"`);
+  
+  SpreadsheetApp.getUi().showModalDialog(htmlOutput, `Select Columns for ${entityType} in "${sheetName}"`);
 }
 
 /**

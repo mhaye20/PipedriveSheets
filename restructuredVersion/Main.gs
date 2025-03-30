@@ -48,31 +48,16 @@ let VERIFIED_USERS = {};
 const fieldDefinitionsCache = {};
 
 /**
- * This function runs when a user opens any spreadsheet with your add-on
+ * Creates the menu when the spreadsheet opens
  */
 function onOpen() {
-  try {
-    Logger.log(`onOpen running, creating initial menu`);
-    const ui = SpreadsheetApp.getUi();
-    
-    // Always create a basic menu first, regardless of verification
-    const menu = ui.createMenu('Pipedrive');
-    
-    // Add a verification check item that will then create the full menu
-    menu.addItem('Initialize Pipedrive Menu', 'initializePipedriveMenu');
-    menu.addToUi();
-    
-    // Always try to detect column shifts
-    detectColumnShifts();
-  } catch (e) {
-    Logger.log(`Error in onOpen: ${e.message}`);
-    try {
-      // Maintain your existing error handling
-      detectColumnShifts();
-    } catch (shiftError) {
-      Logger.log(`Error in detectColumnShifts: ${shiftError.message}`);
-    }
-  }
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('Pipedrive')
+    .addItem('Connect to Pipedrive', 'showAuthorizationDialog')
+    .addItem('Sync Data', 'syncFromPipedrive')
+    .addItem('Select Columns', 'showColumnSelector')
+    .addItem('Settings', 'showSettings')
+    .addToUi();
 }
 
 /**
