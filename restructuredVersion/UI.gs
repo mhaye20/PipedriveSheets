@@ -960,6 +960,23 @@ function showSyncStatus(sheetName) {
     const sheetEntityTypeKey = `ENTITY_TYPE_${sheetName}`;
     const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
     
+    // Initialize sync status properties
+    scriptProperties.setProperty('SYNC_PHASE_1_STATUS', 'active');
+    scriptProperties.setProperty('SYNC_PHASE_1_DETAIL', 'Connecting to Pipedrive...');
+    scriptProperties.setProperty('SYNC_PHASE_1_PROGRESS', '50');
+    
+    scriptProperties.setProperty('SYNC_PHASE_2_STATUS', 'pending');
+    scriptProperties.setProperty('SYNC_PHASE_2_DETAIL', 'Waiting to start...');
+    scriptProperties.setProperty('SYNC_PHASE_2_PROGRESS', '0');
+    
+    scriptProperties.setProperty('SYNC_PHASE_3_STATUS', 'pending');
+    scriptProperties.setProperty('SYNC_PHASE_3_DETAIL', 'Waiting to start...');
+    scriptProperties.setProperty('SYNC_PHASE_3_PROGRESS', '0');
+    
+    scriptProperties.setProperty('SYNC_CURRENT_PHASE', '1');
+    scriptProperties.setProperty('SYNC_COMPLETED', 'false');
+    scriptProperties.setProperty('SYNC_ERROR', '');
+    
     // Create the HTML template
     const htmlTemplate = HtmlService.createTemplateFromFile('SyncStatus');
     

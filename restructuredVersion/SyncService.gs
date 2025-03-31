@@ -144,7 +144,7 @@ function syncFromPipedrive() {
     // If there's an error, show it
     spreadsheet.toast('Error: ' + error.message, 'Sync Error', 10);
     Logger.log('Sync error: ' + error.message);
-    updateSyncStatus('error', 'Failed', error.message, 100);
+    updateSyncStatus('3', 'error', error.message, 100);
   }
 }
 
@@ -162,11 +162,15 @@ function syncPipedriveDataToSheet(entityType, skipPush = false) {
     const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     const sheetName = activeSheet.getName();
     
-    updateSyncStatus('retrieving', 'In Progress', `Retrieving ${entityType} from Pipedrive...`, 10);
+    // Update phase 1: Connecting and initializing
+    updateSyncStatus('1', 'active', 'Connecting to Pipedrive...', 50);
     
     // Get filtered data based on entity type
     let items = [];
     let fields = [];
+    
+    // Update phase 2: Retrieving data from Pipedrive
+    updateSyncStatus('2', 'active', `Retrieving ${entityType} from Pipedrive...`, 10);
     
     switch (entityType) {
       case ENTITY_TYPES.DEALS:
@@ -198,12 +202,15 @@ function syncPipedriveDataToSheet(entityType, skipPush = false) {
     }
     
     if (!items || items.length === 0) {
-      updateSyncStatus('complete', 'No Data', `No ${entityType} found with the selected filter.`, 100);
+      updateSyncStatus('2', 'warning', `No ${entityType} found with the selected filter.`, 100);
       return;
     }
     
-    // Update status
-    updateSyncStatus('processing', 'In Progress', `Processing ${items.length} ${entityType}...`, 30);
+    // Update phase 2 completion
+    updateSyncStatus('2', 'completed', `Retrieved ${items.length} ${entityType} from Pipedrive`, 100);
+    
+    // Update phase 3: Processing and writing data
+    updateSyncStatus('3', 'active', `Processing ${items.length} ${entityType}...`, 30);
     
     // Get team-aware column preferences
     let selectedColumns = SyncService.getTeamAwareColumnPreferences(entityType, sheetName);
@@ -225,91 +232,128 @@ function syncPipedriveDataToSheet(entityType, skipPush = false) {
         case ENTITY_TYPES.ORGANIZATIONS:
           defaultColumnKeys = ['id', 'name', 'address', 'owner_id', 'created_at', 'updated_at'];
           break;
+        case ENTITY_TYPES.ACTIVITIES:
+          defaultColumnKeys = ['id', 'type', 'due_date', 'duration', 'deal_id', 'person_id', 'org_id', 'note', 'created_at', 'updated_at'];
+          break;
+        case ENTITY_TYPES.LEADS:
+          defaultColumnKeys = ['id', 'title', 'owner_id', 'person_id', 'organization_id', 'created_at', 'updated_at'];
+          break;
+        case ENTITY_TYPES.PRODUCTS:
+          defaultColumnKeys = ['id', 'name', 'code', 'description', 'unit', 'tax', 'active_flag', 'created_at', 'updated_at'];
+          break;
       }
       
-      // Convert keys to column objects with names
-      selectedColumns = defaultColumnKeys.map(key => {
-        // Find the field name from available fields
-        let name = key; // Default if not found
-        for (const field of fields) {
-          if (field.key === key) {
-            name = field.name;
-            break;
-          }
-        }
-        
-        return {
-          key: key,
-          name: name
-        };
-      });
-      
-      updateSyncStatus('processing', 'In Progress', `No columns selected, using defaults`, 40);
-      
-      // Save the default columns as preferences
-      SyncService.saveTeamAwareColumnPreferences(selectedColumns, entityType, sheetName);
+      // Create column objects from default keys
+      selectedColumns = defaultColumnKeys.map(key => ({ key: key }));
+      updateSyncStatus('3', 'active', `No columns selected, using defaults`, 40);
     }
     
-    // Process the data
-    updateSyncStatus('formatting', 'In Progress', `Formatting data for spreadsheet...`, 50);
+    // Format the data for the spreadsheet
+    updateSyncStatus('3', 'active', `Formatting data for spreadsheet...`, 50);
     
-    // Get field option mappings
-    const optionMappings = getFieldOptionMappingsForEntity(entityType);
+    // Create header row from selected columns
+    const headerRow = [];
     
-    // Prepare for writing to sheet
-    const isWriteTimestamp = docProps.getProperty('ENABLE_TIMESTAMP') === 'true';
-    const isTwoWaySync = docProps.getProperty('ENABLE_TWO_WAY_SYNC') === 'true';
+    // Loop through selected columns to create header names
+    selectedColumns.forEach(column => {
+      // Column can be an object with key/customName or just a string
+      let columnName = '';
+      
+      if (typeof column === 'object' && column.key) {
+        // If column has a custom name defined, use that
+        if (column.customName) {
+          columnName = column.customName;
+        } else {
+          // Look for a friendly name in fields
+          const matchingField = fields.find(f => f.key === column.key);
+          if (matchingField) {
+            columnName = formatColumnName(matchingField.name);
+          } else {
+            // Use the key as a fallback
+            columnName = formatColumnName(column.key);
+          }
+        }
+      } else if (typeof column === 'string') {
+        // If column is just a string key, look up its name in fields
+        const matchingField = fields.find(f => f.key === column);
+        if (matchingField) {
+          columnName = formatColumnName(matchingField.name);
+        } else {
+          columnName = formatColumnName(column);
+        }
+      }
+      
+      headerRow.push(columnName);
+    });
     
-    // Determine options for writing data to sheet
-    const writeOptions = {
-      sheetName: sheetName,
+    // Get field option mappings for dropdown/option fields
+    let optionMappings = {};
+    try {
+      // Check if the function exists in the PipedriveAPI namespace
+      if (typeof getFieldOptionMappingsForEntity === 'function') {
+        optionMappings = getFieldOptionMappingsForEntity(entityType);
+        Logger.log(`Retrieved option mappings for ${entityType}`);
+      } else if (typeof PipedriveAPI !== 'undefined' && typeof PipedriveAPI.getFieldOptionMappingsForEntity === 'function') {
+        optionMappings = PipedriveAPI.getFieldOptionMappingsForEntity(entityType);
+        Logger.log(`Retrieved option mappings for ${entityType} from PipedriveAPI namespace`);
+      } else {
+        Logger.log('getFieldOptionMappingsForEntity function not found. Option values may not display correctly.');
+      }
+    } catch (e) {
+      Logger.log(`Error getting field option mappings: ${e.message}`);
+    }
+    
+    // Prepare data for writing to the sheet following the original structure
+    const options = {
       entityType: entityType,
-      isWriteTimestamp: isWriteTimestamp,
-      isTwoWaySync: isTwoWaySync,
-      trackingColumn: docProps.getProperty('SYNC_TRACKING_COLUMN'),
-      selectedColumns: selectedColumns || [],
-      optionMappings: optionMappings,
-      fields: fields
+      sheetName: sheetName,
+      headerRow: headerRow,    // Pass the prepared header row
+      columns: selectedColumns, // Pass column objects/keys
+      fields: fields,
+      optionMappings: optionMappings, // Include option mappings for dropdown fields
+      showTimestamp: docProps.getProperty('SHOW_TIMESTAMP') === 'true',
+      enableTwoWaySync: docProps.getProperty(`TWOWAY_SYNC_ENABLED_${sheetName}`) === 'true',
+      trackingColumn: docProps.getProperty(`TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`) || ''
     };
     
-    // Write data to sheet
-    updateSyncStatus('writing', 'In Progress', `Writing data to sheet...`, 70);
-    writeDataToSheet(items, writeOptions);
+    // Write data to the spreadsheet
+    updateSyncStatus('3', 'active', `Writing data to sheet...`, 70);
+    writeDataToSheet(items, options);
     
-    // Update the sync status to complete
-    updateSyncStatus('complete', 'Success', `Successfully synced ${items.length} ${entityType} to sheet.`, 100);
+    // Mark as completed
+    updateSyncStatus('3', 'completed', `Successfully synced ${items.length} ${entityType} to sheet.`, 100);
     
-    // If two-way sync is enabled and we're not skipping push, refresh the sync status formatting
-    if (isTwoWaySync && !skipPush) {
-      refreshSyncStatusStyling();
+    // Update the last sync time
+    if (options.enableTwoWaySync) {
+      const now = new Date().toISOString();
+      docProps.setProperty(`TWOWAY_SYNC_LAST_SYNC_${sheetName}`, now);
     }
   } catch (e) {
     Logger.log(`Error in syncPipedriveDataToSheet: ${e.message}`);
-    updateSyncStatus('error', 'Failed', e.message, 100);
-    throw e;
+    updateSyncStatus('3', 'error', e.message, 100);
+    throw e;  // Re-throw to allow caller to handle
   }
 }
 
 /**
- * Writes the data to the sheet
- * @param {Array} items - The Pipedrive items to write
+ * Writes data to the sheet with the specified entities and options
+ * @param {Array} items - Array of Pipedrive entities to write
  * @param {Object} options - Options for writing data
  */
 function writeDataToSheet(items, options) {
   try {
-    const { 
-      sheetName, 
-      entityType, 
-      isWriteTimestamp, 
-      isTwoWaySync,
-      trackingColumn,
-      selectedColumns,
-      optionMappings,
-      fields 
-    } = options;
+    // Extract options with defaults for safety
+    const sheetName = options.sheetName || SpreadsheetApp.getActiveSheet().getName();
+    const entityType = options.entityType || ENTITY_TYPES.DEALS;
+    const columns = options.columns || [];
+    const fields = options.fields || [];
+    const isWriteTimestamp = options.showTimestamp === true;
+    const isTwoWaySync = options.enableTwoWaySync === true;
+    const trackingColumn = options.trackingColumn || '';
+    const optionMappings = options.optionMappings || {};
     
     Logger.log(`Writing data to sheet: ${sheetName}, entityType: ${entityType}`);
-    Logger.log(`Selected columns: ${selectedColumns.length}, isWriteTimestamp: ${isWriteTimestamp}, isTwoWaySync: ${isTwoWaySync}`);
+    Logger.log(`Selected columns: ${columns.length}, isWriteTimestamp: ${isWriteTimestamp}, isTwoWaySync: ${isTwoWaySync}`);
     
     // Get the active spreadsheet and destination sheet
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -323,76 +367,136 @@ function writeDataToSheet(items, options) {
     // Clear existing content
     sheet.clear();
     
-    // Extract column keys if selectedColumns contains objects
-    const columnsToPull = selectedColumns.map(col => {
-      return typeof col === 'object' && col.key ? col.key : col;
-    });
+    // Use the provided headerRow if available, otherwise generate from columns
+    let headerRow = options.headerRow || [];
     
-    // Create header row
-    const headerRow = ['ID'];
-    
-    // Add selected columns to header
-    for (const columnKey of columnsToPull) {
-      // Get user-friendly column name
-      let columnName = columnKey; // Default to key if name not found
-      
-      // First look in selectedColumns for a matching object with name
-      const columnObj = selectedColumns.find(col => {
-        if (typeof col === 'object' && col.key === columnKey) return true;
-        return col === columnKey;
+    // If no headerRow provided, generate from columns
+    if (!headerRow || headerRow.length === 0) {
+      // Extract column keys if selectedColumns contains objects
+      const columnsToPull = columns.map(col => {
+        return typeof col === 'object' && col.key ? col.key : col;
       });
       
-      if (columnObj && typeof columnObj === 'object' && columnObj.name) {
-        columnName = formatColumnName(columnObj.name);
-      } else {
-        // Fall back to searching fields
-        for (const field of fields) {
-          if (field.key === columnKey) {
-            columnName = formatColumnName(field.name);
-            break;
+      headerRow = [];
+      
+      // Add selected columns to header
+      for (const columnKey of columnsToPull) {
+        // Get user-friendly column name
+        let columnName = columnKey; // Default to key if name not found
+        
+        // First look in columns for a matching object with name
+        const columnObj = columns.find(col => {
+          if (typeof col === 'object' && col.key === columnKey) return true;
+          return col === columnKey;
+        });
+        
+        if (columnObj && typeof columnObj === 'object' && columnObj.name) {
+          columnName = formatColumnName(columnObj.name);
+        } else if (fields && fields.length > 0) {
+          // Fall back to searching fields
+          for (const field of fields) {
+            if (field && field.key === columnKey) {
+              columnName = formatColumnName(field.name);
+              break;
+            }
           }
         }
+        
+        headerRow.push(columnName);
       }
-      
-      headerRow.push(columnName);
     }
+    
+    // Make a copy of the headerRow for use in the full header
+    const fullHeaderRow = [...headerRow];
     
     // Add timestamp column if enabled
     if (isWriteTimestamp) {
-      headerRow.push('Last Sync Time');
+      fullHeaderRow.push('Last Sync Time');
     }
     
     // Add sync status column if two-way sync is enabled
     if (isTwoWaySync) {
-      headerRow.push('Sync Status');
+      fullHeaderRow.push('Sync Status');
     }
     
     // Write header row
-    sheet.getRange(1, 1, 1, headerRow.length).setValues([headerRow])
+    sheet.getRange(1, 1, 1, fullHeaderRow.length).setValues([fullHeaderRow])
       .setFontWeight('bold')
       .setBackground('#f3f3f3');
     
     // Prepare data rows
     const dataRows = [];
     
+    // Handle empty items array
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      // Just write headers, no data rows
+      Logger.log('No items to write to sheet');
+      return true;
+    }
+    
     for (const item of items) {
-      const row = [item.id.toString()];
+      if (!item) continue; // Skip null/undefined items
       
-      // Add values for selected columns
-      for (const columnKey of columnsToPull) {
-        let value = getValueByPath(item, columnKey);
-        value = formatValue(value, columnKey, optionMappings);
-        row.push(value);
+      // Create a row array with the right number of columns
+      const row = new Array(fullHeaderRow.length).fill('');
+      
+      // If using original structure with headerRow from options
+      if (options.headerRow && options.headerRow.length > 0 && columns && columns.length > 0) {
+        // Process each column according to the original structure
+        columns.forEach((column, index) => {
+          try {
+            // Get the value using path notation
+            let value = getValueByPath(item, column);
+            
+            // Format the value
+            if (typeof formatValue === 'function') {
+              value = formatValue(value, column, optionMappings);
+            } else {
+              // Basic fallback
+              value = value !== null && value !== undefined ? value.toString() : '';
+            }
+            
+            row[index] = value;
+          } catch (error) {
+            Logger.log(`Error getting value for column ${JSON.stringify(column)}: ${error.message}`);
+            row[index] = ''; // Push empty string for error cases
+          }
+        });
+      } else {
+        // Extract column keys if using the generated structure
+        const columnsToPull = columns.map(col => {
+          return typeof col === 'object' && col.key ? col.key : col;
+        });
+        
+        // Fill data for each column
+        columnsToPull.forEach((columnKey, index) => {
+          try {
+            let value = getValueByPath(item, columnKey);
+            
+            // Format the value
+            if (typeof formatValue === 'function') {
+              value = formatValue(value, columnKey, optionMappings);
+            } else {
+              // Basic fallback
+              value = value !== null && value !== undefined ? value.toString() : '';
+            }
+            
+            row[index] = value;
+          } catch (error) {
+            Logger.log(`Error getting value for column ${columnKey}: ${error.message}`);
+            row[index] = ''; // Push empty string for error cases
+          }
+        });
       }
       
       // Add timestamp if enabled
       if (isWriteTimestamp) {
-        row.push(new Date().toLocaleString());
+        row[headerRow.length] = new Date().toLocaleString();
       }
       
       // Add sync status if two-way sync is enabled
       if (isTwoWaySync) {
-        row.push('Synced');
+        row[fullHeaderRow.length - 1] = 'Synced';
       }
       
       dataRows.push(row);
@@ -400,35 +504,39 @@ function writeDataToSheet(items, options) {
     
     // Check and log lengths to diagnose mismatch
     if (dataRows.length > 0) {
-      Logger.log(`Header row length: ${headerRow.length}, Data row length: ${dataRows[0].length}`);
+      Logger.log(`Header row length: ${fullHeaderRow.length}, Data row length: ${dataRows[0].length}`);
       
       // Ensure all data rows have the same length as the header row
       for (let i = 0; i < dataRows.length; i++) {
         // Adjust row length if it doesn't match headers
-        if (dataRows[i].length < headerRow.length) {
+        if (dataRows[i].length < fullHeaderRow.length) {
           // Add empty cells to match header length
-          while (dataRows[i].length < headerRow.length) {
+          while (dataRows[i].length < fullHeaderRow.length) {
             dataRows[i].push('');
           }
-        } else if (dataRows[i].length > headerRow.length) {
+        } else if (dataRows[i].length > fullHeaderRow.length) {
           // Trim excess cells
-          dataRows[i] = dataRows[i].slice(0, headerRow.length);
+          dataRows[i] = dataRows[i].slice(0, fullHeaderRow.length);
         }
       }
     }
     
     // Write data rows
     if (dataRows.length > 0) {
-      sheet.getRange(2, 1, dataRows.length, headerRow.length).setValues(dataRows);
+      sheet.getRange(2, 1, dataRows.length, fullHeaderRow.length).setValues(dataRows);
     }
     
     // Apply formatting
-    sheet.autoResizeColumns(1, headerRow.length);
+    sheet.autoResizeColumns(1, fullHeaderRow.length);
     
     // Apply conditional formatting to sync status column if two-way sync is enabled
     if (isTwoWaySync) {
-      const syncStatusColumnIndex = headerRow.length;
+      const syncStatusColumnIndex = fullHeaderRow.length - 1;
       const syncStatusColumnLetter = columnToLetter(syncStatusColumnIndex);
+      
+      // Save the tracking column to properties
+      const scriptProperties = PropertiesService.getScriptProperties();
+      scriptProperties.setProperty(`TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`, syncStatusColumnLetter);
       
       // Create conditional formatting rules
       const range = sheet.getRange(`${syncStatusColumnLetter}2:${syncStatusColumnLetter}${dataRows.length + 1}`);
@@ -479,48 +587,145 @@ function writeDataToSheet(items, options) {
 }
 
 /**
- * Updates the sync status in the UI
- * @param {string} phase - Current phase of sync
- * @param {string} status - Status text
- * @param {string} detail - Detailed status message
+ * Updates the sync status properties
+ * @param {string} phase - The phase number ('1', '2', or '3')
+ * @param {string} status - Status of the phase ('active', 'completed', 'error', etc.)
+ * @param {string} detail - Detailed message about the phase
  * @param {number} progress - Progress percentage (0-100)
  */
 function updateSyncStatus(phase, status, detail, progress) {
   try {
-    // Get/create sync status object
-    const syncStatus = getSyncStatus() || {
-      phase: '',
-      status: '',
-      detail: '',
-      progress: 0,
-      startTime: new Date().getTime()
+    // Store both in our internal format and the format expected by the original implementation
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const userProps = PropertiesService.getUserProperties();
+    
+    // Get/create sync status object for our internal format
+    const syncStatus = {
+      phase: phase,
+      status: status,
+      detail: detail,
+      progress: progress,
+      lastUpdate: new Date().getTime()
     };
     
-    // Update fields
-    syncStatus.phase = phase;
-    syncStatus.status = status;
-    syncStatus.detail = detail;
-    syncStatus.progress = progress;
-    syncStatus.lastUpdate = new Date().getTime();
+    // Ensure progress is 100% for completed phases
+    if (status === 'completed') {
+      progress = 100;
+      syncStatus.progress = 100;
+    }
     
-    // Save to user properties
-    PropertiesService.getUserProperties().setProperty('SYNC_STATUS', JSON.stringify(syncStatus));
+    // Save to user properties in our format
+    userProps.setProperty('SYNC_STATUS', JSON.stringify(syncStatus));
+    
+    // Save in the original format for compatibility with the HTML
+    scriptProperties.setProperty(`SYNC_PHASE_${phase}_STATUS`, status);
+    scriptProperties.setProperty(`SYNC_PHASE_${phase}_DETAIL`, detail || '');
+    scriptProperties.setProperty(`SYNC_PHASE_${phase}_PROGRESS`, progress ? progress.toString() : '0');
+    
+    // Set current phase
+    scriptProperties.setProperty('SYNC_CURRENT_PHASE', phase.toString());
+    
+    // If status is error, store the error
+    if (status === 'error') {
+      scriptProperties.setProperty('SYNC_ERROR', detail || 'An error occurred');
+      scriptProperties.setProperty('SYNC_COMPLETED', 'true');
+      syncStatus.error = detail || 'An error occurred';
+    }
+    
+    // If this is the final phase completion, mark as completed
+    if (status === 'completed' && phase === '3') {
+      scriptProperties.setProperty('SYNC_COMPLETED', 'true');
+    }
+    
+    // Also show a toast message for visibility
+    let toastMessage = '';
+    if (phase === '1') toastMessage = 'Connecting to Pipedrive...';
+    else if (phase === '2') toastMessage = 'Retrieving data from Pipedrive...';
+    else if (phase === '3') toastMessage = 'Writing data to spreadsheet...';
+    
+    if (status === 'error') {
+      SpreadsheetApp.getActiveSpreadsheet().toast(`Error: ${detail}`, 'Sync Error', 5);
+    } else if (status === 'completed' && phase === '3') {
+      SpreadsheetApp.getActiveSpreadsheet().toast('Sync completed successfully!', 'Sync Status', 3);
+    } else if (detail) {
+      SpreadsheetApp.getActiveSpreadsheet().toast(detail, toastMessage, 2);
+    }
     
     return syncStatus;
   } catch (e) {
     Logger.log(`Error updating sync status: ${e.message}`);
+    // Still show a toast message as backup
+    SpreadsheetApp.getActiveSpreadsheet().toast(detail || 'Processing...', 'Sync Status', 2);
     return null;
   }
 }
 
 /**
- * Gets the current sync status
+ * Gets the current sync status for the dialog to poll
  * @return {Object} Sync status object or null if not available
  */
 function getSyncStatus() {
   try {
-    const statusJson = PropertiesService.getUserProperties().getProperty('SYNC_STATUS');
-    return statusJson ? JSON.parse(statusJson) : null;
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const userProps = PropertiesService.getUserProperties();
+    const statusJson = userProps.getProperty('SYNC_STATUS');
+    
+    if (!statusJson) {
+      // Return default format matching the expected structure in the HTML
+      return {
+        phase1: {
+          status: scriptProperties.getProperty('SYNC_PHASE_1_STATUS') || 'active',
+          detail: scriptProperties.getProperty('SYNC_PHASE_1_DETAIL') || 'Connecting to Pipedrive...',
+          progress: parseInt(scriptProperties.getProperty('SYNC_PHASE_1_PROGRESS') || '0')
+        },
+        phase2: {
+          status: scriptProperties.getProperty('SYNC_PHASE_2_STATUS') || 'pending',
+          detail: scriptProperties.getProperty('SYNC_PHASE_2_DETAIL') || 'Waiting to start...',
+          progress: parseInt(scriptProperties.getProperty('SYNC_PHASE_2_PROGRESS') || '0')
+        },
+        phase3: {
+          status: scriptProperties.getProperty('SYNC_PHASE_3_STATUS') || 'pending',
+          detail: scriptProperties.getProperty('SYNC_PHASE_3_DETAIL') || 'Waiting to start...',
+          progress: parseInt(scriptProperties.getProperty('SYNC_PHASE_3_PROGRESS') || '0')
+        },
+        currentPhase: scriptProperties.getProperty('SYNC_CURRENT_PHASE') || '1',
+        completed: scriptProperties.getProperty('SYNC_COMPLETED') || 'false',
+        error: scriptProperties.getProperty('SYNC_ERROR') || ''
+      };
+    }
+    
+    // Convert from our internal format to the format expected by the HTML
+    const status = JSON.parse(statusJson);
+    
+    // Identify which phase is active based on the phase field
+    const activePhase = status.phase || '1';
+    const statusValue = status.status || 'active';
+    const detailValue = status.detail || '';
+    const progressValue = status.progress || 0;
+    
+    // Create the response in the format expected by the HTML
+    const response = {
+      phase1: {
+        status: activePhase === '1' ? statusValue : (activePhase > '1' ? 'completed' : 'pending'),
+        detail: activePhase === '1' ? detailValue : (activePhase > '1' ? 'Completed' : 'Waiting to start...'),
+        progress: activePhase === '1' ? progressValue : (activePhase > '1' ? 100 : 0)
+      },
+      phase2: {
+        status: activePhase === '2' ? statusValue : (activePhase > '2' ? 'completed' : 'pending'),
+        detail: activePhase === '2' ? detailValue : (activePhase > '2' ? 'Completed' : 'Waiting to start...'),
+        progress: activePhase === '2' ? progressValue : (activePhase > '2' ? 100 : 0)
+      },
+      phase3: {
+        status: activePhase === '3' ? statusValue : (activePhase > '3' ? 'completed' : 'pending'),
+        detail: activePhase === '3' ? detailValue : (activePhase > '3' ? 'Completed' : 'Waiting to start...'),
+        progress: activePhase === '3' ? progressValue : (activePhase > '3' ? 100 : 0)
+      },
+      currentPhase: activePhase,
+      completed: activePhase === '3' && status.status === 'completed' ? 'true' : 'false',
+      error: status.error || ''
+    };
+    
+    return response;
   } catch (e) {
     Logger.log(`Error getting sync status: ${e.message}`);
     return null;
