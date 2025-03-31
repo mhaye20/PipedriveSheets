@@ -1759,123 +1759,167 @@ function showTriggerManager() {
 
 function showTwoWaySyncSettings() {
   try {
-    const scriptProps = PropertiesService.getScriptProperties();
+    // Get the active sheet name
     const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     const activeSheetName = activeSheet.getName();
-    
-    // Get entity type for the sheet
-    const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
-    const entityType = scriptProps.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
-    
-    // Get current settings
+
+    // Get current two-way sync settings from properties
+    const scriptProperties = PropertiesService.getScriptProperties();
     const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
-    const keyColumnKey = `TWOWAY_SYNC_KEY_COLUMN_${activeSheetName}`;
-    const changeDetectionKey = `TWOWAY_SYNC_DETECTION_${activeSheetName}`;
-    const createNewRecordsKey = `TWOWAY_SYNC_CREATE_NEW_${activeSheetName}`;
-    const syncOnEditKey = `TWOWAY_SYNC_ON_EDIT_${activeSheetName}`;
-    const fieldMappingsKey = `TWOWAY_SYNC_MAPPINGS_${activeSheetName}`;
-    
-    const enabledStr = scriptProps.getProperty(twoWaySyncEnabledKey);
-    const keyColumn = scriptProps.getProperty(keyColumnKey) || '';
-    const changeDetection = scriptProps.getProperty(changeDetectionKey) || 'cell';
-    const createNewRecordsStr = scriptProps.getProperty(createNewRecordsKey);
-    const syncOnEditStr = scriptProps.getProperty(syncOnEditKey);
-    const fieldMappingsStr = scriptProps.getProperty(fieldMappingsKey);
-    
-    // Get available columns
-    const availableColumns = getAvailableColumns(entityType);
-    
-    // Get Pipedrive fields for this entity type
-    const pipedriveFields = getPipedriverFields(entityType);
-    
-    // Parse field mappings if they exist
-    let fieldMappings = [];
-    try {
-      if (fieldMappingsStr) {
-        fieldMappings = JSON.parse(fieldMappingsStr);
-      }
-    } catch (e) {
-      Logger.log(`Error parsing field mappings: ${e.message}`);
-    }
-    
-    // Create a settings object with all properties the template needs
+    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
+    const twoWaySyncLastSyncKey = `TWOWAY_SYNC_LAST_SYNC_${activeSheetName}`;
+
+    const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
+    const trackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey) || '';
+    const lastSync = scriptProperties.getProperty(twoWaySyncLastSyncKey) || 'Never';
+
+    // Get sheet-specific entity type
+    const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
+    const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
+
+    // Create settings object to pass to the HTML template
     const settings = {
-      enabled: enabledStr === 'true',
-      keyColumn: keyColumn,
-      changeDetection: changeDetection,
-      createNewRecords: createNewRecordsStr === 'true',
-      syncOnEdit: syncOnEditStr === 'true',
-      fieldMappings: fieldMappings
+      enabled: twoWaySyncEnabled,
+      trackingColumn: trackingColumn,
+      lastSync: lastSync
     };
-    
+
     // Create the HTML template
     const htmlTemplate = HtmlService.createTemplateFromFile('TwoWaySyncSettings');
     
     // Pass data to the template
     htmlTemplate.settings = settings;
-    htmlTemplate.availableColumns = availableColumns;
-    htmlTemplate.pipedriveFields = pipedriveFields;
     htmlTemplate.entityType = entityType;
     htmlTemplate.sheetName = activeSheetName;
     
     // Create the HTML from the template
     const html = htmlTemplate.evaluate()
-      .setTitle('Two-Way Sync Settings')
       .setWidth(600)
-      .setHeight(650);
+      .setHeight(650)
+      .setTitle(`Two-Way Sync Settings for "${activeSheetName}"`);
     
     // Show the dialog
-    SpreadsheetApp.getUi().showModalDialog(html, 'Two-Way Sync Settings');
+    SpreadsheetApp.getUi().showModalDialog(html, `Two-Way Sync Settings for "${activeSheetName}"`);
   } catch (e) {
     Logger.log(`Error in showTwoWaySyncSettings: ${e.message}`);
     SpreadsheetApp.getUi().alert('Error', 'Failed to open two-way sync settings: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
-function saveTwoWaySyncSettings(settings, entityType, sheetName) {
+function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
   try {
-    if (!sheetName) {
-      // If no sheet name provided, use the active sheet
-      sheetName = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet().getName();
+    // Get the active sheet
+    const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const activeSheetName = activeSheet.getName();
+
+    // Get script properties
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
+    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
+    const twoWaySyncLastSyncKey = `TWOWAY_SYNC_LAST_SYNC_${activeSheetName}`;
+
+    // Save settings to properties
+    scriptProperties.setProperty(twoWaySyncEnabledKey, enableTwoWaySync.toString());
+    scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
+
+    // Store the previous tracking column if it exists
+    const previousTrackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey) || '';
+    const previousPosStr = scriptProperties.getProperty(`CURRENT_SYNCSTATUS_POS_${activeSheetName}`) || '-1';
+    const previousPos = parseInt(previousPosStr, 10);
+    const currentPos = trackingColumn ? columnLetterToIndex(trackingColumn) : -1;
+
+    if (previousTrackingColumn && previousTrackingColumn !== trackingColumn) {
+      scriptProperties.setProperty(`PREVIOUS_TRACKING_COLUMN_${activeSheetName}`, previousTrackingColumn);
+
+      // Also track when columns have been removed (causing a left shift)
+      if (previousPos >= 0 && currentPos >= 0 && currentPos < previousPos) {
+        Logger.log(`Detected column removal: Sync Status moved left from ${previousPos} to ${currentPos}`);
+
+        // Check all columns between previous and current positions (inclusive)
+        const maxPos = Math.max(previousPos + 3, activeSheet.getLastColumn()); // Add buffer
+        for (let i = 0; i <= maxPos; i++) {
+          const colLetter = columnToLetter(i);
+          if (colLetter !== trackingColumn) {
+            // Look for sync status indicators in this column
+            try {
+              const headerCell = activeSheet.getRange(1, i + 1);  // i is 0-based, getRange is 1-based
+              const headerValue = headerCell.getValue();
+              const note = headerCell.getNote();
+
+              // Extra check for Sync Status indicators
+              if (headerValue === "Sync Status" ||
+                (note && (note.includes('sync') || note.includes('track')))) {
+                cleanupColumnFormatting(activeSheet, colLetter);
+              }
+            } catch (e) {
+              Logger.log(`Error checking column ${colLetter}: ${e.message}`);
+            }
+          }
+        }
+      }
     }
-    
-    const scriptProps = PropertiesService.getScriptProperties();
-    
-    // Store all settings with sheet-specific keys
-    const enabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
-    const keyColumnKey = `TWOWAY_SYNC_KEY_COLUMN_${sheetName}`;
-    const changeDetectionKey = `TWOWAY_SYNC_DETECTION_${sheetName}`;
-    const createNewRecordsKey = `TWOWAY_SYNC_CREATE_NEW_${sheetName}`;
-    const syncOnEditKey = `TWOWAY_SYNC_ON_EDIT_${sheetName}`;
-    const fieldMappingsKey = `TWOWAY_SYNC_MAPPINGS_${sheetName}`;
-    
-    // Save all settings
-    scriptProps.setProperty(enabledKey, settings.enabled ? 'true' : 'false');
-    scriptProps.setProperty(keyColumnKey, settings.keyColumn || '');
-    scriptProps.setProperty(changeDetectionKey, settings.changeDetection || 'cell');
-    scriptProps.setProperty(createNewRecordsKey, settings.createNewRecords ? 'true' : 'false');
-    scriptProps.setProperty(syncOnEditKey, settings.syncOnEdit ? 'true' : 'false');
-    
-    // Save field mappings as JSON
-    if (settings.fieldMappings && settings.fieldMappings.length > 0) {
-      scriptProps.setProperty(fieldMappingsKey, JSON.stringify(settings.fieldMappings));
-    } else {
-      scriptProps.deleteProperty(fieldMappingsKey);
-    }
-    
-    // If two-way sync is enabled, set up the onEdit trigger
-    if (settings.enabled) {
+
+    // Clean up previous Sync Status column formatting
+    cleanupPreviousSyncStatusColumn(activeSheet, activeSheetName);
+
+    // If enabling two-way sync, set up the tracking column
+    if (enableTwoWaySync) {
+      // Determine which column to use for tracking
+      let trackingColumnIndex;
+      if (trackingColumn) {
+        // Convert column letter to index (0-based)
+        trackingColumnIndex = columnLetterToIndex(trackingColumn);
+      } else {
+        // Use the last column
+        trackingColumnIndex = activeSheet.getLastColumn();
+      }
+
+      // Set up the tracking column header
+      const headerRow = 1; // Assuming first row is header
+      const trackingHeader = "Sync Status";
+
+      // Create the tracking column if it doesn't exist
+      if (trackingColumnIndex >= activeSheet.getLastColumn()) {
+        // Column doesn't exist yet, add it
+        activeSheet.getRange(headerRow, trackingColumnIndex + 1).setValue(trackingHeader);
+
+        // Update the tracking column letter based on the actual position
+        const actualColumnIndex = trackingColumnIndex;
+        trackingColumn = columnToLetter(actualColumnIndex);
+        scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
+        Logger.log(`Created tracking column at position ${trackingColumnIndex + 1} (${trackingColumn})`);
+      } else {
+        // Column exists, update header
+        activeSheet.getRange(headerRow, trackingColumnIndex + 1).setValue(trackingHeader);
+
+        // Verify the tracking column letter is correct
+        const actualColumnIndex = trackingColumnIndex;
+        trackingColumn = columnToLetter(actualColumnIndex);
+        scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
+        Logger.log(`Updated tracking column at position ${trackingColumnIndex + 1} (${trackingColumn})`);
+      }
+
+      // Visually style the Sync Status column
+      const headerCell = activeSheet.getRange(headerRow, trackingColumnIndex + 1);
+      headerCell.setBackground('#E8F0FE') // Light blue background
+        .setFontWeight('bold')
+        .setNote('This column tracks changes for two-way sync with Pipedrive');
+
+      // Style the entire status column with a light background and border
+      const fullStatusColumn = activeSheet.getRange(1, trackingColumnIndex + 1, Math.max(activeSheet.getLastRow(), 2), 1);
+      fullStatusColumn.setBackground('#F8F9FA') // Light gray background
+        .setBorder(null, true, null, true, false, false, '#DADCE0', SpreadsheetApp.BorderStyle.SOLID);
+
+      // Set up the onEdit trigger
       setupOnEditTrigger();
     } else {
       removeOnEditTrigger();
     }
     
-    Logger.log(`Two-way sync settings saved successfully for ${sheetName}`);
-    
-    return { success: true };
+    return true;
   } catch (e) {
     Logger.log(`Error in saveTwoWaySyncSettings: ${e.message}`);
-    return { success: false, message: e.message };
+    throw e;
   }
 }
 

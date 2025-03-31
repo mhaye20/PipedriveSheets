@@ -22,6 +22,16 @@ function syncFromPipedrive() {
 
   detectColumnShifts();
 
+  // Ensure we have OAuth authentication
+  if (!refreshAccessTokenIfNeeded()) {
+    ui.alert(
+      'Authentication Failed',
+      'Could not authenticate with Pipedrive. Please reconnect your account in Settings.',
+      ui.ButtonSet.OK
+    );
+    return;
+  }
+
   // Get the script properties
   const docProps = PropertiesService.getDocumentProperties();
 
@@ -647,22 +657,21 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
     const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
     const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
 
-    // Get API key from properties
-    const apiKey = scriptProperties.getProperty('PIPEDRIVE_API_KEY');
-    const subdomain = scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') || DEFAULT_PIPEDRIVE_SUBDOMAIN;
-
-    if (!apiKey) {
-      // Show an error message if API key is not set, only for manual syncs
+    // Ensure we have OAuth authentication
+    if (!refreshAccessTokenIfNeeded()) {
+      // Show an error message if authentication fails
       if (!isScheduledSync) {
         const ui = SpreadsheetApp.getUi();
         ui.alert(
-          'API Key Not Found',
-          'Please set your Pipedrive API key in the Settings.',
+          'Authentication Failed',
+          'Could not authenticate with Pipedrive. Please reconnect your account in Settings.',
           ui.ButtonSet.OK
         );
       }
       return;
     }
+
+    const subdomain = scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') || DEFAULT_PIPEDRIVE_SUBDOMAIN;
 
     // Get the original column configuration that maps headers to field keys
     const columnSettingsKey = `COLUMNS_${activeSheetName}_${entityType}`;
@@ -1518,4 +1527,73 @@ SyncService.saveTeamAwareColumnPreferences = function(columns, entityType, sheet
     // Store the full column objects
     scriptProperties.setProperty(key, JSON.stringify(columns));
   }
+}
+
+/**
+ * Gets field mappings for a specific entity type
+ * @param {string} entityType - The entity type to get mappings for
+ * @return {Object} An object mapping column headers to API field keys
+ */
+function getFieldMappingsForEntity(entityType) {
+  // Basic field mappings for each entity type
+  const commonMappings = {
+    'ID': 'id',
+    'Name': 'name',
+    'Owner': 'owner_id',
+    'Organization': 'org_id',
+    'Person': 'person_id',
+    'Added': 'add_time',
+    'Updated': 'update_time'
+  };
+
+  // Entity-specific mappings
+  const entityMappings = {
+    [ENTITY_TYPES.DEALS]: {
+      'Value': 'value',
+      'Currency': 'currency',
+      'Title': 'title',
+      'Pipeline': 'pipeline_id',
+      'Stage': 'stage_id',
+      'Status': 'status',
+      'Expected Close Date': 'expected_close_date'
+    },
+    [ENTITY_TYPES.PERSONS]: {
+      'Email': 'email',
+      'Phone': 'phone',
+      'First Name': 'first_name',
+      'Last Name': 'last_name',
+      'Organization': 'org_id'
+    },
+    [ENTITY_TYPES.ORGANIZATIONS]: {
+      'Address': 'address',
+      'Website': 'web'
+    },
+    [ENTITY_TYPES.ACTIVITIES]: {
+      'Type': 'type',
+      'Due Date': 'due_date',
+      'Due Time': 'due_time',
+      'Duration': 'duration',
+      'Deal': 'deal_id',
+      'Person': 'person_id',
+      'Organization': 'org_id',
+      'Note': 'note'
+    },
+    [ENTITY_TYPES.PRODUCTS]: {
+      'Code': 'code',
+      'Description': 'description',
+      'Unit': 'unit',
+      'Tax': 'tax',
+      'Category': 'category',
+      'Active': 'active_flag',
+      'Selectable': 'selectable',
+      'Visible To': 'visible_to',
+      'First Price': 'first_price',
+      'Cost': 'cost',
+      'Prices': 'prices',
+      'Owner Name': 'owner_id.name'  // Map "Owner Name" to owner_id.name so we can detect this field
+    }
+  };
+
+  // Combine common mappings with entity-specific mappings
+  return { ...commonMappings, ...(entityMappings[entityType] || {}) };
 }
