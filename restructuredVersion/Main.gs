@@ -60,10 +60,7 @@ const fieldDefinitionsCache = {};
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('Pipedrive')
-    .addItem('Connect to Pipedrive', 'showAuthorizationDialog')
-    .addItem('Sync Data', 'syncFromPipedrive')
-    .addItem('Select Columns', 'showColumnSelector')
-    .addItem('Settings', 'showSettings')
+    .addItem('Initialize Pipedrive Menu', 'initializePipedriveMenu')
     .addToUi();
 }
 
@@ -114,24 +111,6 @@ function initializePipedriveMenu() {
     ui.alert('Error', 'An error occurred while initializing Pipedrive menu: ' + e.message, ui.ButtonSet.OK);
     return false;
   }
-}
-
-/**
- * Creates a basic menu with limited options
- */
-function createBasicMenu() {
-  const ui = SpreadsheetApp.getUi();
-  const menu = ui.createMenu('Pipedrive');
-  
-  menu.addItem('Settings', 'showSettings')
-      .addItem('Join Team', 'showTeamJoinRequest')
-      .addItem('Force Reauthorize', 'forceReauthorize')
-      .addItem('Help & About', 'showHelp')
-      .addSeparator()
-      .addItem('🧪 Test First Installation', 'testFirstInstallation')
-      .addItem('🧨 Clear Team Data', 'clearTeamDataForTesting');
-      
-  menu.addToUi();
 }
 
 /**
