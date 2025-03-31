@@ -1002,13 +1002,14 @@ function showSyncStatus(sheetName) {
  * Shows the team management UI.
  * @param {boolean} joinOnly - Whether to show only the join team section.
  */
-function showTeamManager(joinOnly) {
+function showTeamManager(joinOnly = false) {
   try {
+    // Get the active user's email
     const userEmail = Session.getActiveUser().getEmail();
     if (!userEmail) {
       throw new Error('Unable to retrieve your email address. Please make sure you are logged in.');
     }
-    
+
     // Get team data
     const teamAccess = new TeamAccess();
     const hasTeam = teamAccess.isUserInTeam(userEmail);
@@ -1016,44 +1017,38 @@ function showTeamManager(joinOnly) {
     let teamId = '';
     let teamMembers = [];
     let userRole = '';
-    
+
     if (hasTeam) {
       const teamData = teamAccess.getUserTeamData(userEmail);
       teamName = teamData.name;
       teamId = teamData.id;
       teamMembers = teamAccess.getTeamMembers(teamId);
-      userRole = teamAccess.getUserRole(userEmail);
+      userRole = teamData.role;
     }
+
+    // Create the HTML template and populate it with data
+    const template = HtmlService.createTemplateFromFile('TeamManager');
     
-    // Create template data object
-    const templateData = {
-      userEmail: userEmail,
-      hasTeam: hasTeam,
-      teamName: teamName,
-      teamId: teamId,
-      teamMembers: teamMembers,
-      userRole: userRole,
-      initialTab: joinOnly ? 'join' : (hasTeam ? 'manage' : 'create')
-    };
+    // Set template variables
+    template.userEmail = userEmail;
+    template.hasTeam = hasTeam;
+    template.teamName = teamName;
+    template.teamId = teamId;
+    template.teamMembers = teamMembers;
+    template.userRole = userRole;
+    template.initialTab = joinOnly ? 'join' : (hasTeam ? 'manage' : 'create');
     
-    // Get HTML template content
-    const templateFile = HtmlService.createTemplateFromFile('TeamManager');
-    const rawHtml = templateFile.getRawContent();
-    
-    // Process the template with our data
-    const processedHtml = processTemplate(rawHtml, templateData);
-    
-    // Create final HTML output
-    const htmlOutput = HtmlService.createHtmlOutput(processedHtml)
+    // Evaluate the template
+    const htmlOutput = template.evaluate()
       .setWidth(500)
       .setHeight(hasTeam ? 600 : 400)
       .setTitle(hasTeam ? 'Team Management' : 'Team Access');
-    
+
     // Show the dialog
     SpreadsheetApp.getUi().showModalDialog(htmlOutput, hasTeam ? 'Team Management' : 'Team Access');
   } catch (error) {
-    Logger.log(`Error in getPipedriverFields: ${error.message}`);
-    return [];
+    Logger.log(`Error in showTeamManager: ${error.message}`);
+    showError('An error occurred while loading the team management interface: ' + error.message);
   }
 }
 

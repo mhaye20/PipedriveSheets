@@ -155,7 +155,7 @@ function checkAnyUserAccess(userEmail) {
       Logger.log(`Error checking script owner: ${e.message}`);
     }
     
-    // APPROACH 2: Check email map in document properties
+    // APPROACH 2: Check email map in document properties-`
     try {
       const docProps = PropertiesService.getDocumentProperties();
       const emailMapStr = docProps.getProperty('EMAIL_TO_TEAM_MAP');

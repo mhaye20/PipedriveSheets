@@ -405,7 +405,302 @@ function leaveTeam() {
   }
 }
 
-// Explicitly export the joinTeam function to ensure it's globally accessible
-// This is not technically needed as all functions in Google Apps Script are globally accessible by default
-// But we're adding this to be explicit
+/**
+ * Adds a new member to the team
+ * @param {string} email The email of the member to add
+ * @returns {Object} Result object with success status
+ */
+function addTeamMember(email) {
+  try {
+    if (!email || !email.includes('@')) {
+      return { success: false, message: 'Please enter a valid email address.' };
+    }
+    
+    // Get current user
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return { success: false, message: 'Unable to determine your email. Please make sure you are logged in.' };
+    }
+    
+    // Get user's team
+    const userTeam = getUserTeam(userEmail);
+    if (!userTeam) {
+      return { success: false, message: 'You are not a member of any team.' };
+    }
+    
+    // Check if user is admin
+    if (userTeam.role !== 'Admin') {
+      return { success: false, message: 'Only team admins can add members.' };
+    }
+    
+    // Get teams data
+    const teamsData = getTeamsData();
+    const teamId = userTeam.teamId;
+    
+    // Check if member is already in the team
+    if (teamsData[teamId].memberEmails.includes(email)) {
+      return { success: false, message: 'This person is already a member of the team.' };
+    }
+    
+    // Define maximum team members
+    const MAX_TEAM_MEMBERS = 50;
+    
+    // Check if team is at capacity
+    if (teamsData[teamId].memberEmails.length >= MAX_TEAM_MEMBERS) {
+      return { success: false, message: `Team has reached the maximum of ${MAX_TEAM_MEMBERS} members.` };
+    }
+    
+    // Add the member
+    teamsData[teamId].memberEmails.push(email);
+    
+    // Save the teams data
+    if (saveTeamsData(teamsData)) {
+      // Update email map
+      updateEmailToTeamMap();
+      return { success: true, message: 'Member added successfully.' };
+    } else {
+      return { success: false, message: 'Failed to save team data.' };
+    }
+  } catch (e) {
+    Logger.log(`Error in addTeamMember: ${e.message}`);
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Deletes a team (admin only)
+ * @returns {Object} Result object with success status
+ */
+function deleteTeam() {
+  try {
+    // Get current user
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return { success: false, message: 'Unable to determine your email. Please make sure you are logged in.' };
+    }
+    
+    // Get user's team
+    const userTeam = getUserTeam(userEmail);
+    if (!userTeam) {
+      return { success: false, message: 'You are not a member of any team.' };
+    }
+    
+    // Check if user is admin
+    if (userTeam.role !== 'Admin') {
+      return { success: false, message: 'Only team admins can delete a team.' };
+    }
+    
+    // Get teams data
+    const teamsData = getTeamsData();
+    const teamId = userTeam.teamId;
+    
+    // Delete the team
+    delete teamsData[teamId];
+    
+    // Save the teams data
+    if (saveTeamsData(teamsData)) {
+      // Update email map
+      updateEmailToTeamMap();
+      return { success: true, message: 'Team deleted successfully.' };
+    } else {
+      return { success: false, message: 'Failed to delete team.' };
+    }
+  } catch (e) {
+    Logger.log(`Error in deleteTeam: ${e.message}`);
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Promotes a team member to admin
+ * @param {string} email The email of the member to promote
+ * @returns {Object} Result object with success status
+ */
+function promoteTeamMember(email) {
+  try {
+    if (!email) {
+      return { success: false, message: 'Invalid email address.' };
+    }
+    
+    // Get current user
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return { success: false, message: 'Unable to determine your email. Please make sure you are logged in.' };
+    }
+    
+    // Get user's team
+    const userTeam = getUserTeam(userEmail);
+    if (!userTeam) {
+      return { success: false, message: 'You are not a member of any team.' };
+    }
+    
+    // Check if user is admin
+    if (userTeam.role !== 'Admin') {
+      return { success: false, message: 'Only team admins can promote members.' };
+    }
+    
+    // Get teams data
+    const teamsData = getTeamsData();
+    const teamId = userTeam.teamId;
+    const team = teamsData[teamId];
+    
+    // Check if member is in the team
+    if (!team.memberEmails.includes(email)) {
+      return { success: false, message: 'This person is not a member of the team.' };
+    }
+    
+    // Check if member is already an admin
+    if (team.adminEmails && team.adminEmails.includes(email)) {
+      return { success: false, message: 'This person is already an admin.' };
+    }
+    
+    // Initialize adminEmails array if needed
+    if (!team.adminEmails) {
+      team.adminEmails = [];
+    }
+    
+    // Add to admin list
+    team.adminEmails.push(email);
+    
+    // Save the teams data
+    if (saveTeamsData(teamsData)) {
+      return { success: true, message: 'Member promoted to admin successfully.' };
+    } else {
+      return { success: false, message: 'Failed to update team data.' };
+    }
+  } catch (e) {
+    Logger.log(`Error in promoteTeamMember: ${e.message}`);
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Demotes a team admin to regular member
+ * @param {string} email The email of the admin to demote
+ * @returns {Object} Result object with success status
+ */
+function demoteTeamMember(email) {
+  try {
+    if (!email) {
+      return { success: false, message: 'Invalid email address.' };
+    }
+    
+    // Get current user
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return { success: false, message: 'Unable to determine your email. Please make sure you are logged in.' };
+    }
+    
+    // Get user's team
+    const userTeam = getUserTeam(userEmail);
+    if (!userTeam) {
+      return { success: false, message: 'You are not a member of any team.' };
+    }
+    
+    // Check if user is admin
+    if (userTeam.role !== 'Admin') {
+      return { success: false, message: 'Only team admins can demote members.' };
+    }
+    
+    // Get teams data
+    const teamsData = getTeamsData();
+    const teamId = userTeam.teamId;
+    const team = teamsData[teamId];
+    
+    // Check if member is an admin
+    if (!team.adminEmails || !team.adminEmails.includes(email)) {
+      return { success: false, message: 'This person is not an admin.' };
+    }
+    
+    // Check if this is the last admin
+    if (team.adminEmails.length === 1) {
+      return { success: false, message: 'Cannot demote the last admin of the team. Promote another member first.' };
+    }
+    
+    // Remove from admin list
+    team.adminEmails = team.adminEmails.filter(e => e !== email);
+    
+    // Save the teams data
+    if (saveTeamsData(teamsData)) {
+      return { success: true, message: 'Admin demoted to member successfully.' };
+    } else {
+      return { success: false, message: 'Failed to update team data.' };
+    }
+  } catch (e) {
+    Logger.log(`Error in demoteTeamMember: ${e.message}`);
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Removes a member from the team
+ * @param {string} email The email of the member to remove
+ * @returns {Object} Result object with success status
+ */
+function removeTeamMember(email) {
+  try {
+    if (!email) {
+      return { success: false, message: 'Invalid email address.' };
+    }
+    
+    // Get current user
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return { success: false, message: 'Unable to determine your email. Please make sure you are logged in.' };
+    }
+    
+    // Get user's team
+    const userTeam = getUserTeam(userEmail);
+    if (!userTeam) {
+      return { success: false, message: 'You are not a member of any team.' };
+    }
+    
+    // Check if user is admin
+    if (userTeam.role !== 'Admin') {
+      return { success: false, message: 'Only team admins can remove members.' };
+    }
+    
+    // Prevent removing yourself
+    if (email === userEmail) {
+      return { success: false, message: 'You cannot remove yourself. Use the Leave Team option instead.' };
+    }
+    
+    // Get teams data
+    const teamsData = getTeamsData();
+    const teamId = userTeam.teamId;
+    const team = teamsData[teamId];
+    
+    // Check if member is in the team
+    if (!team.memberEmails.includes(email)) {
+      return { success: false, message: 'This person is not a member of the team.' };
+    }
+    
+    // Remove from member list
+    team.memberEmails = team.memberEmails.filter(e => e !== email);
+    
+    // Also remove from admin list if needed
+    if (team.adminEmails && team.adminEmails.includes(email)) {
+      team.adminEmails = team.adminEmails.filter(e => e !== email);
+    }
+    
+    // Save the teams data
+    if (saveTeamsData(teamsData)) {
+      // Update email map
+      updateEmailToTeamMap();
+      return { success: true, message: 'Member removed successfully.' };
+    } else {
+      return { success: false, message: 'Failed to update team data.' };
+    }
+  } catch (e) {
+    Logger.log(`Error in removeTeamMember: ${e.message}`);
+    return { success: false, message: e.message };
+  }
+}
+
+// Explicitly export these functions to ensure they're globally accessible
+this.addTeamMember = addTeamMember;
+this.deleteTeam = deleteTeam;
+this.promoteTeamMember = promoteTeamMember;
+this.demoteTeamMember = demoteTeamMember;
+this.removeTeamMember = removeTeamMember;
 this.joinTeam = joinTeam; 
