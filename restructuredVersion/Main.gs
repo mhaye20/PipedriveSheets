@@ -16,6 +16,12 @@
  */
 
 /**
+ * Define necessary service namespaces 
+ */
+var SyncService = SyncService || {};
+var UI = UI || {};
+
+/**
  * Constants
  */
 const API_KEY = ''; // Default API key
@@ -29,7 +35,8 @@ const ENTITY_TYPES = {
   PERSONS: 'persons',
   ORGANIZATIONS: 'organizations',
   ACTIVITIES: 'activities',
-  LEADS: 'leads'
+  LEADS: 'leads',
+  PRODUCTS: 'products'
 };
 
 // OAuth Constants - YOU NEED TO REGISTER YOUR APP WITH PIPEDRIVE TO GET THESE

@@ -252,69 +252,147 @@ function getAllItemsWithPagination(endpoint, limit = 0) {
 
 /**
  * Gets field definitions for deals
+ * @param {boolean} forceRefresh - Whether to force a refresh from the API
  * @return {Array} Array of field definition objects
  */
-function getDealFields() {
-  return getEntityFields('dealFields');
+function getDealFields(forceRefresh = false) {
+  return getEntityFields('dealFields', forceRefresh);
 }
 
 /**
  * Gets field definitions for persons
+ * @param {boolean} forceRefresh - Whether to force a refresh from the API
  * @return {Array} Array of field definition objects
  */
-function getPersonFields() {
-  return getEntityFields('personFields');
+function getPersonFields(forceRefresh = false) {
+  return getEntityFields('personFields', forceRefresh);
 }
 
 /**
  * Gets field definitions for organizations
+ * @param {boolean} forceRefresh - Whether to force a refresh from the API
  * @return {Array} Array of field definition objects
  */
-function getOrganizationFields() {
-  return getEntityFields('organizationFields');
+function getOrganizationFields(forceRefresh = false) {
+  return getEntityFields('organizationFields', forceRefresh);
 }
 
 /**
  * Gets field definitions for activities
+ * @param {boolean} forceRefresh - Whether to force a refresh from the API
  * @return {Array} Array of field definition objects
  */
-function getActivityFields() {
-  return getEntityFields('activityFields');
+function getActivityFields(forceRefresh = false) {
+  return getEntityFields('activityFields', forceRefresh);
 }
 
 /**
  * Gets field definitions for leads
+ * @param {boolean} forceRefresh - Whether to force a refresh from the API
  * @return {Array} Array of field definition objects
  */
-function getLeadFields() {
-  return getEntityFields('leadFields');
+function getLeadFields(forceRefresh = false) {
+  return getEntityFields('leadFields', forceRefresh);
 }
 
 /**
  * Gets field definitions for products
+ * @param {boolean} forceRefresh - Whether to force a refresh from the API
  * @return {Array} Array of field definition objects
  */
-function getProductFields() {
-  return getEntityFields('productFields');
+function getProductFields(forceRefresh = false) {
+  return getEntityFields('productFields', forceRefresh);
 }
 
 /**
  * Generic function to get field definitions for an entity type
  * @param {string} fieldEndpoint - API endpoint for field definitions
+ * @param {boolean} forceRefresh - Whether to force a refresh from API instead of using cache
  * @return {Array} Array of field definition objects
  */
-function getEntityFields(fieldEndpoint) {
+function getEntityFields(fieldEndpoint, forceRefresh = false) {
   try {
+    // Check if we have cached results and should use them
+    const cacheKey = `CACHE_${fieldEndpoint}`;
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const cachedDataJson = scriptProperties.getProperty(cacheKey);
+    
+    // Use cache if available and not forcing refresh
+    if (!forceRefresh && cachedDataJson) {
+      try {
+        const cachedData = JSON.parse(cachedDataJson);
+        // Check if cache is still valid (less than 1 hour old)
+        const cacheTimeKey = `CACHE_TIME_${fieldEndpoint}`;
+        const cacheTimeStr = scriptProperties.getProperty(cacheTimeKey);
+        
+        if (cacheTimeStr) {
+          const cacheTime = parseInt(cacheTimeStr, 10);
+          const currentTime = new Date().getTime();
+          const oneHour = 60 * 60 * 1000; // 1 hour in milliseconds
+          
+          if (currentTime - cacheTime < oneHour && cachedData && cachedData.length > 0) {
+            Logger.log(`Using cached ${fieldEndpoint} data (${cachedData.length} fields)`);
+            return cachedData;
+          }
+        }
+      } catch (cacheError) {
+        Logger.log(`Error parsing cached ${fieldEndpoint} data: ${cacheError.message}`);
+        // Cache error is non-fatal, continue to fetch new data
+      }
+    }
+    
+    // Make the request to get the fields
+    Logger.log(`Fetching ${fieldEndpoint} from Pipedrive API`);
     const response = makePipedriveRequest(fieldEndpoint);
     
     if (response.success && response.data) {
+      // If the data exists but is empty, that's a problem
+      if (!response.data.length) {
+        Logger.log(`Warning: ${fieldEndpoint} returned empty data array. This may indicate an API issue.`);
+      }
+      
+      // Cache the response for future use
+      scriptProperties.setProperty(cacheKey, JSON.stringify(response.data));
+      scriptProperties.setProperty(`CACHE_TIME_${fieldEndpoint}`, new Date().getTime().toString());
+      
       return response.data;
     }
     
+    Logger.log(`API response for ${fieldEndpoint} was unsuccessful or missing data`);
+    
+    // If we have cached data, use it as a fallback
+    if (cachedDataJson) {
+      try {
+        const cachedData = JSON.parse(cachedDataJson);
+        Logger.log(`Using cached ${fieldEndpoint} data as fallback`);
+        return cachedData;
+      } catch (e) {
+        Logger.log(`Error parsing cached ${fieldEndpoint} fallback data: ${e.message}`);
+      }
+    }
+    
+    // Return empty array as last resort
     return [];
   } catch (e) {
-    Logger.log(`Error getting field definitions: ${e.message}`);
-    throw new Error(`Failed to get fields: ${e.message}`);
+    Logger.log(`Error getting field definitions for ${fieldEndpoint}: ${e.message}`);
+    
+    // Check if we have cached data to use as fallback
+    try {
+      const cacheKey = `CACHE_${fieldEndpoint}`;
+      const scriptProperties = PropertiesService.getScriptProperties();
+      const cachedDataJson = scriptProperties.getProperty(cacheKey);
+      
+      if (cachedDataJson) {
+        const cachedData = JSON.parse(cachedDataJson);
+        Logger.log(`Using cached ${fieldEndpoint} data as fallback after error`);
+        return cachedData;
+      }
+    } catch (cacheError) {
+      Logger.log(`Error accessing cache after API failure: ${cacheError.message}`);
+    }
+    
+    // If all else fails, return empty array
+    return [];
   }
 }
 
@@ -576,7 +654,117 @@ function makePipedriveRequest(endpoint, options = {}) {
   }
 }
 
+/**
+ * Creates a mapping between custom field keys and their human-readable names
+ * @param {string} entityType The entity type (deals, persons, etc.)
+ * @return {Object} Mapping of custom field keys to field names
+ */
+function getCustomFieldMappings(entityType) {
+  Logger.log(`Getting custom field mappings for ${entityType}`);
+
+  let customFields = getCustomFieldsForEntity(entityType);
+  const map = {};
+
+  Logger.log(`Retrieved ${customFields.length} custom fields for ${entityType}`);
+
+  customFields.forEach(field => {
+    map[field.key] = field.name;
+    // Log each mapping for debugging
+    Logger.log(`Custom field mapping: ${field.key} => ${field.name}`);
+  });
+  Logger.log(`Total custom field mappings: ${Object.keys(map).length}`);
+
+  return map;
+}
+
+/**
+ * Gets custom fields for a specific entity type
+ * @param {string} entityType The entity type (deals, persons, etc.)
+ * @return {Array} Array of custom fields
+ */
+function getCustomFieldsForEntity(entityType) {
+  try {
+    // Ensure we have a valid token
+    if (!refreshAccessTokenIfNeeded()) {
+      Logger.log('Not authenticated with Pipedrive');
+      return [];
+    }
+    
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const accessToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
+    
+    if (!accessToken) {
+      Logger.log('No OAuth access token found');
+      return [];
+    }
+    
+    let endpoint = '';
+    
+    // Different endpoints for different entity types
+    switch(entityType) {
+      case 'deals':
+        endpoint = 'dealFields';
+        break;
+      case 'persons':
+        endpoint = 'personFields';
+        break;
+      case 'organizations':
+        endpoint = 'organizationFields';
+        break;
+      case 'activities':
+        endpoint = 'activityFields';
+        break;
+      case 'leads':
+        endpoint = 'leadFields';
+        break;
+      case 'products':
+        endpoint = 'productFields';
+        break;
+      default:
+        Logger.log(`Unknown entity type: ${entityType}`);
+        return [];
+    }
+    
+    // Build the complete URL
+    const baseUrl = getPipedriveApiUrl();
+    const url = `${baseUrl}/${endpoint}`;
+    
+    // Make the authenticated request
+    const response = UrlFetchApp.fetch(url, {
+      headers: {
+        'Authorization': 'Bearer ' + accessToken
+      },
+      muteHttpExceptions: true
+    });
+    
+    const responseCode = response.getResponseCode();
+    
+    if (responseCode !== 200) {
+      Logger.log(`Error fetching custom fields: ${responseCode}`);
+      return [];
+    }
+    
+    const result = JSON.parse(response.getContentText());
+    
+    if (!result.success) {
+      Logger.log(`API returned error: ${result.error || 'Unknown error'}`);
+      return [];
+    }
+    
+    // Extract only custom fields
+    const customFields = result.data.filter(field => field.edit_flag);
+    Logger.log(`Found ${customFields.length} custom fields for ${entityType}`);
+    
+    return customFields;
+  } catch (e) {
+    Logger.log(`Error in getCustomFieldsForEntity: ${e.message}`);
+    return [];
+  }
+}
+
 // Export API functions to be available through the PipedriveAPI namespace
 const PipedriveAPI = {
-  getFiltersForEntityType: getFiltersForEntityType
+  getFiltersForEntityType: getFiltersForEntityType,
+  getCustomFieldMappings: getCustomFieldMappings,
+  getCustomFieldsForEntity: getCustomFieldsForEntity
 };

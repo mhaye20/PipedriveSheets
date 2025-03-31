@@ -7,6 +7,9 @@
  * - Managing user interactions
  */
 
+// Create UI namespace if it doesn't exist
+var UI = UI || {};
+
 /**
  * Shows settings dialog where users can configure filter ID and entity type
  */
@@ -66,58 +69,196 @@ function showSettings() {
  */
 function showColumnSelector() {
   try {
-    const docProps = PropertiesService.getDocumentProperties();
+    // Get the active sheet name
+    const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const sheetName = activeSheet.getName();
     
-    // Get entity type and sheet name
-    const entityType = docProps.getProperty('PIPEDRIVE_ENTITY_TYPE') || ENTITY_TYPES.DEALS;
-    const sheetName = docProps.getProperty('EXPORT_SHEET_NAME') || DEFAULT_SHEET_NAME;
+    // Get Pipedrive authentication details
+    const scriptProperties = PropertiesService.getScriptProperties();
+    // Check for OAuth access token instead of API key
+    const accessToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
     
-    // Check if API key is configured
-    const apiKey = docProps.getProperty('PIPEDRIVE_API_KEY');
-    if (!apiKey) {
-      SpreadsheetApp.getUi().alert(
-        'API Key Required',
-        'Please configure your Pipedrive API key in the settings first.',
-        SpreadsheetApp.getUi().ButtonSet.OK
+    // Get sheet-specific settings
+    const sheetFilterIdKey = `FILTER_ID_${sheetName}`;
+    const sheetEntityTypeKey = `ENTITY_TYPE_${sheetName}`;
+    
+    const filterId = scriptProperties.getProperty(sheetFilterIdKey) || '';
+    const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
+    
+    Logger.log(`=== COLUMN SELECTOR DEBUG ===`);
+    Logger.log(`Sheet: ${sheetName}, Entity: ${entityType}, Filter ID: ${filterId}`);
+    Logger.log(`Using OAuth access token: ${Boolean(accessToken)}`);
+    
+    // Check if we're authenticated
+    if (!accessToken) {
+      const ui = SpreadsheetApp.getUi();
+      const result = ui.alert(
+        'Authentication Required',
+        'Please connect to Pipedrive to access your data.',
+        ui.ButtonSet.YES_NO
       );
-      showSettings();
+      
+      if (result === ui.Button.YES) {
+        showAuthorizationDialog();
+      }
       return;
     }
     
-    // Get fields based on entity type
-    let fields = [];
+    // First get actual sample data based on filter ID
+    let sampleData = [];
+    Logger.log(`Getting sample data for ${entityType} with filter ID ${filterId}`);
     
-    switch (entityType) {
-      case ENTITY_TYPES.DEALS:
-        fields = getDealFields();
-        break;
-      case ENTITY_TYPES.PERSONS:
-        fields = getPersonFields();
-        break;
-      case ENTITY_TYPES.ORGANIZATIONS:
-        fields = getOrganizationFields();
-        break;
-      case ENTITY_TYPES.ACTIVITIES:
-        fields = getActivityFields();
-        break;
-      case ENTITY_TYPES.LEADS:
-        fields = getLeadFields();
-        break;
-      case ENTITY_TYPES.PRODUCTS:
-        fields = getProductFields();
-        break;
+    try {
+      switch (entityType) {
+        case ENTITY_TYPES.DEALS:
+          sampleData = getDealsWithFilter(filterId, 1);
+          break;
+        case ENTITY_TYPES.PERSONS:
+          sampleData = getPersonsWithFilter(filterId, 1);
+          break;
+        case ENTITY_TYPES.ORGANIZATIONS:
+          sampleData = getOrganizationsWithFilter(filterId, 1);
+          break;
+        case ENTITY_TYPES.ACTIVITIES:
+          sampleData = getActivitiesWithFilter(filterId, 1);
+          break;
+        case ENTITY_TYPES.LEADS:
+          sampleData = getLeadsWithFilter(filterId, 1);
+          break;
+        case ENTITY_TYPES.PRODUCTS:
+          sampleData = getProductsWithFilter(filterId, 1);
+          break;
+      }
+      
+      if (sampleData && sampleData.length > 0) {
+        Logger.log(`Successfully retrieved sample data for ${entityType}`);
+        Logger.log(`Sample data first item has ${Object.keys(sampleData[0]).length} properties`);
+        
+        // Quick sample of what fields are available
+        if (sampleData[0]) {
+          const sampleKeys = Object.keys(sampleData[0]).slice(0, 10);
+          Logger.log(`Sample fields (first 10): ${sampleKeys.join(', ')}`);
+          
+          // Check for custom fields
+          if (sampleData[0].custom_fields) {
+            const customKeys = Object.keys(sampleData[0].custom_fields).slice(0, 10);
+            Logger.log(`Sample custom fields (first 10): ${customKeys.join(', ')}`);
+          }
+        }
+        
+        // Directly use the sample data for fields extraction
+        if (sampleData && sampleData[0]) {
+          // Process fields to create UI-friendly structure
+          const availableColumns = extractFields(sampleData);
+          Logger.log(`Extracted ${availableColumns ? availableColumns.length : 0} available columns from sample data`);
+          
+          // Make sure availableColumns is valid
+          if (availableColumns && availableColumns.length > 0) {
+            // Get currently selected columns
+            const selectedColumns = UI.getTeamAwareColumnPreferences(entityType, sheetName) || [];
+            
+            Logger.log(`Found ${selectedColumns.length} selected columns`);
+            
+            // Add key property to match the path property for compatibility
+            availableColumns.forEach(col => {
+              if (!col.key) { // Only set if not already present
+                col.key = col.path;
+              }
+            });
+            
+            // Show the column selector UI
+            showColumnSelectorUI(availableColumns, selectedColumns, entityType, sheetName);
+            return;
+          }
+        }
+      } else {
+        Logger.log(`No sample data found for ${entityType} with filter ID ${filterId}`);
+      }
+    } catch (sampleError) {
+      Logger.log(`Error getting sample data: ${sampleError.message}`);
+      Logger.log(`Stack trace: ${sampleError.stack}`);
     }
     
-    // Process fields to create UI-friendly structure
-    const availableColumns = extractFields(fields);
-    
-    // Get currently selected columns
-    const selectedColumns = getTeamAwareColumnPreferences(entityType, sheetName) || [];
-    
-    // Show the column selector UI
-    showColumnSelectorUI(availableColumns, selectedColumns, entityType, sheetName);
+    // If we couldn't get sample data, try using the field definitions directly
+    if (!sampleData || sampleData.length === 0) {
+      Logger.log(`No sample data found, falling back to field definitions`);
+      
+      // Get fields based on entity type
+      let fields = [];
+      
+      switch (entityType) {
+        case ENTITY_TYPES.DEALS:
+          fields = getDealFields(true); // Force a refresh
+          break;
+        case ENTITY_TYPES.PERSONS:
+          fields = getPersonFields(true);
+          break;
+        case ENTITY_TYPES.ORGANIZATIONS:
+          fields = getOrganizationFields(true);
+          break;
+        case ENTITY_TYPES.ACTIVITIES:
+          fields = getActivityFields(true);
+          break;
+        case ENTITY_TYPES.LEADS:
+          fields = getLeadFields(true);
+          break;
+        case ENTITY_TYPES.PRODUCTS:
+          fields = getProductFields(true);
+          break;
+      }
+      
+      if (fields && fields.length > 0) {
+        Logger.log(`Got ${fields.length} fields for ${entityType}`);
+        Logger.log(`First field: ${fields[0].name} (${fields[0].key})`);
+        
+        const availableColumns = fields.map(field => {
+          return {
+            key: field.key,
+            path: field.key,
+            name: field.name || field.label || field.key,
+            type: field.field_type || 'string',
+            isNested: false,
+            options: field.options
+          };
+        });
+        
+        // Get currently selected columns
+        const selectedColumns = UI.getTeamAwareColumnPreferences(entityType, sheetName) || [];
+        
+        Logger.log(`Found ${selectedColumns.length} selected columns from definitions`);
+        
+        // Show the selector
+        showColumnSelectorUI(availableColumns, selectedColumns, entityType, sheetName);
+      } else {
+        Logger.log(`No fields found for ${entityType}, checking field names`);
+        
+        // If all else fails, use a hardcoded list of common fields based on entity type
+        const commonFields = getCommonFieldsForEntity(entityType);
+        
+        if (commonFields && commonFields.length > 0) {
+          const availableColumns = commonFields.map(field => {
+            return {
+              key: field.key,
+              path: field.key,
+              name: field.name,
+              type: field.type || 'string',
+              isNested: false
+            };
+          });
+          
+          // Get currently selected columns
+          const selectedColumns = UI.getTeamAwareColumnPreferences(entityType, sheetName) || [];
+          
+          // Show the selector
+          showColumnSelectorUI(availableColumns, selectedColumns, entityType, sheetName);
+        } else {
+          throw new Error(`Could not fetch fields for ${entityType}. Please check your settings and try again.`);
+        }
+      }
+    }
   } catch (e) {
     Logger.log(`Error in showColumnSelector: ${e.message}`);
+    Logger.log(`Stack trace: ${e.stack}`);
     SpreadsheetApp.getUi().alert('Error', 'Failed to open column selector: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
@@ -133,8 +274,255 @@ function extractFields(fields, parentPath = '', parentName = '') {
   try {
     const result = [];
     
+    // Add detailed debugging
+    Logger.log(`=== EXTRACT FIELDS DEBUG ===`);
+    Logger.log(`Extracting fields with parent path: ${parentPath}, parent name: ${parentName}`);
+    Logger.log(`Fields type: ${typeof fields}, is array: ${Array.isArray(fields)}`);
+    if (Array.isArray(fields)) {
+      Logger.log(`Array length: ${fields.length}`);
+      if (fields.length > 0) {
+        Logger.log(`First item type: ${typeof fields[0]}`);
+        if (typeof fields[0] === 'object') {
+          Logger.log(`First item has properties: ${Object.keys(fields[0]).join(', ').substring(0, 100)}...`);
+        }
+      }
+    }
+    
+    if (!fields) {
+      Logger.log('No fields to extract');
+      // Return default fields instead of empty array
+      return [
+        { path: 'id', key: 'id', name: 'ID', type: 'integer' },
+        { path: 'name', key: 'name', name: 'Name', type: 'string' },
+        { path: 'add_time', key: 'add_time', name: 'Created Date', type: 'date' }
+      ];
+    }
+    
+    // Handle the case when we get a sample of data items instead of field definitions
+    if (Array.isArray(fields) && fields.length > 0 && fields[0] && typeof fields[0] === 'object') {
+      // Check if this is sample data (has id but not key/name properties that field definitions would have)
+      if (fields[0].id !== undefined && (!fields[0].key || !fields[0].name)) {
+        // This looks like a sample data item, not field definitions
+        Logger.log('Detected sample data items instead of field definitions');
+        
+        const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+        const sheetName = activeSheet.getName();
+        const scriptProperties = PropertiesService.getScriptProperties();
+        const sheetEntityTypeKey = `ENTITY_TYPE_${sheetName}`;
+        const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || 'deals';
+        
+        // Get custom field mappings
+        let customFieldMap = {};
+        try {
+          // Use PipedriveAPI namespace to access the function
+          customFieldMap = PipedriveAPI.getCustomFieldMappings(entityType);
+          Logger.log(`Got custom field map with ${Object.keys(customFieldMap).length} entries`);
+          if (Object.keys(customFieldMap).length > 0) {
+            const sampleKeys = Object.keys(customFieldMap).slice(0, 5);
+            Logger.log(`Sample custom field mappings (first 5): ${sampleKeys.map(k => `${k} => ${customFieldMap[k]}`).join(', ')}`);
+          } else {
+            // If we don't have custom field mappings, we'll still continue and use key names directly
+            Logger.log(`No custom field mappings found for ${entityType}, will use field keys as names`);
+          }
+        } catch (e) {
+          // Log error but continue processing - custom field mappings are helpful but not critical
+          Logger.log(`Error getting custom field mappings: ${e.message}`);
+          Logger.log(`Stack trace: ${e.stack}`);
+          Logger.log(`Continuing without custom field mappings, will use field keys as names`);
+        }
+        
+        const addedCustomFields = new Set(); // Track custom fields we've already processed
+        const processedKeys = new Set(); // Track all processed keys to avoid duplicates
+        
+        // Process all items in the sample data to gather as many fields as possible
+        for (const sampleItem of fields) {
+          // Extract all top-level properties
+          for (const key in sampleItem) {
+            // Skip functions and internal properties and already processed keys
+            if (typeof sampleItem[key] === 'function' || key.startsWith('_') || processedKeys.has(key)) continue;
+            
+            // Mark key as processed
+            processedKeys.add(key);
+            
+            // Check if this is a hash-pattern key (custom field directly at root level)
+            const hashPattern = /^[0-9a-f]{40}$/;
+            if (hashPattern.test(key) && customFieldMap[key] && !addedCustomFields.has(key)) {
+              addedCustomFields.add(key);
+              Logger.log(`Found hash-pattern key: ${key} => ${customFieldMap[key]}`);
+              
+              // Add this custom field with its friendly name
+              result.push({
+                path: key,
+                key: key,
+                name: `${customFieldMap[key]}`,
+                type: typeof sampleItem[key],
+                isNested: false
+              });
+              
+              // If it's a complex object, also add fields for its properties
+              const customValue = sampleItem[key];
+              if (customValue && typeof customValue === 'object') {
+                for (const propKey in customValue) {
+                  if (propKey !== 'value') { // Skip the main value property
+                    result.push({
+                      path: `${key}.${propKey}`,
+                      key: `${key}.${propKey}`,
+                      name: `${customFieldMap[key]} - ${propKey}`,
+                      type: typeof customValue[propKey],
+                      isNested: true,
+                      parentKey: key
+                    });
+                  }
+                }
+              }
+              continue;
+            }
+            
+            // Regular top-level property - add to results
+            result.push({
+              path: key,
+              key: key,
+              name: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
+              type: typeof sampleItem[key],
+              isNested: false
+            });
+            
+            // If this property is an object, extract its properties as nested fields
+            if (sampleItem[key] && typeof sampleItem[key] === 'object' && !Array.isArray(sampleItem[key])) {
+              for (const nestedKey in sampleItem[key]) {
+                // Skip functions and internal properties
+                if (typeof sampleItem[key][nestedKey] === 'function' || nestedKey.startsWith('_')) continue;
+                
+                const nestedPath = `${key}.${nestedKey}`;
+                if (!result.some(col => col.key === nestedPath)) {
+                  result.push({
+                    path: nestedPath,
+                    key: nestedPath,
+                    name: `${key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')} > ${nestedKey}`,
+                    type: typeof sampleItem[key][nestedKey],
+                    isNested: true,
+                    parentKey: key
+                  });
+                }
+              }
+            }
+          }
+          
+          // Special handling for custom_fields
+          if (sampleItem.custom_fields) {
+            Logger.log(`Found custom_fields in sample data with ${Object.keys(sampleItem.custom_fields).length} entries`);
+            
+            // Extract custom fields
+            for (const key in sampleItem.custom_fields) {
+              if (addedCustomFields.has(`custom_fields.${key}`)) continue;
+              addedCustomFields.add(`custom_fields.${key}`);
+              
+              const customValue = sampleItem.custom_fields[key];
+              const friendlyName = customFieldMap[key] || key;
+              const currentPath = `custom_fields.${key}`;
+              
+              Logger.log(`Processing custom field: ${key} => ${friendlyName}`);
+              
+              // Simple value custom fields
+              if (typeof customValue !== 'object' || customValue === null) {
+                result.push({
+                  path: currentPath,
+                  key: currentPath,
+                  name: friendlyName,
+                  type: typeof customValue,
+                  isNested: true,
+                  parentKey: 'custom_fields'
+                });
+                continue;
+              }
+              
+              // Handle complex custom fields (object-based)
+              if (typeof customValue === 'object') {
+                // Log the custom field structure
+                Logger.log(`Custom field ${key} is an object with properties: ${Object.keys(customValue).join(', ')}`);
+                
+                // Currency fields
+                if (customValue.value !== undefined && customValue.currency !== undefined) {
+                  result.push({
+                    path: currentPath,
+                    key: currentPath,
+                    name: `${friendlyName} (Currency)`,
+                    type: typeof customValue.value,
+                    isNested: true,
+                    parentKey: 'custom_fields'
+                  });
+                }
+                // Date/Time range fields
+                else if (customValue.value !== undefined && customValue.until !== undefined) {
+                  result.push({
+                    path: currentPath,
+                    key: currentPath,
+                    name: `${friendlyName} (Range)`,
+                    type: typeof customValue.value,
+                    isNested: true,
+                    parentKey: 'custom_fields'
+                  });
+                }
+                // Address fields
+                else if (customValue.value !== undefined && customValue.formatted_address !== undefined) {
+                  result.push({
+                    path: currentPath,
+                    key: currentPath,
+                    name: `${friendlyName} (Address)`,
+                    type: typeof customValue.value,
+                    isNested: true,
+                    parentKey: 'custom_fields'
+                  });
+                  
+                  // Add formatted address as a separate column option
+                  result.push({
+                    path: `${currentPath}.formatted_address`,
+                    key: `${currentPath}.formatted_address`,
+                    name: `${friendlyName} (Formatted Address)`,
+                    type: typeof customValue.formatted_address,
+                    isNested: true,
+                    parentKey: currentPath
+                  });
+                }
+                // For all other object types
+                else {
+                  result.push({
+                    path: currentPath,
+                    key: currentPath,
+                    name: `${friendlyName} (Complex)`,
+                    type: 'object',
+                    isNested: true,
+                    parentKey: 'custom_fields'
+                  });
+                  
+                  // Extract nested properties from complex custom field
+                  for (const propKey in customValue) {
+                    if (propKey !== 'value') { // Skip the main value property
+                      result.push({
+                        path: `${currentPath}.${propKey}`,
+                        key: `${currentPath}.${propKey}`,
+                        name: `${friendlyName} - ${propKey}`,
+                        type: typeof customValue[propKey],
+                        isNested: true,
+                        parentKey: currentPath
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        
+        Logger.log(`Extracted ${result.length} columns total from sample data`);
+        return result;
+      }
+    }
+    
     // If this is an array of field definitions like from Pipedrive API
     if (Array.isArray(fields)) {
+      Logger.log(`Processing array of ${fields.length} fields`);
+      
       fields.forEach(field => {
         // Skip unsupported field types
         if (field.field_type === 'picture' ||
@@ -144,72 +532,82 @@ function extractFields(fields, parentPath = '', parentName = '') {
         }
         
         // Ensure the field has a key
-        if (!field.key) return;
+        if (!field.key && !field.id) {
+          Logger.log(`Skipping field with no key or id: ${JSON.stringify(field).substring(0, 100)}`);
+          return;
+        }
+        
+        // Use key or id as fallback
+        const fieldKey = field.key || `field_${field.id}`;
         
         // Construct path
-        const path = parentPath ? `${parentPath}.${field.key}` : field.key;
+        const path = parentPath ? `${parentPath}.${fieldKey}` : fieldKey;
         
         // Construct readable name
-        const name = parentName ? `${parentName} > ${field.name}` : field.name;
+        const fieldName = field.name || field.label || 'Unnamed Field';
+        const name = parentName ? `${parentName} > ${fieldName}` : fieldName;
         
         // Add the field to the result
         result.push({
           path: path,
+          key: path,
           name: name,
-          type: field.field_type,
-          options: field.options
+          type: field.field_type || 'string',
+          isNested: !!parentPath,
+          parentKey: parentPath || null
         });
         
-        // Handle nested fields (like fields within products, etc.)
-        if (field.fields) {
-          const nestedFields = extractFields(field.fields, path, name);
-          result.push(...nestedFields);
+        // Handle nested objects
+        if (field.options && Array.isArray(field.options)) {
+          // This is a field with options (like dropdown)
+          Logger.log(`Field ${fieldName} has ${field.options.length} options`);
+        } else if (field.subfields && Array.isArray(field.subfields)) {
+          // This is a field with subfields (like address)
+          extractFields(field.subfields, path, name);
         }
       });
-    }
-    // If this is an object with nested fields
-    else if (typeof fields === 'object' && fields !== null) {
-      Object.keys(fields).forEach(key => {
-        // Skip certain keys that aren't proper fields
-        if (['id', 'success', 'error', 'key'].includes(key)) {
-          return;
-        }
-        
-        // Get the field
-        const field = fields[key];
-        
-        // Skip non-objects
-        if (typeof field !== 'object' || field === null) {
-          return;
-        }
-        
-        // Construct path
-        const path = parentPath ? `${parentPath}.${key}` : key;
-        
-        // If field has a name property, it's likely a proper field
-        if (field.name) {
-          // Construct readable name
-          const name = parentName ? `${parentName} > ${field.name}` : field.name;
-          
-          // Add the field to the result
-          result.push({
-            path: path,
-            name: name,
-            type: field.field_type || typeof field,
-            options: field.options
-          });
-        }
-        
-        // Recursively process nested fields
-        const nestedFields = extractFields(field, path, field.name || parentName);
-        result.push(...nestedFields);
-      });
+      
+      return result;
     }
     
+    // If fields is a single object, extract its properties
+    if (fields && typeof fields === 'object' && !Array.isArray(fields)) {
+      for (const key in fields) {
+        if (typeof fields[key] === 'function' || key.startsWith('_')) continue;
+        
+        const path = parentPath ? `${parentPath}.${key}` : key;
+        const fieldName = key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
+        const name = parentName ? `${parentName} > ${fieldName}` : fieldName;
+        
+        result.push({
+          path: path,
+          key: path,
+          name: name,
+          type: typeof fields[key],
+          isNested: !!parentPath,
+          parentKey: parentPath || null
+        });
+        
+        // Recursively extract nested objects
+        if (fields[key] && typeof fields[key] === 'object' && !Array.isArray(fields[key])) {
+          const nestedFields = extractFields(fields[key], path, name);
+          result.push(...nestedFields);
+        }
+      }
+      
+      return result;
+    }
+    
+    // Return what we have
     return result;
   } catch (e) {
     Logger.log(`Error in extractFields: ${e.message}`);
-    return [];
+    Logger.log(`Stack trace: ${e.stack}`);
+    return [
+      { path: 'id', key: 'id', name: 'ID', type: 'integer' },
+      { path: 'name', key: 'name', name: 'Name', type: 'string' },
+      { path: 'add_time', key: 'add_time', name: 'Created Date', type: 'date' }
+    ];
   }
 }
 
@@ -221,333 +619,250 @@ function extractFields(fields, parentPath = '', parentName = '') {
  * @param {string} sheetName - Sheet name
  */
 function showColumnSelectorUI(availableColumns, selectedColumns, entityType, sheetName) {
-  const htmlContent = `
-    <style>
-      body { font-family: Arial, sans-serif; margin: 0; padding: 10px; }
-      .container { display: flex; height: 400px; }
-      .column { width: 50%; padding: 10px; box-sizing: border-box; }
-      .scrollable { height: 340px; overflow-y: auto; border: 1px solid #ccc; padding: 5px; }
-      .header { font-weight: bold; margin-bottom: 10px; }
-      .item { padding: 5px; margin: 2px 0; cursor: pointer; border-radius: 3px; }
-      .item:hover { background-color: #f0f0f0; }
-      .selected { background-color: #e8f0fe; }
-      .footer { margin-top: 10px; display: flex; justify-content: space-between; }
-      .search { margin-bottom: 10px; width: 100%; padding: 5px; }
-      button { padding: 8px 12px; background-color: #4285f4; color: white; border: none; border-radius: 4px; cursor: pointer; }
-      button.secondary { background-color: #f0f0f0; color: #333; }
-      .action-btns { display: flex; gap: 5px; align-items: center; }
-      .category { font-weight: bold; margin-top: 5px; padding: 5px; background-color: #f0f0f0; }
-      .nested { margin-left: 15px; }
-      .info { font-size: 12px; color: #666; margin-bottom: 5px; }
-      .loading { display: none; margin-right: 10px; }
-      .loader { 
-        display: inline-block;
-        width: 20px;
-        height: 20px;
-        border: 3px solid rgba(255,255,255,.3);
-        border-radius: 50%;
-        border-top-color: white;
-        animation: spin 1s ease-in-out infinite;
-        vertical-align: middle;
-      }
-      @keyframes spin {
-        to { transform: rotate(360deg); }
-      }
-      .drag-handle {
-        display: inline-block;
-        width: 10px;
-        height: 16px;
-        background-image: radial-gradient(circle, #999 1px, transparent 1px);
-        background-size: 3px 3px;
-        background-position: 0 center;
-        background-repeat: repeat;
-        margin-right: 8px;
-        cursor: grab;
-        opacity: 0.5;
-      }
-      .selected:hover .drag-handle {
-        opacity: 1;
-      }
-      .dragging {
-        opacity: 0.4;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-      }
-      .over {
-        border-top: 2px solid #4285f4;
-      }
-      .sheet-info {
-        background-color: #f8f9fa;
-        padding: 10px;
-        border-radius: 4px;
-        margin-bottom: 15px;
-        font-size: 14px;
-        border-left: 4px solid #4285f4;
-      }
-    </style>
+  try {
+    // Log detailed information about the data
+    Logger.log(`*** UI DATA PASSING DEBUG ***`);
+    Logger.log(`Passing ${availableColumns.length} available columns to template`);
+    if (availableColumns.length > 0) {
+      Logger.log(`First available column: ${JSON.stringify(availableColumns[0])}`);
+      Logger.log(`Column keys preview: ${availableColumns.slice(0, 5).map(c => c.key).join(', ')}`);
+    }
     
-    <div class="header">
-      <div class="sheet-info">
-        Configuring columns for <strong>${entityType}</strong> in sheet <strong>"${sheetName}"</strong>
+    // Create a simple HTML UI instead of using the complex template
+    let html = `
+      <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h3 { margin-bottom: 15px; }
+        .container { display: flex; gap: 20px; height: 400px; }
+        .column { flex: 1; border: 1px solid #ccc; border-radius: 4px; padding: 10px; overflow: hidden; display: flex; flex-direction: column; }
+        .column-heading { font-weight: bold; margin-bottom: 10px; }
+        .item { padding: 5px; margin: 5px 0; background: #f5f5f5; border-radius: 3px; cursor: pointer; display: flex; align-items: center; }
+        .item:hover { background: #e0e0e0; }
+        .item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+        .item-button { margin-left: 5px; color: #4285f4; cursor: pointer; user-select: none; }
+        .scrollable { overflow-y: auto; flex-grow: 1; }
+        .search { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        .buttons { margin-top: 20px; text-align: right; }
+        button { padding: 8px 16px; margin-left: 10px; }
+        .primary-btn { background-color: #4285f4; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .primary-btn:hover { background-color: #3367d6; }
+        .info { margin-bottom: 10px; padding: 10px; background: #f9f9f9; border-radius: 4px; color: #666; }
+      </style>
+      
+      <h3>Column Selection for ${entityType} in "${sheetName}"</h3>
+      
+      <div class="info">
+        We found ${availableColumns.length} available columns. Select which ones to display in your sheet.
       </div>
-      <p class="info">Select columns from the left panel and add them to the right panel. Drag items in the right panel to reorder them.</p>
-    </div>
+      
+      <div class="container">
+        <div class="column">
+          <div class="column-heading">Available Columns (<span id="availableCount">${availableColumns.length}</span>)</div>
+          <input type="text" class="search" id="searchBox" placeholder="Search columns...">
+          <div class="scrollable" id="availableList">
+    `;
     
-    <div class="container">
-      <div class="column">
-        <input type="text" id="searchBox" class="search" placeholder="Search for columns...">
-        <div class="header">Available Columns</div>
-        <div id="availableList" class="scrollable">
-          <!-- Available columns will be populated here by JavaScript -->
+    // Add all available columns
+    for (const col of availableColumns) {
+      html += `
+        <div class="item" data-key="${col.key}" onclick="addColumn('${col.key}')">
+          <span class="item-name">${col.name}</span>
+          <span class="item-button">+</span>
+        </div>
+      `;
+    }
+    
+    html += `
+          </div>
+        </div>
+        
+        <div class="column">
+          <div class="column-heading">Selected Columns (<span id="selectedCount">${selectedColumns.length}</span>)</div>
+          <div class="scrollable" id="selectedList">
+    `;
+    
+    // Add selected columns
+    for (const col of selectedColumns) {
+      html += `
+        <div class="item" data-key="${col.key}">
+          <span class="item-name">${col.name}</span>
+          <span class="item-button" onclick="removeColumn('${col.key}')">✕</span>
+        </div>
+      `;
+    }
+    
+    if (selectedColumns.length === 0) {
+      html += `<div style="padding: 10px; color: #666;">No columns selected yet. Click on columns on the left to add them.</div>`;
+    }
+    
+    html += `
+          </div>
         </div>
       </div>
       
-      <div class="column">
-        <div class="header">Selected Columns</div>
-        <div id="selectedList" class="scrollable">
-          <!-- Selected columns will be populated here by JavaScript -->
-        </div>
+      <div class="buttons">
+        <button onclick="google.script.host.close()">Cancel</button>
+        <button class="primary-btn" onclick="saveColumns()">Save & Close</button>
       </div>
-    </div>
-    
-    <div class="footer">
-      <div class="action-btns">
-        <button class="secondary" id="debug">View Debug Info</button>
-      </div>
-      <div class="action-btns">
-        <span class="loading" id="saveLoading"><span class="loader"></span> Saving...</span>
-        <button class="secondary" id="cancel">Cancel</button>
-        <button id="save">Save & Close</button>
-      </div>
-    </div>
-
-    <script>
-      // Initialize data
-      let availableColumns = ${JSON.stringify(availableColumns)};
-      let selectedColumns = ${JSON.stringify(selectedColumns)};
-      const entityType = "${entityType}";
-      const sheetName = "${sheetName}";
       
-      // DOM elements
-      const availableList = document.getElementById('availableList');
-      const selectedList = document.getElementById('selectedList');
-      const searchBox = document.getElementById('searchBox');
-      
-      // Render the lists
-      function renderAvailableList(searchTerm = '') {
-        availableList.innerHTML = '';
+      <script>
+        // Column data
+        const availableColumnsData = ${JSON.stringify(availableColumns)};
+        let selectedColumnsData = ${JSON.stringify(selectedColumns)};
         
-        // Group columns by parent key or top-level
-        const topLevel = [];
-        const nested = {};
+        // Element references
+        const availableList = document.getElementById('availableList');
+        const selectedList = document.getElementById('selectedList');
+        const searchBox = document.getElementById('searchBox');
+        const availableCount = document.getElementById('availableCount');
+        const selectedCount = document.getElementById('selectedCount');
         
-        availableColumns.forEach(col => {
-          if (!selectedColumns.some(selected => selected.key === col.key)) {
-            if (col.name.toLowerCase().includes(searchTerm.toLowerCase())) {
-              if (!col.isNested) {
-                topLevel.push(col);
-              } else {
-                const parentKey = col.parentKey || 'unknown';
-                if (!nested[parentKey]) {
-                  nested[parentKey] = [];
-                }
-                nested[parentKey].push(col);
-              }
-            }
-          }
-        });
-        
-        // Add top-level columns first
-        if (topLevel.length > 0) {
-          const topLevelHeader = document.createElement('div');
-          topLevelHeader.className = 'category';
-          topLevelHeader.textContent = 'Main Fields';
-          availableList.appendChild(topLevelHeader);
+        // Add a column to selected
+        function addColumn(key) {
+          // Skip if already selected
+          if (selectedColumnsData.some(col => col.key === key)) return;
           
-          topLevel.forEach(col => {
-            const item = document.createElement('div');
-            item.className = 'item';
-            item.textContent = col.name;
-            item.dataset.key = col.key;
-            item.onclick = () => addColumn(col);
-            availableList.appendChild(item);
-          });
+          // Find column in available columns
+          const column = availableColumnsData.find(col => col.key === key);
+          if (column) {
+            // Add to selected
+            selectedColumnsData.push(column);
+            updateLists();
+          }
         }
         
-        // Then add nested columns by parent
-        for (const parentKey in nested) {
-          if (nested[parentKey].length > 0) {
-            const parentName = availableColumns.find(col => col.key === parentKey)?.name || parentKey;
-            
-            const categoryHeader = document.createElement('div');
-            categoryHeader.className = 'category';
-            categoryHeader.textContent = parentName;
-            availableList.appendChild(categoryHeader);
-            
-            nested[parentKey].forEach(col => {
+        // Remove a column from selected
+        function removeColumn(key) {
+          // Remove from selected
+          selectedColumnsData = selectedColumnsData.filter(col => col.key !== key);
+          updateLists();
+        }
+        
+        // Update both lists
+        function updateLists() {
+          // Update counts
+          selectedCount.textContent = selectedColumnsData.length;
+          
+          // Update selected list
+          selectedList.innerHTML = '';
+          
+          if (selectedColumnsData.length === 0) {
+            selectedList.innerHTML = '<div style="padding: 10px; color: #666;">No columns selected yet. Click on columns on the left to add them.</div>';
+          } else {
+            selectedColumnsData.forEach(col => {
               const item = document.createElement('div');
-              item.className = 'item nested';
-              item.textContent = col.name;
+              item.className = 'item';
               item.dataset.key = col.key;
-              item.onclick = () => addColumn(col);
-              availableList.appendChild(item);
+              item.innerHTML = \`
+                <span class="item-name">\${col.name}</span>
+                <span class="item-button" onclick="removeColumn('\${col.key}')">✕</span>
+              \`;
+              selectedList.appendChild(item);
             });
           }
+          
+          // Filter available list
+          filterAvailableList();
         }
-      }
-      
-      function renderSelectedList() {
-        selectedList.innerHTML = '';
-        selectedColumns.forEach((col, index) => {
-          const item = document.createElement('div');
-          item.className = 'item selected';
-          item.dataset.key = col.key;
-          item.dataset.index = index;
-          item.draggable = true;
-          
-          // Add drag handle
-          const dragHandle = document.createElement('span');
-          dragHandle.className = 'drag-handle';
-          dragHandle.innerHTML = '&nbsp;&nbsp;&nbsp;';
-          item.appendChild(dragHandle);
-          
-          // Add column name
-          const nameSpan = document.createElement('span');
-          nameSpan.textContent = col.name;
-          item.appendChild(nameSpan);
-          
-          item.ondragstart = handleDragStart;
-          item.ondragover = handleDragOver;
-          item.ondrop = handleDrop;
-          item.ondragend = handleDragEnd;
-          
-          const removeBtn = document.createElement('span');
-          removeBtn.textContent = ' ✕';
-          removeBtn.style.color = 'red';
-          removeBtn.style.float = 'right';
-          removeBtn.style.cursor = 'pointer';
-          removeBtn.onclick = (e) => {
-            e.stopPropagation();
-            removeColumn(col);
-          };
-          
-          item.appendChild(removeBtn);
-          selectedList.appendChild(item);
-        });
-      }
-      
-      // Drag and drop functionality
-      let draggedItem = null;
-      
-      function handleDragStart(e) {
-        draggedItem = this;
-        this.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', this.dataset.index);
         
-        // Add a small delay to make the visual change noticeable
-        setTimeout(() => {
-          this.style.opacity = '0.4';
-        }, 0);
-      }
-      
-      function handleDragOver(e) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        this.classList.add('over');
-      }
-      
-      function handleDrop(e) {
-        e.preventDefault();
-        this.classList.remove('over');
-        
-        const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
-        const toIndex = parseInt(this.dataset.index);
-        
-        if (fromIndex !== toIndex) {
-          const item = selectedColumns[fromIndex];
-          selectedColumns.splice(fromIndex, 1);
-          selectedColumns.splice(toIndex, 0, item);
-          renderSelectedList();
+        // Filter available columns based on search
+        function filterAvailableList() {
+          const searchTerm = searchBox.value.toLowerCase();
+          const filteredColumns = availableColumnsData.filter(col => 
+            !selectedColumnsData.some(selected => selected.key === col.key) &&
+            (searchTerm === '' || col.name.toLowerCase().includes(searchTerm))
+          );
+          
+          // Update UI
+          availableCount.textContent = filteredColumns.length;
+          availableList.innerHTML = '';
+          
+          filteredColumns.forEach(col => {
+            const item = document.createElement('div');
+            item.className = 'item';
+            item.dataset.key = col.key;
+            item.onclick = () => addColumn(col.key);
+            item.innerHTML = \`
+              <span class="item-name">\${col.name}</span>
+              <span class="item-button">+</span>
+            \`;
+            availableList.appendChild(item);
+          });
+          
+          if (filteredColumns.length === 0) {
+            availableList.innerHTML = '<div style="padding: 10px; color: #666;">No matching columns found</div>';
+          }
         }
-      }
-      
-      function handleDragEnd() {
-        this.classList.remove('dragging');
-        document.querySelectorAll('.item').forEach(item => {
-          item.classList.remove('over');
-        });
-      }
-      
-      // Column management
-      function addColumn(column) {
-        selectedColumns.push(column);
-        renderAvailableList(searchBox.value);
-        renderSelectedList();
-      }
-      
-      function removeColumn(column) {
-        selectedColumns = selectedColumns.filter(col => col.key !== column.key);
-        renderAvailableList(searchBox.value);
-        renderSelectedList();
-      }
-      
-      // Event listeners
-      document.getElementById('save').onclick = () => {
-        // Show loading animation
-        document.getElementById('saveLoading').style.display = 'inline-block';
-        document.getElementById('save').disabled = true;
-        document.getElementById('cancel').disabled = true;
         
-        google.script.run
-          .withSuccessHandler(() => {
-            document.getElementById('saveLoading').style.display = 'none';
-            google.script.host.close();
-          })
-          .withFailureHandler((error) => {
-            document.getElementById('saveLoading').style.display = 'none';
-            document.getElementById('save').disabled = false;
-            document.getElementById('cancel').disabled = false;
-            alert('Error saving column preferences: ' + error.message);
-          })
-          .saveColumnPreferences(selectedColumns, entityType, sheetName);
-      };
-      
-      document.getElementById('cancel').onclick = () => {
-        google.script.host.close();
-      };
-      
-      document.getElementById('debug').onclick = () => {
-        google.script.run.logDebugInfo();
-        alert('Debug information has been logged to the Apps Script execution log. You can view it from View > Logs in the Apps Script editor.');
-      };
-      
-      searchBox.oninput = () => {
-        renderAvailableList(searchBox.value);
-      };
-      
-      // Initial render
-      renderAvailableList();
-      renderSelectedList();
-    </script>
-  `;
-  
-  const htmlOutput = HtmlService.createHtmlOutput(htmlContent)
-    .setWidth(800)
-    .setHeight(550)
-    .setTitle(`Select Columns for ${entityType} in "${sheetName}"`);
-  
-  SpreadsheetApp.getUi().showModalDialog(htmlOutput, `Select Columns for ${entityType} in "${sheetName}"`);
+        // Save the column selection
+        function saveColumns() {
+          if (selectedColumnsData.length === 0) {
+            alert('Please select at least one column');
+            return;
+          }
+          
+          // Call back to the server to save
+          google.script.run
+            .withSuccessHandler(() => {
+              alert('Column preferences saved successfully!');
+              google.script.host.close();
+            })
+            .withFailureHandler(error => {
+              alert('Error saving column preferences: ' + error.message);
+            })
+            .saveColumnPreferences(selectedColumnsData, "${entityType}", "${sheetName}");
+        }
+        
+        // Set up event listeners
+        searchBox.addEventListener('input', filterAvailableList);
+        
+        // Initialize the UI
+        updateLists();
+      </script>
+    `;
+    
+    // Create HTML output
+    const htmlOutput = HtmlService.createHtmlOutput(html)
+      .setWidth(800)
+      .setHeight(600)
+      .setTitle(`Select Columns for ${entityType} in "${sheetName}"`);
+    
+    // Show the dialog
+    SpreadsheetApp.getUi().showModalDialog(htmlOutput, `Column Selection`);
+    
+  } catch (e) {
+    Logger.log(`Error showing column selector UI: ${e.message}`);
+    Logger.log(`Stack trace: ${e.stack}`);
+    SpreadsheetApp.getUi().alert(
+      'Error',
+      'Failed to load column selector: ' + e.message,
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
 }
 
 /**
- * Saves column preferences for a specific entity type and sheet
- * @param {Array} columns - Array of column keys to save
- * @param {string} entityType - Entity type
- * @param {string} sheetName - Sheet name
- * @return {boolean} True if successful, false otherwise
+ * Saves column preferences after user selection
+ * @param {Array} selectedColumns - Array of selected column objects
+ * @param {string} entityType - The entity type (persons, deals, etc.)
+ * @param {string} sheetName - The name of the sheet
+ * @return {boolean} - Success status
  */
-function saveColumnPreferences(columns, entityType, sheetName) {
-  return saveTeamAwareColumnPreferences(columns, entityType, sheetName);
+function saveColumnPreferences(selectedColumns, entityType, sheetName) {
+  try {
+    Logger.log(`Saving column preferences for ${entityType} in sheet "${sheetName}"`);
+    Logger.log(`Selected ${selectedColumns.length} columns: ${selectedColumns.map(c => c.key).join(', ')}`);
+    
+    // Get the current user
+    const user = Session.getActiveUser().getEmail();
+    
+    // Save to SyncService - use namespace
+    return SyncService.saveColumnPreferences(selectedColumns, entityType, sheetName, user);
+  } catch (e) {
+    Logger.log(`Error saving column preferences: ${e.message}`);
+    Logger.log(`Stack trace: ${e.stack}`);
+    throw new Error(`Failed to save column preferences: ${e.message}`);
+  }
 }
 
 /**
@@ -556,11 +871,17 @@ function saveColumnPreferences(columns, entityType, sheetName) {
  */
 function showSyncStatus(sheetName) {
   try {
+    // Get the current entity type for this sheet
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const sheetEntityTypeKey = `ENTITY_TYPE_${sheetName}`;
+    const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
+    
     // Create the HTML template
     const htmlTemplate = HtmlService.createTemplateFromFile('SyncStatus');
     
     // Pass data to the template
     htmlTemplate.sheetName = sheetName;
+    htmlTemplate.entityType = entityType;
     
     // Create the HTML from the template
     const html = htmlTemplate.evaluate()
@@ -1130,43 +1451,53 @@ function reopenTeamManager() {
 
 /**
  * Saves team-aware column preferences
- * @param {Array} columns - Column keys to save
+ * @param {Array} columns - Array of column keys to save
  * @param {string} entityType - Entity type
  * @param {string} sheetName - Sheet name
- * @return {boolean} True if successful, false otherwise
+ * @returns {boolean} Success status
  */
-function saveTeamAwareColumnPreferences(columns, entityType, sheetName) {
+UI.saveTeamAwareColumnPreferences = function(columns, entityType, sheetName) {
   try {
     if (!entityType || !sheetName) {
-      return false;
+      throw new Error("Missing required parameters for saveTeamAwareColumnPreferences");
     }
     
+    const scriptProperties = PropertiesService.getScriptProperties();
     const userEmail = Session.getActiveUser().getEmail();
-    const userTeam = getUserTeam(userEmail);
     
-    // Generate storage key
-    const key = `COLUMN_PREFS_${entityType}_${sheetName}`;
+    // Store columns in user-specific property
+    const userColumnSettingsKey = `COLUMNS_${userEmail}_${sheetName}_${entityType}`;
+    scriptProperties.setProperty(userColumnSettingsKey, JSON.stringify(columns));
+    Logger.log(`Saved user-specific column preferences with key: ${userColumnSettingsKey}`);
     
-    if (userTeam && userTeam.settings && userTeam.settings.shareColumns) {
-      // Team member with shared column preferences - store in team data
-      const teamsData = getTeamsData();
-      const teamId = userTeam.teamId;
+    // Also store in global property for backward compatibility
+    const columnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
+    scriptProperties.setProperty(columnSettingsKey, JSON.stringify(columns));
+    
+    // Check if two-way sync is enabled for this sheet
+    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
+    const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
+    
+    // When columns are changed and two-way sync is enabled, handle tracking column
+    if (twoWaySyncEnabled) {
+      Logger.log(`Two-way sync is enabled for sheet "${sheetName}". Checking if we need to adjust sync column.`);
       
-      if (teamsData[teamId]) {
-        teamsData[teamId].columnPreferences = teamsData[teamId].columnPreferences || {};
-        teamsData[teamId].columnPreferences[key] = columns;
-        saveTeamsData(teamsData);
-      }
-    } else {
-      // Individual preference - store in user properties
-      const userProps = PropertiesService.getUserProperties();
-      userProps.setProperty(key, JSON.stringify(columns));
+      // When columns are changed, delete the tracking column property to force repositioning
+      const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
+      scriptProperties.deleteProperty(twoWaySyncTrackingColumnKey);
+      
+      // Add a flag to indicate that the Sync Status column should be repositioned at the end
+      const twoWaySyncColumnAtEndKey = `TWOWAY_SYNC_COLUMN_AT_END_${sheetName}`;
+      scriptProperties.setProperty(twoWaySyncColumnAtEndKey, 'true');
+      
+      Logger.log(`Removed tracking column property for sheet "${sheetName}" to ensure correct positioning on next sync.`);
     }
     
     return true;
   } catch (e) {
     Logger.log(`Error in saveTeamAwareColumnPreferences: ${e.message}`);
-    return false;
+    Logger.log(`Stack trace: ${e.stack}`);
+    throw e;
   }
 }
 
@@ -1174,35 +1505,55 @@ function saveTeamAwareColumnPreferences(columns, entityType, sheetName) {
  * Gets team-aware column preferences
  * @param {string} entityType - Entity type
  * @param {string} sheetName - Sheet name
- * @return {Array} Array of column keys
+ * @returns {Array} Array of column configurations
  */
-function getTeamAwareColumnPreferences(entityType, sheetName) {
+UI.getTeamAwareColumnPreferences = function(entityType, sheetName) {
   try {
-    if (!entityType || !sheetName) {
-      return [];
-    }
-    
-    const key = `COLUMN_PREFS_${entityType}_${sheetName}`;
-    
+    const scriptProperties = PropertiesService.getScriptProperties();
     const userEmail = Session.getActiveUser().getEmail();
+
+    // Get the user's team and check sharing settings
     const userTeam = getUserTeam(userEmail);
-    
-    if (userTeam && userTeam.settings && userTeam.settings.shareColumns) {
-      // Check team preferences first
-      if (userTeam.columnPreferences && userTeam.columnPreferences[key]) {
-        return userTeam.columnPreferences[key];
+
+    // First try to get user-specific column preferences
+    const userColumnSettingsKey = `COLUMNS_${userEmail}_${sheetName}_${entityType}`;
+    let savedColumnsJson = scriptProperties.getProperty(userColumnSettingsKey);
+
+    // If the user is part of a team and column sharing is enabled, check team preferences
+    if ((!savedColumnsJson || savedColumnsJson === '[]') && userTeam && userTeam.shareColumns) {
+      // Look for team members' configurations
+      const memberEmails = userTeam.memberEmails || [];
+      for (const teamMemberEmail of memberEmails) {
+        if (teamMemberEmail === userEmail) continue; // Skip the current user
+
+        const teamMemberColumnSettingsKey = `COLUMNS_${teamMemberEmail}_${sheetName}_${entityType}`;
+        const teamMemberColumnsJson = scriptProperties.getProperty(teamMemberColumnSettingsKey);
+
+        if (teamMemberColumnsJson && teamMemberColumnsJson !== '[]') {
+          savedColumnsJson = teamMemberColumnsJson;
+          Logger.log(`Using team member ${teamMemberEmail}'s column preferences for ${entityType}`);
+          break;
+        }
       }
     }
-    
-    // Fall back to user preferences
-    const userProps = PropertiesService.getUserProperties();
-    const prefsJson = userProps.getProperty(key);
-    
-    if (prefsJson) {
-      return JSON.parse(prefsJson);
+
+    // If still no team column preferences, fall back to the global setting
+    if (!savedColumnsJson || savedColumnsJson === '[]') {
+      const globalColumnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
+      savedColumnsJson = scriptProperties.getProperty(globalColumnSettingsKey);
     }
-    
-    return [];
+
+    let selectedColumns = [];
+    if (savedColumnsJson) {
+      try {
+        selectedColumns = JSON.parse(savedColumnsJson);
+      } catch (e) {
+        Logger.log(`Error parsing saved columns: ${e.message}`);
+        selectedColumns = [];
+      }
+    }
+
+    return selectedColumns;
   } catch (e) {
     Logger.log(`Error in getTeamAwareColumnPreferences: ${e.message}`);
     return [];
@@ -1262,32 +1613,28 @@ function getFiltersForEntityType(entityType) {
  */
 function saveSettings(apiKey, entityType, filterId, subdomain, sheetName, enableTimestamp = false) {
   try {
-    const docProps = PropertiesService.getDocumentProperties();
+    const scriptProperties = PropertiesService.getScriptProperties();
+
+    // Save global settings (API key and subdomain are global)
+    if (apiKey) scriptProperties.setProperty('PIPEDRIVE_API_KEY', apiKey);
+    if (subdomain) scriptProperties.setProperty('PIPEDRIVE_SUBDOMAIN', subdomain);
+    if (sheetName) scriptProperties.setProperty('SHEET_NAME', sheetName);
     
-    // Save the settings
-    if (apiKey) docProps.setProperty('PIPEDRIVE_API_KEY', apiKey);
-    if (subdomain) docProps.setProperty('PIPEDRIVE_SUBDOMAIN', subdomain);
-    if (sheetName) docProps.setProperty('EXPORT_SHEET_NAME', sheetName);
-    
-    // Save sheet-specific entity type (this is the key fix)
+    // Save sheet-specific settings
     if (entityType && sheetName) {
       const sheetEntityTypeKey = `ENTITY_TYPE_${sheetName}`;
-      docProps.setProperty(sheetEntityTypeKey, entityType);
-      // Still save global entity type for backward compatibility
-      docProps.setProperty('PIPEDRIVE_ENTITY_TYPE', entityType);
+      scriptProperties.setProperty(sheetEntityTypeKey, entityType);
     }
     
     // Only update filter ID if provided (may be empty intentionally)
     if (filterId !== undefined && sheetName) {
-      // Also save filter ID with sheet-specific key
       const sheetFilterIdKey = `FILTER_ID_${sheetName}`;
-      docProps.setProperty(sheetFilterIdKey, filterId);
-      // Global filter ID for backward compatibility
-      docProps.setProperty('PIPEDRIVE_FILTER_ID', filterId);
+      scriptProperties.setProperty(sheetFilterIdKey, filterId);
     }
     
     // Handle boolean property
-    docProps.setProperty('ENABLE_TIMESTAMP', enableTimestamp ? 'true' : 'false');
+    const timestampEnabledKey = `TIMESTAMP_ENABLED_${sheetName}`;
+    scriptProperties.setProperty(timestampEnabledKey, enableTimestamp.toString());
     
     return true;
   } catch (e) {
@@ -1296,47 +1643,11 @@ function saveSettings(apiKey, entityType, filterId, subdomain, sheetName, enable
   }
 }
 
-/**
- * Shows the help/about dialog
- */
-function showHelp() {
-  try {
-    // Create the HTML template
-    const htmlTemplate = HtmlService.createTemplateFromFile('Help');
-    
-    // Get version
-    const versionsStr = PropertiesService.getScriptProperties().getProperty('VERSION_HISTORY') || '[]';
-    const versions = JSON.parse(versionsStr);
-    
-    // Get current version (latest in history)
-    const currentVersion = versions.length > 0 ? versions[0].version : '1.0.0';
-    
-    // Pass data to the template
-    htmlTemplate.currentVersion = currentVersion;
-    htmlTemplate.versionHistory = versions;
-    
-    // Create the HTML from the template
-    const html = htmlTemplate.evaluate()
-      .setTitle('Help & About')
-      .setWidth(600)
-      .setHeight(500);
-    
-    // Show the dialog
-    SpreadsheetApp.getUi().showModalDialog(html, 'Help & About');
-  } catch (e) {
-    Logger.log(`Error in showHelp: ${e.message}`);
-    SpreadsheetApp.getUi().alert('Error', 'Failed to open help dialog: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
-  }
-}
-
-/**
- * Shows the trigger manager dialog
- */
 function showTriggerManager() {
   try {
     // Get current triggers
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    const sheetName = PropertiesService.getDocumentProperties().getProperty('EXPORT_SHEET_NAME') || DEFAULT_SHEET_NAME;
+    const sheetName = PropertiesService.getScriptProperties().getProperty('SHEET_NAME') || DEFAULT_SHEET_NAME;
     
     // Get all triggers for this sheet
     const triggers = getTriggersForSheet(sheetName);
@@ -1362,113 +1673,17 @@ function showTriggerManager() {
   }
 }
 
-/**
- * Gets triggers for a specific sheet
- * @param {string} sheetName - Sheet name
- * @return {Array} Array of trigger info objects
- */
-function getTriggersForSheet(sheetName) {
-  try {
-    const result = [];
-    const triggers = ScriptApp.getProjectTriggers();
-    
-    // Format each trigger into a more user-friendly object
-    for (const trigger of triggers) {
-      if (trigger.getHandlerFunction() === 'syncSheetFromTrigger') {
-        const triggerInfo = getTriggerInfo(trigger);
-        
-        // Only include if it's for this sheet or for all sheets
-        if (!triggerInfo.sheetName || triggerInfo.sheetName === sheetName) {
-          result.push(triggerInfo);
-        }
-      }
-    }
-    
-    return result;
-  } catch (e) {
-    Logger.log(`Error in getTriggersForSheet: ${e.message}`);
-    return [];
-  }
-}
-
-/**
- * Gets information about a trigger
- * @param {Trigger} trigger - Trigger object
- * @return {Object} Trigger info object
- */
-function getTriggerInfo(trigger) {
-  try {
-    // Get trigger ID
-    const triggerId = trigger.getUniqueId();
-    
-    // Get trigger properties from storage
-    const userProps = PropertiesService.getUserProperties();
-    const triggerPropsJson = userProps.getProperty(`TRIGGER_${triggerId}`);
-    const triggerProps = triggerPropsJson ? JSON.parse(triggerPropsJson) : {};
-    
-    // Get trigger type
-    const triggerType = trigger.getEventType();
-    let schedule = '';
-    
-    if (triggerType === ScriptApp.EventType.CLOCK) {
-      // Time-based trigger
-      const hour = trigger.getAtHour();
-      const minute = trigger.getAtMinute();
-      const weekDay = trigger.getWeekDay();
-      
-      if (hour !== null && minute !== null) {
-        // Daily or weekly trigger
-        const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-        
-        if (weekDay !== null) {
-          // Weekly trigger
-          const weekDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-          schedule = `Weekly on ${weekDays[weekDay]} at ${timeStr}`;
-        } else {
-          // Daily trigger
-          schedule = `Daily at ${timeStr}`;
-        }
-      } else {
-        // Hourly trigger
-        const frequency = trigger.getAtHour(); // Re-using this field for an hourly frequency
-        schedule = `Every ${frequency} hour(s)`;
-      }
-    }
-    
-    // Combine info
-    return {
-      id: triggerId,
-      schedule: schedule,
-      sheetName: triggerProps.sheetName || 'All sheets',
-      createdAt: triggerProps.createdAt || 'Unknown',
-      entityType: triggerProps.entityType || 'Unknown',
-      description: triggerProps.description || '',
-      lastRun: triggerProps.lastRun || 'Never'
-    };
-  } catch (e) {
-    Logger.log(`Error in getTriggerInfo: ${e.message}`);
-    return {
-      id: 'unknown',
-      schedule: 'Unknown',
-      sheetName: 'Unknown',
-      createdAt: 'Unknown',
-      lastRun: 'Never'
-    };
-  }
-}
-
-/**
- * Shows the two-way sync settings dialog
- */
 function showTwoWaySyncSettings() {
   try {
-    const docProps = PropertiesService.getDocumentProperties();
+    const scriptProps = PropertiesService.getScriptProperties();
     const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     const activeSheetName = activeSheet.getName();
     
     // Get current settings
-    const enableTwoWaySync = docProps.getProperty('ENABLE_TWO_WAY_SYNC') === 'true';
-    const trackingColumn = docProps.getProperty('SYNC_TRACKING_COLUMN') || '';
+    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
+    const enableTwoWaySync = scriptProps.getProperty(twoWaySyncEnabledKey) === 'true';
+    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
+    const trackingColumn = scriptProps.getProperty(twoWaySyncTrackingColumnKey) || '';
     
     // Create a settings object with all properties the template might need
     const settings = {
@@ -1499,39 +1714,28 @@ function showTwoWaySyncSettings() {
   }
 }
 
-/**
- * Saves two-way sync settings
- * @param {boolean} enableTwoWaySync - Whether to enable two-way sync
- * @param {string} trackingColumn - Column letter for tracking changes
- * @return {boolean} True if successful, false otherwise
- */
 function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
   try {
-    const docProps = PropertiesService.getDocumentProperties(); // Make sure we use DocumentProperties
+    const scriptProps = PropertiesService.getScriptProperties();
     const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     const activeSheetName = activeSheet.getName();
     
-    // Save settings with sheet-specific keys (matching original script)
+    // Save settings with sheet-specific keys
     const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
     const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
     
     // Save the settings
-    docProps.setProperty(twoWaySyncEnabledKey, enableTwoWaySync ? 'true' : 'false');
-    
-    // Also save global setting for backward compatibility
-    docProps.setProperty('ENABLE_TWO_WAY_SYNC', enableTwoWaySync ? 'true' : 'false');
+    scriptProps.setProperty(twoWaySyncEnabledKey, enableTwoWaySync ? 'true' : 'false');
     
     // Debug log to verify what we're saving
     Logger.log(`Saving two-way sync setting: ${twoWaySyncEnabledKey} = ${enableTwoWaySync ? 'true' : 'false'}`);
     
     if (trackingColumn) {
-      // Save both sheet-specific and global tracking column
-      docProps.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
-      docProps.setProperty('SYNC_TRACKING_COLUMN', trackingColumn);
+      // Save the tracking column
+      scriptProps.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
     } else {
-      // If no column specified, clean up the properties
-      docProps.deleteProperty(twoWaySyncTrackingColumnKey);
-      docProps.deleteProperty('SYNC_TRACKING_COLUMN');
+      // If no column specified, clean up the property
+      scriptProps.deleteProperty(twoWaySyncTrackingColumnKey);
     }
     
     // If two-way sync is enabled, set up the onEdit trigger and immediately add the Sync Status column
@@ -1543,7 +1747,6 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
       addSyncStatusColumn(activeSheet, trackingColumn);
     } else {
       removeOnEditTrigger();
-      // Consider removing the Sync Status column?
     }
     
     return true;
@@ -1553,11 +1756,6 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
   }
 }
 
-/**
- * Adds a Sync Status column to the sheet
- * @param {Sheet} sheet - The sheet to add the column to
- * @param {string} specificColumn - Optional specific column letter to use
- */
 function addSyncStatusColumn(sheet, specificColumn = '') {
   try {
     // First, check if there's already a Sync Status column
@@ -1616,7 +1814,7 @@ function addSyncStatusColumn(sheet, specificColumn = '') {
     const sheetName = sheet.getName();
     const trackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
     const columnLetter = columnToLetter(targetColumnIndex);
-    PropertiesService.getDocumentProperties().setProperty(trackingColumnKey, columnLetter);
+    PropertiesService.getScriptProperties().setProperty(trackingColumnKey, columnLetter);
     
     Logger.log(`Added Sync Status column at column ${columnLetter}`);
     
@@ -1673,21 +1871,6 @@ function addSyncStatusColumn(sheet, specificColumn = '') {
 }
 
 /**
- * Removes the onEdit trigger for two-way sync
- */
-function removeOnEditTrigger() {
-  const triggers = ScriptApp.getProjectTriggers();
-  for (const trigger of triggers) {
-    if (trigger.getHandlerFunction() === 'onEdit') {
-      ScriptApp.deleteTrigger(trigger);
-      Logger.log('onEdit trigger removed');
-      break;
-    }
-  }
-}
-
-// Make sure this exists in your Utilities.gs file or add it here
-/**
  * Converts a column index to letter format (e.g., 1 = A, 27 = AA)
  * @param {number} column - The column index (1-based)
  * @return {string} The column letter
@@ -1714,134 +1897,4 @@ function columnLetterToIndex(letter) {
     column += (letter.charCodeAt(i) - 64) * Math.pow(26, length - i - 1);
   }
   return column;
-}
-
-/**
- * Shows a simple dialog for joining a team
- * This is shown when a user without a team tries to use the add-on
- */
-function showTeamJoinRequest() {
-  try {
-    const html = HtmlService.createHtmlOutput(`
-      <style>
-        body {
-          font-family: Arial, sans-serif;
-          margin: 0;
-          padding: 20px;
-        }
-        .container {
-          max-width: 400px;
-          margin: 0 auto;
-        }
-        h3 {
-          margin-top: 0;
-          color: #4285F4;
-        }
-        p {
-          margin-bottom: 15px;
-        }
-        .form-group {
-          margin-bottom: 15px;
-        }
-        label {
-          display: block;
-          margin-bottom: 5px;
-          font-weight: bold;
-        }
-        input[type="text"] {
-          width: 100%;
-          padding: 8px;
-          border: 1px solid #ddd;
-          border-radius: 4px;
-          box-sizing: border-box;
-        }
-        button {
-          background-color: #4285F4;
-          color: white;
-          border: none;
-          padding: 8px 15px;
-          border-radius: 4px;
-          cursor: pointer;
-        }
-        button:hover {
-          background-color: #3367D6;
-        }
-        .error {
-          color: #d32f2f;
-          margin-top: 5px;
-        }
-        .options {
-          margin-top: 20px;
-          text-align: center;
-        }
-        .options a {
-          color: #4285F4;
-          text-decoration: none;
-        }
-        .options a:hover {
-          text-decoration: underline;
-        }
-      </style>
-      <div class="container">
-        <h3>Join a Team</h3>
-        <p>Enter a team ID to join an existing team:</p>
-        
-        <div class="form-group">
-          <label for="team-id">Team ID</label>
-          <input type="text" id="team-id" placeholder="Enter team ID">
-          <div id="error-message" class="error"></div>
-        </div>
-        
-        <button id="join-button">Join Team</button>
-        
-        <div class="options">
-          <p>Don't have a team ID? <a href="#" id="create-team-link">Create a new team</a></p>
-        </div>
-      </div>
-      
-      <script>
-        // Join team button handler
-        document.getElementById('join-button').addEventListener('click', function() {
-          // Get team ID
-          const teamId = document.getElementById('team-id').value.trim();
-          if (!teamId) {
-            document.getElementById('error-message').textContent = 'Please enter a team ID';
-            return;
-          }
-          
-          // Call server function
-          google.script.run
-            .withSuccessHandler(function(result) {
-              if (result.success) {
-                // Refresh the page to show the full menu
-                window.top.location.reload();
-              } else {
-                document.getElementById('error-message').textContent = result.message || 'Error joining team';
-              }
-            })
-            .withFailureHandler(function(error) {
-              document.getElementById('error-message').textContent = 'Error: ' + error.message;
-            })
-            .joinTeam(teamId);
-        });
-        
-        // Create team link handler
-        document.getElementById('create-team-link').addEventListener('click', function(e) {
-          e.preventDefault();
-          
-          // Show the team management dialog in create mode
-          google.script.run.showTeamManager(false);
-          google.script.host.close();
-        });
-      </script>
-    `)
-    .setWidth(450)
-    .setHeight(300)
-    .setTitle('Join Team');
-    
-    SpreadsheetApp.getUi().showModalDialog(html, 'Join Team');
-  } catch (e) {
-    Logger.log('Error in showTeamJoinRequest: ' + e.message);
-    SpreadsheetApp.getUi().alert('Error', 'Failed to show join request: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
-  }
 }

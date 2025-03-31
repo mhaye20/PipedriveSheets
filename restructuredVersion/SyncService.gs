@@ -7,6 +7,9 @@
  * - Managing synchronization status and scheduling
  */
 
+// Create SyncService namespace if it doesn't exist
+var SyncService = SyncService || {};
+
 /**
  * Main synchronization function that syncs data from Pipedrive to the sheet
  */
@@ -144,7 +147,10 @@ function syncPipedriveDataToSheet(entityType, skipPush = false) {
   try {
     const docProps = PropertiesService.getDocumentProperties();
     const filterId = docProps.getProperty('PIPEDRIVE_FILTER_ID');
-    const sheetName = docProps.getProperty('EXPORT_SHEET_NAME') || DEFAULT_SHEET_NAME;
+    
+    // Get the active sheet instead of using a property
+    const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const sheetName = activeSheet.getName();
     
     updateSyncStatus('retrieving', 'In Progress', `Retrieving ${entityType} from Pipedrive...`, 10);
     
@@ -190,7 +196,7 @@ function syncPipedriveDataToSheet(entityType, skipPush = false) {
     updateSyncStatus('processing', 'In Progress', `Processing ${items.length} ${entityType}...`, 30);
     
     // Get team-aware column preferences
-    const selectedColumns = getTeamAwareColumnPreferences(entityType, sheetName);
+    const selectedColumns = SyncService.getTeamAwareColumnPreferences(entityType, sheetName);
     
     // If no columns are selected, select default ones or all
     if (!selectedColumns || selectedColumns.length === 0) {
@@ -212,7 +218,7 @@ function syncPipedriveDataToSheet(entityType, skipPush = false) {
       updateSyncStatus('processing', 'In Progress', `No columns selected, using defaults`, 40);
       
       // Save the default columns as preferences
-      saveTeamAwareColumnPreferences(defaultColumns, entityType, sheetName);
+      SyncService.saveTeamAwareColumnPreferences(defaultColumns, entityType, sheetName);
     }
     
     // Process the data
@@ -273,6 +279,9 @@ function writeDataToSheet(items, options) {
       fields 
     } = options;
     
+    Logger.log(`Writing data to sheet: ${sheetName}, entityType: ${entityType}`);
+    Logger.log(`Selected columns: ${selectedColumns.length}, isWriteTimestamp: ${isWriteTimestamp}, isTwoWaySync: ${isTwoWaySync}`);
+    
     // Get the active spreadsheet and destination sheet
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let sheet = ss.getSheetByName(sheetName);
@@ -299,12 +308,14 @@ function writeDataToSheet(items, options) {
     // Add selected columns to header
     for (const columnPath of columnsToPull) {
       // Get user-friendly column name
+      let columnName = columnPath; // Default to path if name not found
       for (const field of fields) {
         if (field.key === columnPath) {
-          headerRow.push(formatColumnName(field.name));
+          columnName = formatColumnName(field.name);
           break;
         }
       }
+      headerRow.push(columnName);
     }
     
     // Add timestamp column if enabled
@@ -346,6 +357,25 @@ function writeDataToSheet(items, options) {
       }
       
       dataRows.push(row);
+    }
+    
+    // Check and log lengths to diagnose mismatch
+    if (dataRows.length > 0) {
+      Logger.log(`Header row length: ${headerRow.length}, Data row length: ${dataRows[0].length}`);
+      
+      // Ensure all data rows have the same length as the header row
+      for (let i = 0; i < dataRows.length; i++) {
+        // Adjust row length if it doesn't match headers
+        if (dataRows[i].length < headerRow.length) {
+          // Add empty cells to match header length
+          while (dataRows[i].length < headerRow.length) {
+            dataRows[i].push('');
+          }
+        } else if (dataRows[i].length > headerRow.length) {
+          // Trim excess cells
+          dataRows[i] = dataRows[i].slice(0, headerRow.length);
+        }
+      }
     }
     
     // Write data rows
@@ -1213,13 +1243,41 @@ function saveSettings(apiKey, entityType, filterId, subdomain, sheetName) {
 
 /**
  * Saves column preferences to script properties
+ * @param {Array} columns - Array of column objects with key and name properties
+ * @param {string} entityType - Entity type
+ * @param {string} sheetName - Sheet name
+ * @param {string} userEmail - Email of the user saving the preferences
  */
-function saveColumnPreferences(columns, entityType, sheetName) {
-  const scriptProperties = PropertiesService.getScriptProperties();
-  
-  // Store columns based on both entity type and sheet name for sheet-specific preferences
-  const columnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
-  scriptProperties.setProperty(columnSettingsKey, JSON.stringify(columns));
+SyncService.saveColumnPreferences = function(columns, entityType, sheetName, userEmail) {
+  try {
+    Logger.log(`SyncService.saveColumnPreferences for ${entityType} in sheet "${sheetName}" for user ${userEmail}`);
+    
+    // Extract column keys if we received full column objects
+    let columnKeys = columns;
+    if (columns.length > 0 && typeof columns[0] === 'object' && columns[0].key) {
+      Logger.log(`Received column objects, extracting keys from ${columns.length} columns`);
+      columnKeys = columns.map(col => col.key);
+    }
+    
+    const scriptProperties = PropertiesService.getScriptProperties();
+    
+    // Store columns based on both entity type and sheet name for sheet-specific preferences
+    const columnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
+    scriptProperties.setProperty(columnSettingsKey, JSON.stringify(columnKeys));
+    
+    // Also store in user-specific property if email is provided
+    if (userEmail) {
+      const userColumnSettingsKey = `COLUMNS_${userEmail}_${sheetName}_${entityType}`;
+      scriptProperties.setProperty(userColumnSettingsKey, JSON.stringify(columnKeys));
+      Logger.log(`Saved user-specific column preferences with key: ${userColumnSettingsKey}`);
+    }
+    
+    return true;
+  } catch (e) {
+    Logger.log(`Error in SyncService.saveColumnPreferences: ${e.message}`);
+    Logger.log(`Stack trace: ${e.stack}`);
+    throw e;
+  }
 }
 
 /**
@@ -1383,5 +1441,69 @@ function logDebugInfo() {
     
   } else {
     Logger.log(`No ${entityType} found with this filter. Please check the filter ID.`);
+  }
+}
+
+/**
+ * Gets team-aware column preferences - wrapper for UI.gs function
+ * @param {string} entityType - Entity type
+ * @param {string} sheetName - Sheet name
+ * @return {Array} Array of column keys
+ */
+SyncService.getTeamAwareColumnPreferences = function(entityType, sheetName) {
+  try {
+    // Call the function in UI.gs that handles retrieving from both storage locations
+    return UI.getTeamAwareColumnPreferences(entityType, sheetName);
+  } catch (e) {
+    Logger.log(`Error in SyncService.getTeamAwareColumnPreferences: ${e.message}`);
+    
+    // Fallback to local implementation if UI.getTeamAwareColumnPreferences fails
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const oldFormatKey = `COLUMNS_${sheetName}_${entityType}`;
+    const oldFormatJson = scriptProperties.getProperty(oldFormatKey);
+    
+    if (oldFormatJson) {
+      try {
+        return JSON.parse(oldFormatJson);
+      } catch (parseError) {
+        Logger.log(`Error parsing column preferences: ${parseError.message}`);
+      }
+    }
+    
+    return [];
+  }
+}
+
+/**
+ * Saves team-aware column preferences - wrapper for UI.gs function
+ * @param {Array} columns - Column objects or keys to save
+ * @param {string} entityType - Entity type
+ * @param {string} sheetName - Sheet name
+ */
+SyncService.saveTeamAwareColumnPreferences = function(columns, entityType, sheetName) {
+  try {
+    // Extract column keys if we received full column objects
+    let columnKeys = columns;
+    if (columns.length > 0 && typeof columns[0] === 'object' && columns[0].key) {
+      Logger.log(`Received column objects in saveTeamAwareColumnPreferences, extracting keys from ${columns.length} columns`);
+      columnKeys = columns.map(col => col.key);
+    }
+    
+    // Call the function in UI.gs that handles saving to both storage locations
+    return UI.saveTeamAwareColumnPreferences(columnKeys, entityType, sheetName);
+  } catch (e) {
+    Logger.log(`Error in SyncService.saveTeamAwareColumnPreferences: ${e.message}`);
+    
+    // Fallback to local implementation if UI.saveTeamAwareColumnPreferences fails
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const key = `COLUMNS_${sheetName}_${entityType}`;
+    
+    // Extract column keys if needed
+    let columnKeysToSave = columns;
+    if (columns.length > 0 && typeof columns[0] === 'object' && columns[0].key) {
+      columnKeysToSave = columns.map(col => col.key);
+    }
+    
+    scriptProperties.setProperty(key, JSON.stringify(columnKeysToSave));
   }
 }

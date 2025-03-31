@@ -263,8 +263,24 @@
         background-color: rgba(219,68,55,0.1);
       }
       
+      .rename-btn {
+        opacity: 0;
+        margin-left: 4px;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: var(--transition);
+        flex-shrink: 0;
+        color: var(--primary-color);
+        background-color: rgba(66,133,244,0.1);
+      }
+      
       .item:hover .add-btn,
-      .item:hover .remove-btn {
+      .item:hover .remove-btn,
+      .item:hover .rename-btn {
         opacity: 1;
       }
       
@@ -317,6 +333,9 @@
         to { transform: rotate(360deg); }
       }
     </style>
+    
+    <!-- Insert the data script here -->
+    <?!= dataScript ?>
   </head>
   <body>
     <div class="header">
@@ -330,7 +349,7 @@
           <path d="M7 12h10v2H7zm0-4h10v2H7zm0 8h7v2H7z"/>
         </svg>
         <div>
-          Configuring columns for <strong><?= entityType ?></strong> in sheet <strong>"<?= sheetName ?>"</strong>
+          Configuring columns for <strong><?= entityTypeName ?></strong> in sheet <strong>"<?= sheetName ?>"</strong>
         </div>
       </div>
       
@@ -374,12 +393,6 @@
     </div>
 
     <script>
-      // Initialize data
-      let availableColumns = <?= JSON.stringify(availableColumns) ?>;
-      let selectedColumns = <?= JSON.stringify(selectedColumns) ?>;
-      const entityType = "<?= entityType ?>";
-      const sheetName = "<?= sheetName ?>";
-      
       // DOM elements
       const availableList = document.getElementById('availableList');
       const selectedList = document.getElementById('selectedList');
@@ -387,19 +400,35 @@
       const availableCountEl = document.getElementById('availableCount');
       const selectedCountEl = document.getElementById('selectedCount');
       
+      // Debug information
+      console.log("Working with availableColumns:", availableColumns.length);
+      
+      // Create a deep copy of the original available columns to ensure we don't lose data
+      const originalAvailableColumns = JSON.parse(JSON.stringify(availableColumns));
+      
       // Render the lists
       function renderAvailableList(searchTerm = '') {
+        console.log("Rendering available list with search term:", searchTerm);
+        console.log("Available columns before rendering:", availableColumns.length);
+        console.log("Original available columns before rendering:", originalAvailableColumns.length);
+        
         availableList.innerHTML = '';
+        
+        // Ensure search term is lowercase for case-insensitive comparison
+        searchTerm = (searchTerm || '').toLowerCase();
         
         // Group columns by parent key or top-level
         const topLevel = [];
         const nested = {};
         let availableCount = 0;
         
-        availableColumns.forEach(col => {
+        // Always use the original available columns array as source of truth
+        originalAvailableColumns.forEach(col => {
+          // Check if this column is already selected
           if (!selectedColumns.some(selected => selected.key === col.key)) {
             availableCount++;
-            if (col.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+            
+            if (!searchTerm || col.name.toLowerCase().includes(searchTerm)) {
               if (!col.isNested) {
                 topLevel.push(col);
               } else {
@@ -412,6 +441,10 @@
             }
           }
         });
+        
+        console.log("Top level columns:", topLevel.length);
+        console.log("Nested column categories:", Object.keys(nested).length);
+        console.log("Total available count:", availableCount);
         
         // Update available count
         availableCountEl.textContent = '(' + availableCount + ')';
@@ -451,7 +484,8 @@
         // Then add nested columns by parent
         for (const parentKey in nested) {
           if (nested[parentKey].length > 0) {
-            const parentName = availableColumns.find(col => col.key === parentKey)?.name || parentKey;
+            // Find the parent name from the original available columns
+            const parentName = originalAvailableColumns.find(col => col.key === parentKey)?.name || parentKey;
             
             const categoryHeader = document.createElement('div');
             categoryHeader.className = 'category';
@@ -484,7 +518,7 @@
           }
         }
         
-        // Show "no results" message if nothing matches the search
+        // Show "no results" message if nothing matches search
         if (availableList.children.length === 0 && searchTerm) {
           const noResults = document.createElement('div');
           noResults.style.padding = '16px';
@@ -544,6 +578,17 @@
           };
           item.appendChild(removeBtn);
           
+          // Add rename button
+          const renameBtn = document.createElement('span');
+          renameBtn.className = 'rename-btn';
+          renameBtn.innerHTML = '✏️';
+          renameBtn.title = 'Rename column';
+          renameBtn.onclick = (e) => {
+            e.stopPropagation();
+            renameColumn(index);
+          };
+          item.appendChild(renameBtn);
+          
           // Set up drag events
           item.ondragstart = handleDragStart;
           item.ondragover = handleDragOver;
@@ -599,10 +644,15 @@
       
       // Column management
       function addColumn(column) {
-        selectedColumns.push(column);
-        renderAvailableList(searchBox.value);
-        renderSelectedList();
-        showStatus('success', 'Column added: ' + column.name);
+        // Find the column in the original available columns array to ensure we have complete data
+        const fullColumn = originalAvailableColumns.find(col => col.key === column.key);
+        if (fullColumn) {
+          // Add a deep copy to prevent reference issues
+          selectedColumns.push(JSON.parse(JSON.stringify(fullColumn)));
+          renderAvailableList(searchBox.value);
+          renderSelectedList();
+          showStatus('success', 'Column added: ' + fullColumn.name);
+        }
       }
       
       function removeColumn(column) {
@@ -610,6 +660,19 @@
         renderAvailableList(searchBox.value);
         renderSelectedList();
         showStatus('success', 'Column removed: ' + column.name);
+      }
+      
+      function renameColumn(columnIndex) {
+        const column = selectedColumns[columnIndex];
+        const currentName = column.customName || column.name;
+        const newName = prompt("Enter custom header name for '" + column.name + "'", currentName);
+        
+        if (newName !== null) {
+          // Update the column with the custom name
+          selectedColumns[columnIndex].customName = newName;
+          renderSelectedList();
+          showStatus('success', 'Column renamed to: ' + newName);
+        }
       }
       
       function showStatus(type, message) {
