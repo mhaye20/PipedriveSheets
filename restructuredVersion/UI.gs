@@ -733,3 +733,57 @@ function showHelp() {
     SpreadsheetApp.getActiveSpreadsheet().toast('Error showing help: ' + error.message);
   }
 }
+
+/**
+ * Saves column preferences to script properties
+ * @param {Array} columns - Array of column objects with key and name properties
+ * @param {string} entityType - Entity type
+ * @param {string} sheetName - Sheet name
+ */
+function saveColumnPreferences(columns, entityType, sheetName) {
+  try {
+    Logger.log(`Saving column preferences for ${entityType} in sheet "${sheetName}"`);
+    
+    // Get current user email for user-specific preferences
+    const userEmail = Session.getActiveUser().getEmail();
+    
+    // Store the full column objects to preserve names and other properties
+    const scriptProperties = PropertiesService.getScriptProperties();
+    
+    // Store columns based on both entity type and sheet name for sheet-specific preferences
+    const columnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
+    scriptProperties.setProperty(columnSettingsKey, JSON.stringify(columns));
+    
+    // Also store in user-specific property
+    if (userEmail) {
+      const userColumnSettingsKey = `COLUMNS_${userEmail}_${sheetName}_${entityType}`;
+      scriptProperties.setProperty(userColumnSettingsKey, JSON.stringify(columns));
+      Logger.log(`Saved user-specific column preferences with key: ${userColumnSettingsKey}`);
+    }
+    
+    // Check if two-way sync is enabled for this sheet
+    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
+    const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
+    
+    // When columns are changed and two-way sync is enabled, handle tracking column
+    if (twoWaySyncEnabled) {
+      Logger.log(`Two-way sync is enabled for sheet "${sheetName}". Adjusting sync column.`);
+      
+      // When columns are changed, delete the tracking column property to force repositioning
+      const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
+      scriptProperties.deleteProperty(twoWaySyncTrackingColumnKey);
+      
+      // Add a flag to indicate that the Sync Status column should be repositioned at the end
+      const twoWaySyncColumnAtEndKey = `TWOWAY_SYNC_COLUMN_AT_END_${sheetName}`;
+      scriptProperties.setProperty(twoWaySyncColumnAtEndKey, 'true');
+      
+      Logger.log(`Removed tracking column property for sheet "${sheetName}" to ensure correct positioning on next sync.`);
+    }
+    
+    return true;
+  } catch (e) {
+    Logger.log(`Error in saveColumnPreferences: ${e.message}`);
+    Logger.log(`Stack trace: ${e.stack}`);
+    throw e;
+  }
+}
