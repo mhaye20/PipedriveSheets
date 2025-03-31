@@ -69,193 +69,8 @@ function showSettings() {
  */
 function showColumnSelector() {
   try {
-    // Get the active sheet name
-    const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    const sheetName = activeSheet.getName();
-    
-    // Get Pipedrive authentication details
-    const scriptProperties = PropertiesService.getScriptProperties();
-    // Check for OAuth access token instead of API key
-    const accessToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
-    
-    // Get sheet-specific settings
-    const sheetFilterIdKey = `FILTER_ID_${sheetName}`;
-    const sheetEntityTypeKey = `ENTITY_TYPE_${sheetName}`;
-    
-    const filterId = scriptProperties.getProperty(sheetFilterIdKey) || '';
-    const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
-    
-    Logger.log(`=== COLUMN SELECTOR DEBUG ===`);
-    Logger.log(`Sheet: ${sheetName}, Entity: ${entityType}, Filter ID: ${filterId}`);
-    Logger.log(`Using OAuth access token: ${Boolean(accessToken)}`);
-    
-    // Check if we're authenticated
-    if (!accessToken) {
-      const ui = SpreadsheetApp.getUi();
-      const result = ui.alert(
-        'Authentication Required',
-        'Please connect to Pipedrive to access your data.',
-        ui.ButtonSet.YES_NO
-      );
-      
-      if (result === ui.Button.YES) {
-        showAuthorizationDialog();
-      }
-      return;
-    }
-    
-    // First get actual sample data based on filter ID
-    let sampleData = [];
-    Logger.log(`Getting sample data for ${entityType} with filter ID ${filterId}`);
-    
-    try {
-      switch (entityType) {
-        case ENTITY_TYPES.DEALS:
-          sampleData = getDealsWithFilter(filterId, 1);
-          break;
-        case ENTITY_TYPES.PERSONS:
-          sampleData = getPersonsWithFilter(filterId, 1);
-          break;
-        case ENTITY_TYPES.ORGANIZATIONS:
-          sampleData = getOrganizationsWithFilter(filterId, 1);
-          break;
-        case ENTITY_TYPES.ACTIVITIES:
-          sampleData = getActivitiesWithFilter(filterId, 1);
-          break;
-        case ENTITY_TYPES.LEADS:
-          sampleData = getLeadsWithFilter(filterId, 1);
-          break;
-        case ENTITY_TYPES.PRODUCTS:
-          sampleData = getProductsWithFilter(filterId, 1);
-          break;
-      }
-      
-      if (sampleData && sampleData.length > 0) {
-        Logger.log(`Successfully retrieved sample data for ${entityType}`);
-        Logger.log(`Sample data first item has ${Object.keys(sampleData[0]).length} properties`);
-        
-        // Quick sample of what fields are available
-        if (sampleData[0]) {
-          const sampleKeys = Object.keys(sampleData[0]).slice(0, 10);
-          Logger.log(`Sample fields (first 10): ${sampleKeys.join(', ')}`);
-          
-          // Check for custom fields
-          if (sampleData[0].custom_fields) {
-            const customKeys = Object.keys(sampleData[0].custom_fields).slice(0, 10);
-            Logger.log(`Sample custom fields (first 10): ${customKeys.join(', ')}`);
-          }
-        }
-        
-        // Directly use the sample data for fields extraction
-        if (sampleData && sampleData[0]) {
-          // Process fields to create UI-friendly structure
-          const availableColumns = extractFields(sampleData);
-          Logger.log(`Extracted ${availableColumns ? availableColumns.length : 0} available columns from sample data`);
-          
-          // Make sure availableColumns is valid
-          if (availableColumns && availableColumns.length > 0) {
-            // Get currently selected columns
-            const selectedColumns = UI.getTeamAwareColumnPreferences(entityType, sheetName) || [];
-            
-            Logger.log(`Found ${selectedColumns.length} selected columns`);
-            
-            // Add key property to match the path property for compatibility
-            availableColumns.forEach(col => {
-              if (!col.key) { // Only set if not already present
-                col.key = col.path;
-              }
-            });
-            
-            // Show the column selector UI
-            showColumnSelectorUI(availableColumns, selectedColumns, entityType, sheetName);
-            return;
-          }
-        }
-      } else {
-        Logger.log(`No sample data found for ${entityType} with filter ID ${filterId}`);
-      }
-    } catch (sampleError) {
-      Logger.log(`Error getting sample data: ${sampleError.message}`);
-      Logger.log(`Stack trace: ${sampleError.stack}`);
-    }
-    
-    // If we couldn't get sample data, try using the field definitions directly
-    if (!sampleData || sampleData.length === 0) {
-      Logger.log(`No sample data found, falling back to field definitions`);
-      
-      // Get fields based on entity type
-      let fields = [];
-      
-      switch (entityType) {
-        case ENTITY_TYPES.DEALS:
-          fields = getDealFields(true); // Force a refresh
-          break;
-        case ENTITY_TYPES.PERSONS:
-          fields = getPersonFields(true);
-          break;
-        case ENTITY_TYPES.ORGANIZATIONS:
-          fields = getOrganizationFields(true);
-          break;
-        case ENTITY_TYPES.ACTIVITIES:
-          fields = getActivityFields(true);
-          break;
-        case ENTITY_TYPES.LEADS:
-          fields = getLeadFields(true);
-          break;
-        case ENTITY_TYPES.PRODUCTS:
-          fields = getProductFields(true);
-          break;
-      }
-      
-      if (fields && fields.length > 0) {
-        Logger.log(`Got ${fields.length} fields for ${entityType}`);
-        Logger.log(`First field: ${fields[0].name} (${fields[0].key})`);
-        
-        const availableColumns = fields.map(field => {
-          return {
-            key: field.key,
-            path: field.key,
-            name: field.name || field.label || field.key,
-            type: field.field_type || 'string',
-            isNested: false,
-            options: field.options
-          };
-        });
-        
-        // Get currently selected columns
-        const selectedColumns = UI.getTeamAwareColumnPreferences(entityType, sheetName) || [];
-        
-        Logger.log(`Found ${selectedColumns.length} selected columns from definitions`);
-        
-        // Show the selector
-        showColumnSelectorUI(availableColumns, selectedColumns, entityType, sheetName);
-      } else {
-        Logger.log(`No fields found for ${entityType}, checking field names`);
-        
-        // If all else fails, use a hardcoded list of common fields based on entity type
-        const commonFields = getCommonFieldsForEntity(entityType);
-        
-        if (commonFields && commonFields.length > 0) {
-          const availableColumns = commonFields.map(field => {
-            return {
-              key: field.key,
-              path: field.key,
-              name: field.name,
-              type: field.type || 'string',
-              isNested: false
-            };
-          });
-          
-          // Get currently selected columns
-          const selectedColumns = UI.getTeamAwareColumnPreferences(entityType, sheetName) || [];
-          
-          // Show the selector
-          showColumnSelectorUI(availableColumns, selectedColumns, entityType, sheetName);
-        } else {
-          throw new Error(`Could not fetch fields for ${entityType}. Please check your settings and try again.`);
-        }
-      }
-    }
+    // Direct the function to the new implementation
+    showColumnSelectorUI();
   } catch (e) {
     Logger.log(`Error in showColumnSelector: ${e.message}`);
     Logger.log(`Stack trace: ${e.stack}`);
@@ -298,6 +113,10 @@ function extractFields(fields, parentPath = '', parentName = '') {
       ];
     }
     
+    // List of fields to treat as simple values instead of expanding nested properties
+    // This makes the UI cleaner for common fields
+    const simplifiedFields = ['owner_id', 'creator_id', 'person_id', 'org_id', 'user_id', 'deal_id'];
+    
     // Handle the case when we get a sample of data items instead of field definitions
     if (Array.isArray(fields) && fields.length > 0 && fields[0] && typeof fields[0] === 'object') {
       // Check if this is sample data (has id but not key/name properties that field definitions would have)
@@ -321,11 +140,9 @@ function extractFields(fields, parentPath = '', parentName = '') {
             const sampleKeys = Object.keys(customFieldMap).slice(0, 5);
             Logger.log(`Sample custom field mappings (first 5): ${sampleKeys.map(k => `${k} => ${customFieldMap[k]}`).join(', ')}`);
           } else {
-            // If we don't have custom field mappings, we'll still continue and use key names directly
             Logger.log(`No custom field mappings found for ${entityType}, will use field keys as names`);
           }
         } catch (e) {
-          // Log error but continue processing - custom field mappings are helpful but not critical
           Logger.log(`Error getting custom field mappings: ${e.message}`);
           Logger.log(`Stack trace: ${e.stack}`);
           Logger.log(`Continuing without custom field mappings, will use field keys as names`);
@@ -378,27 +195,40 @@ function extractFields(fields, parentPath = '', parentName = '') {
               continue;
             }
             
+            // Format the field name in a user-friendly way
+            const fieldName = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            
             // Regular top-level property - add to results
             result.push({
               path: key,
               key: key,
-              name: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
+              name: fieldName,
               type: typeof sampleItem[key],
               isNested: false
             });
             
+            // Check if this is a field we should simplify rather than expand nested properties
+            if (simplifiedFields.includes(key)) {
+              continue;
+            }
+            
             // If this property is an object, extract its properties as nested fields
             if (sampleItem[key] && typeof sampleItem[key] === 'object' && !Array.isArray(sampleItem[key])) {
               for (const nestedKey in sampleItem[key]) {
-                // Skip functions and internal properties
-                if (typeof sampleItem[key][nestedKey] === 'function' || nestedKey.startsWith('_')) continue;
+                // Skip functions, internal properties, and numeric indices
+                if (typeof sampleItem[key][nestedKey] === 'function' || 
+                    nestedKey.startsWith('_') ||
+                    !isNaN(parseInt(nestedKey))) continue;
                 
                 const nestedPath = `${key}.${nestedKey}`;
                 if (!result.some(col => col.key === nestedPath)) {
+                  // Format the nested field name
+                  const nestedFieldName = fieldName + ' ' + nestedKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                  
                   result.push({
                     path: nestedPath,
                     key: nestedPath,
-                    name: `${key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')} > ${nestedKey}`,
+                    name: nestedFieldName,
                     type: typeof sampleItem[key][nestedKey],
                     isNested: true,
                     parentKey: key
@@ -588,6 +418,11 @@ function extractFields(fields, parentPath = '', parentName = '') {
           parentKey: parentPath || null
         });
         
+        // Check if this is a field we should simplify rather than expand nested properties
+        if (simplifiedFields.includes(key)) {
+          continue;
+        }
+        
         // Recursively extract nested objects
         if (fields[key] && typeof fields[key] === 'object' && !Array.isArray(fields[key])) {
           const nestedFields = extractFields(fields[key], path, name);
@@ -612,260 +447,482 @@ function extractFields(fields, parentPath = '', parentName = '') {
 }
 
 /**
- * Shows the column selector UI
- * @param {Array} availableColumns - Available columns
- * @param {Array} selectedColumns - Selected columns
- * @param {string} entityType - Entity type
- * @param {string} sheetName - Sheet name
+ * Shows the column selector UI for the current sheet and entity type
  */
-function showColumnSelectorUI(availableColumns, selectedColumns, entityType, sheetName) {
-  try {
-    // Log detailed information about the data
-    Logger.log(`*** UI DATA PASSING DEBUG ***`);
-    Logger.log(`Passing ${availableColumns.length} available columns to template`);
-    if (availableColumns.length > 0) {
-      Logger.log(`First available column: ${JSON.stringify(availableColumns[0])}`);
-      Logger.log(`Column keys preview: ${availableColumns.slice(0, 5).map(c => c.key).join(', ')}`);
+function showColumnSelectorUI() {
+  // Get the current sheet and entity type
+  const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const sheetName = activeSheet.getName();
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const sheetEntityTypeKey = `ENTITY_TYPE_${sheetName}`;
+  const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || 'deals';
+  
+  // Get all available fields (columns) for this entity type
+  const availableColumns = getAvailableColumns(entityType);
+  
+  // Debug log the available columns
+  Logger.log(`Available columns for ${entityType}: ${availableColumns.length}`);
+  Logger.log(`First 5 available columns: ${JSON.stringify(availableColumns.slice(0, 5))}`);
+  
+  // Get currently selected columns
+  const selectedColumns = SyncService.getTeamAwareColumnPreferences(entityType, sheetName) || [];
+  
+  // Ensure selected columns are normalized to objects with key and name properties
+  const normalizedSelectedColumns = selectedColumns.map(col => {
+    if (typeof col === 'string') {
+      // Find name for this key in available columns
+      const found = availableColumns.find(avail => avail.key === col);
+      return {
+        key: col,
+        name: found ? found.name : col.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+      };
     }
-    
-    // Log selected columns for debugging
-    Logger.log(`Selected columns: ${selectedColumns.length}`);
-    if (selectedColumns.length > 0) {
-      Logger.log(`First selected column: ${JSON.stringify(selectedColumns[0])}`);
+    return col;
+  });
+  
+  // Filter and group available columns
+  // Separate into core vs nested fields
+  const coreColumns = availableColumns.filter(col => !col.isNested);
+  const nestedColumns = availableColumns.filter(col => col.isNested);
+  
+  // Group nested columns by parent (e.g., owner_id.name and owner_id.email grouped under owner_id)
+  const nestedGroups = {};
+  nestedColumns.forEach(col => {
+    const parent = col.parentKey || 'other';
+    if (!nestedGroups[parent]) {
+      nestedGroups[parent] = [];
     }
-    
-    // Ensure all selected columns have complete information
-    const normalizedSelectedColumns = selectedColumns.map(col => {
-      // If it's just a key string, find the object in availableColumns
-      if (typeof col === 'string' || !col.name) {
-        const key = typeof col === 'string' ? col : col.key;
-        const availableCol = availableColumns.find(ac => ac.key === key);
-        
-        if (availableCol) {
-          return availableCol;
-        } else {
-          // Create a basic object if no match found
-          return {
-            key: key,
-            name: key, // Use key as name if no better name is available
-            path: key
-          };
-        }
+    nestedGroups[parent].push(col);
+  });
+  
+  // Create list items for available columns with groups
+  let availableColumnsHtml = '';
+  
+  // First add core columns
+  coreColumns.forEach(col => {
+    // Check if this column is already selected
+    const isSelected = normalizedSelectedColumns.some(selected => selected.key === col.key);
+    if (!isSelected) {
+      availableColumnsHtml += `<div class="column-item" data-key="${col.key}" data-name="${col.name}">
+        ${col.name} <span class="column-type">(${col.type || 'field'})</span>
+      </div>`;
+    }
+  });
+  
+  // Then add nested columns with group headers
+  Object.keys(nestedGroups).sort().forEach(groupKey => {
+    // Get a friendly name for the group
+    let groupName = groupKey;
+    // For custom fields group, use a friendly name
+    if (groupKey === 'custom_fields') {
+      groupName = 'Custom Fields';
+    } else {
+      // Look up the field in available columns to get a friendly name
+      const parentField = availableColumns.find(col => col.key === groupKey);
+      if (parentField) {
+        groupName = parentField.name;
+      } else {
+        // Try to format the key name as a fallback
+        groupName = groupKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
       }
-      return col;
-    });
-    
-    // Create a simple HTML UI instead of using the complex template
-    let html = `
-      <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        h3 { margin-bottom: 15px; }
-        .container { display: flex; gap: 20px; height: 400px; }
-        .column { flex: 1; border: 1px solid #ccc; border-radius: 4px; padding: 10px; overflow: hidden; display: flex; flex-direction: column; }
-        .column-heading { font-weight: bold; margin-bottom: 10px; }
-        .item { padding: 5px; margin: 5px 0; background: #f5f5f5; border-radius: 3px; cursor: pointer; display: flex; align-items: center; }
-        .item:hover { background: #e0e0e0; }
-        .item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
-        .item-button { margin-left: 5px; color: #4285f4; cursor: pointer; user-select: none; }
-        .scrollable { overflow-y: auto; flex-grow: 1; }
-        .search { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
-        .buttons { margin-top: 20px; text-align: right; }
-        button { padding: 8px 16px; margin-left: 10px; }
-        .primary-btn { background-color: #4285f4; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        .primary-btn:hover { background-color: #3367d6; }
-        .info { margin-bottom: 10px; padding: 10px; background: #f9f9f9; border-radius: 4px; color: #666; }
-      </style>
-      
-      <h3>Column Selection for ${entityType} in "${sheetName}"</h3>
-      
-      <div class="info">
-        We found ${availableColumns.length} available columns. Select which ones to display in your sheet.
-      </div>
-      
-      <div class="container">
-        <div class="column">
-          <div class="column-heading">Available Columns (<span id="availableCount">${availableColumns.length}</span>)</div>
-          <input type="text" class="search" id="searchBox" placeholder="Search columns...">
-          <div class="scrollable" id="availableList">
-    `;
-    
-    // Add all available columns
-    for (const col of availableColumns) {
-      html += `
-        <div class="item" data-key="${col.key}" onclick="addColumn('${col.key}')">
-          <span class="item-name">${col.name}</span>
-          <span class="item-button">+</span>
-        </div>
-      `;
     }
     
-    html += `
+    // Check if any fields in this group are not already selected
+    const unselectedFieldsInGroup = nestedGroups[groupKey].filter(col => 
+      !normalizedSelectedColumns.some(selected => selected.key === col.key)
+    );
+    
+    if (unselectedFieldsInGroup.length > 0) {
+      // Add a group header
+      availableColumnsHtml += `<div class="group-header">${groupName}</div>`;
+      
+      // Add the fields in this group
+      unselectedFieldsInGroup.forEach(col => {
+        // Display a simplified name without redundant parent info
+        const displayName = col.name.includes(' > ') 
+          ? col.name.split(' > ').slice(1).join(' > ')  // Remove parent prefix
+          : col.name;
+          
+        availableColumnsHtml += `<div class="column-item nested-column" data-key="${col.key}" data-name="${col.name}">
+          ${displayName} <span class="column-type">(${col.type || 'field'})</span>
+        </div>`;
+      });
+    }
+  });
+  
+  // Create list items for selected columns
+  let selectedColumnsHtml = '';
+  normalizedSelectedColumns.forEach(col => {
+    selectedColumnsHtml += `<div class="column-item selected" data-key="${col.key}" data-name="${col.name}">
+      ${col.name} <span class="column-type">(${col.type || 'field'})</span>
+    </div>`;
+  });
+  
+  // Calculate counts for display
+  const availableCount = availableColumns.length - normalizedSelectedColumns.length;
+  const selectedCount = normalizedSelectedColumns.length;
+  
+  // Build the HTML
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <base target="_top">
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            color: #424242;
+          }
+          
+          .container {
+            display: flex;
+            height: 100vh;
+            max-height: 100vh;
+            overflow: hidden;
+          }
+          
+          .column {
+            flex: 1;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            box-sizing: border-box;
+            overflow: hidden;
+          }
+          
+          .column-header {
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            font-weight: bold;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          
+          .column-count {
+            background-color: #f5f5f5;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            color: #616161;
+          }
+          
+          .search-box {
+            padding: 8px;
+            margin-bottom: 8px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+          }
+          
+          .column-list {
+            flex: 1;
+            overflow-y: auto;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            background-color: #ffffff;
+          }
+          
+          .column-item {
+            padding: 8px 12px;
+            border-bottom: 1px solid #f5f5f5;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          
+          .column-item:hover {
+            background-color: #f5f5f5;
+          }
+          
+          .column-item.selected {
+            position: relative;
+          }
+          
+          .nested-column {
+            padding-left: 20px;
+            font-size: 0.95em;
+          }
+          
+          .group-header {
+            padding: 4px 12px;
+            font-weight: bold;
+            background-color: #f0f0f0;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 0.9em;
+            color: #616161;
+          }
+          
+          .column-type {
+            font-size: 0.8em;
+            color: #9e9e9e;
+          }
+          
+          .buttons {
+            margin-top: 16px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+          }
+          
+          .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+          }
+          
+          .btn-primary {
+            background-color: #4285f4;
+            color: white;
+          }
+          
+          .btn-secondary {
+            background-color: #f5f5f5;
+            color: #424242;
+          }
+          
+          .btn:hover {
+            opacity: 0.9;
+          }
+          
+          .no-columns {
+            padding: 16px;
+            color: #9e9e9e;
+            text-align: center;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="column">
+            <div class="column-header">
+              Available Columns <span class="column-count">${availableCount}</span>
+            </div>
+            <input type="text" class="search-box" placeholder="Search available columns..." id="search-available">
+            <div class="column-list" id="available-columns">
+              ${availableColumnsHtml || '<div class="no-columns">No columns available</div>'}
+            </div>
+          </div>
+          <div class="column">
+            <div class="column-header">
+              Selected Columns <span class="column-count">${selectedCount}</span>
+            </div>
+            <input type="text" class="search-box" placeholder="Search selected columns..." id="search-selected">
+            <div class="column-list" id="selected-columns">
+              ${selectedColumnsHtml || '<div class="no-columns">No columns selected</div>'}
+            </div>
+            <div class="buttons">
+              <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
+              <button class="btn btn-primary" id="btn-save">Save & Close</button>
+            </div>
           </div>
         </div>
         
-        <div class="column">
-          <div class="column-heading">Selected Columns (<span id="selectedCount">${normalizedSelectedColumns.length}</span>)</div>
-          <div class="scrollable" id="selectedList">
-    `;
-    
-    // Add selected columns
-    for (const col of normalizedSelectedColumns) {
-      html += `
-        <div class="item" data-key="${col.key}">
-          <span class="item-name">${col.name}</span>
-          <span class="item-button" onclick="removeColumn('${col.key}')">✕</span>
-        </div>
-      `;
-    }
-    
-    if (normalizedSelectedColumns.length === 0) {
-      html += `<div style="padding: 10px; color: #666;">No columns selected yet. Click on columns on the left to add them.</div>`;
-    }
-    
-    html += `
-          </div>
-        </div>
-      </div>
-      
-      <div class="buttons">
-        <button onclick="google.script.host.close()">Cancel</button>
-        <button class="primary-btn" onclick="saveColumns()">Save & Close</button>
-      </div>
-      
-      <script>
-        // Column data
-        const availableColumnsData = ${JSON.stringify(availableColumns)};
-        let selectedColumnsData = ${JSON.stringify(normalizedSelectedColumns)};
-        
-        // Element references
-        const availableList = document.getElementById('availableList');
-        const selectedList = document.getElementById('selectedList');
-        const searchBox = document.getElementById('searchBox');
-        const availableCount = document.getElementById('availableCount');
-        const selectedCount = document.getElementById('selectedCount');
-        
-        // Add a column to selected
-        function addColumn(key) {
-          // Skip if already selected
-          if (selectedColumnsData.some(col => col.key === key)) return;
-          
-          // Find column in available columns
-          const column = availableColumnsData.find(col => col.key === key);
-          if (column) {
-            // Add to selected
-            selectedColumnsData.push(column);
-            updateLists();
-          }
-        }
-        
-        // Remove a column from selected
-        function removeColumn(key) {
-          // Remove from selected
-          selectedColumnsData = selectedColumnsData.filter(col => col.key !== key);
-          updateLists();
-        }
-        
-        // Update both lists
-        function updateLists() {
-          // Update counts
-          selectedCount.textContent = selectedColumnsData.length;
-          
-          // Update selected list
-          selectedList.innerHTML = '';
-          
-          if (selectedColumnsData.length === 0) {
-            selectedList.innerHTML = '<div style="padding: 10px; color: #666;">No columns selected yet. Click on columns on the left to add them.</div>';
-          } else {
-            selectedColumnsData.forEach(col => {
-              const item = document.createElement('div');
-              item.className = 'item';
-              item.dataset.key = col.key;
-              item.innerHTML = \`
-                <span class="item-name">\${col.name}</span>
-                <span class="item-button" onclick="removeColumn('\${col.key}')">✕</span>
-              \`;
-              selectedList.appendChild(item);
-            });
+        <script>
+          // Function to filter items based on search text
+          function filterItems(searchText, containerId) {
+            const container = document.getElementById(containerId);
+            const items = container.getElementsByClassName('column-item');
+            const headers = container.getElementsByClassName('group-header');
+            const lowerText = searchText.toLowerCase();
+            
+            let visibleGroupMembers = {};
+            
+            // First check which items will be visible
+            for (let i = 0; i < items.length; i++) {
+              const itemText = items[i].innerText.toLowerCase();
+              const headerBefore = items[i].previousElementSibling && 
+                                   items[i].previousElementSibling.classList.contains('group-header') ? 
+                                   items[i].previousElementSibling : null;
+              
+              if (itemText.includes(lowerText)) {
+                items[i].style.display = '';
+                
+                // Track that this group has visible members
+                if (headerBefore) {
+                  const headerText = headerBefore.innerText;
+                  visibleGroupMembers[headerText] = true;
+                }
+              } else {
+                items[i].style.display = 'none';
+              }
+            }
+            
+            // Then show/hide headers based on whether any items in their group are visible
+            for (let i = 0; i < headers.length; i++) {
+              const headerText = headers[i].innerText;
+              headers[i].style.display = visibleGroupMembers[headerText] ? '' : 'none';
+            }
           }
           
-          // Filter available list
-          filterAvailableList();
-        }
-        
-        // Filter available columns based on search
-        function filterAvailableList() {
-          const searchTerm = searchBox.value.toLowerCase();
-          const filteredColumns = availableColumnsData.filter(col => 
-            !selectedColumnsData.some(selected => selected.key === col.key) &&
-            (searchTerm === '' || col.name.toLowerCase().includes(searchTerm))
-          );
-          
-          // Update UI
-          availableCount.textContent = filteredColumns.length;
-          availableList.innerHTML = '';
-          
-          filteredColumns.forEach(col => {
-            const item = document.createElement('div');
-            item.className = 'item';
-            item.dataset.key = col.key;
-            item.onclick = () => addColumn(col.key);
-            item.innerHTML = \`
-              <span class="item-name">\${col.name}</span>
-              <span class="item-button">+</span>
-            \`;
-            availableList.appendChild(item);
+          // Add event listeners for search boxes
+          document.getElementById('search-available').addEventListener('input', function(e) {
+            filterItems(e.target.value, 'available-columns');
           });
           
-          if (filteredColumns.length === 0) {
-            availableList.innerHTML = '<div style="padding: 10px; color: #666;">No matching columns found</div>';
-          }
-        }
-        
-        // Save the column selection
-        function saveColumns() {
-          if (selectedColumnsData.length === 0) {
-            alert('Please select at least one column');
-            return;
+          document.getElementById('search-selected').addEventListener('input', function(e) {
+            filterItems(e.target.value, 'selected-columns');
+          });
+          
+          // Get elements
+          const availableColumns = document.getElementById('available-columns');
+          const selectedColumns = document.getElementById('selected-columns');
+          
+          // Add click event for available columns (to select them)
+          availableColumns.addEventListener('click', function(e) {
+            const columnItem = e.target.closest('.column-item');
+            if (columnItem) {
+              const key = columnItem.getAttribute('data-key');
+              const name = columnItem.getAttribute('data-name');
+              
+              // Move this item to selected columns
+              selectedColumns.appendChild(columnItem);
+              columnItem.classList.add('selected');
+              
+              // Update counts
+              updateCounts();
+            }
+          });
+          
+          // Add click event for selected columns (to unselect them)
+          selectedColumns.addEventListener('click', function(e) {
+            const columnItem = e.target.closest('.column-item');
+            if (columnItem) {
+              const key = columnItem.getAttribute('data-key');
+              
+              // Move back to available columns
+              // First find where to insert it alphabetically
+              let inserted = false;
+              const availableItems = availableColumns.getElementsByClassName('column-item');
+              
+              // Check if this is a nested column (for special handling)
+              const isNested = columnItem.classList.contains('nested-column');
+              
+              // For nested columns, we need to find or create the appropriate group section
+              if (isNested) {
+                // Extract the parent group from the key (usually the part before the first dot)
+                const parentKey = key.split('.')[0];
+                
+                // Check if there's already a group header for this parent
+                let groupHeader = null;
+                let insertAfterHeader = availableColumns.firstChild;
+                
+                // Look for the group header with this parent's name
+                const headers = availableColumns.getElementsByClassName('group-header');
+                for (let i = 0; i < headers.length; i++) {
+                  if (headers[i].innerText.toLowerCase().includes(parentKey.replace(/_/g, ' '))) {
+                    groupHeader = headers[i];
+                    break;
+                  }
+                }
+                
+                // If we found a group header, insert after it
+                if (groupHeader) {
+                  let sibling = groupHeader.nextSibling;
+                  while (sibling && sibling.classList && sibling.classList.contains('nested-column')) {
+                    const siblingKey = sibling.getAttribute('data-key');
+                    if (key < siblingKey) {
+                      availableColumns.insertBefore(columnItem, sibling);
+                      inserted = true;
+                      break;
+                    }
+                    sibling = sibling.nextSibling;
+                  }
+                  
+                  // If we didn't find a place within this group, add at the end of the group
+                  if (!inserted) {
+                    if (sibling) {
+                      availableColumns.insertBefore(columnItem, sibling);
+                    } else {
+                      availableColumns.appendChild(columnItem);
+                    }
+                    inserted = true;
+                  }
+                }
+              }
+              
+              // For non-nested or if we couldn't find the appropriate group
+              if (!inserted) {
+                // Just insert alphabetically among the available columns
+                for (let i = 0; i < availableItems.length; i++) {
+                  const availableKey = availableItems[i].getAttribute('data-key');
+                  if (key < availableKey) {
+                    availableColumns.insertBefore(columnItem, availableItems[i]);
+                    inserted = true;
+                    break;
+                  }
+                }
+                
+                // If we couldn't find a place to insert, add at the end
+                if (!inserted) {
+                  availableColumns.appendChild(columnItem);
+                }
+              }
+              
+              // Update counts
+              updateCounts();
+            }
+          });
+          
+          // Function to update the counts in the UI
+          function updateCounts() {
+            const availableCount = availableColumns.getElementsByClassName('column-item').length;
+            const selectedCount = selectedColumns.getElementsByClassName('column-item').length;
+            
+            document.querySelector('.column:first-child .column-count').textContent = availableCount;
+            document.querySelector('.column:last-child .column-count').textContent = selectedCount;
           }
           
-          // Call back to the server to save
-          google.script.run
-            .withSuccessHandler(() => {
-              alert('Column preferences saved successfully!');
-              google.script.host.close();
-            })
-            .withFailureHandler(error => {
-              alert('Error saving column preferences: ' + error.message);
-            })
-            .saveColumnPreferences(selectedColumnsData, "${entityType}", "${sheetName}");
-        }
-        
-        // Set up event listeners
-        searchBox.addEventListener('input', filterAvailableList);
-        
-        // Initialize the UI
-        updateLists();
-      </script>
-    `;
-    
-    // Create HTML output
-    const htmlOutput = HtmlService.createHtmlOutput(html)
-      .setWidth(800)
-      .setHeight(600)
-      .setTitle(`Select Columns for ${entityType} in "${sheetName}"`);
-    
-    // Show the dialog
-    SpreadsheetApp.getUi().showModalDialog(htmlOutput, `Column Selection`);
-    
-  } catch (e) {
-    Logger.log(`Error showing column selector UI: ${e.message}`);
-    Logger.log(`Stack trace: ${e.stack}`);
-    SpreadsheetApp.getUi().alert(
-      'Error',
-      'Failed to load column selector: ' + e.message,
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
-  }
+          // Add event listener for save button
+          document.getElementById('btn-save').addEventListener('click', function() {
+            // Collect selected columns
+            const selectedItems = selectedColumns.getElementsByClassName('column-item');
+            const selectedData = [];
+            
+            for (let i = 0; i < selectedItems.length; i++) {
+              selectedData.push({
+                key: selectedItems[i].getAttribute('data-key'),
+                name: selectedItems[i].getAttribute('data-name')
+              });
+            }
+            
+            // Return data to server
+            google.script.run
+              .withSuccessHandler(function() {
+                google.script.host.close();
+              })
+              .saveColumnPreferences(selectedData, "${entityType}", "${sheetName}");
+          });
+          
+          // Add event listener for cancel button
+          document.getElementById('btn-cancel').addEventListener('click', function() {
+            // Close the dialog without saving
+            google.script.host.close();
+          });
+        </script>
+      </body>
+    </html>
+  `;
+  
+  // Calculate dialog dimensions
+  const dialogWidth = 800;
+  const dialogHeight = 600;
+  
+  // Show the HTML in a modal dialog
+  const title = `Select Columns for ${entityType.charAt(0).toUpperCase() + entityType.slice(1)} in '${sheetName}'`;
+  const ui = HtmlService.createHtmlOutput(html)
+    .setWidth(dialogWidth)
+    .setHeight(dialogHeight);
+  
+  SpreadsheetApp.getUi().showModalDialog(ui, title);
 }
 
 /**
@@ -1924,4 +1981,179 @@ function columnLetterToIndex(letter) {
     column += (letter.charCodeAt(i) - 64) * Math.pow(26, length - i - 1);
   }
   return column;
+}
+
+/**
+ * Gets all available columns for a given entity type
+ * @param {string} entityType - The entity type to get columns for (deals, persons, etc.)
+ * @return {Array} Array of column objects
+ */
+function getAvailableColumns(entityType) {
+  try {
+    Logger.log(`Getting available columns for ${entityType}`);
+    
+    // Get sample data to extract fields from
+    let sampleData = [];
+    let fields = [];
+    
+    // First try to get sample data to determine available fields
+    try {
+      switch (entityType) {
+        case ENTITY_TYPES.DEALS:
+          sampleData = getDealsWithFilter('', 1);
+          break;
+        case ENTITY_TYPES.PERSONS:
+          sampleData = getPersonsWithFilter('', 1);
+          break;
+        case ENTITY_TYPES.ORGANIZATIONS:
+          sampleData = getOrganizationsWithFilter('', 1);
+          break;
+        case ENTITY_TYPES.ACTIVITIES:
+          sampleData = getActivitiesWithFilter('', 1);
+          break;
+        case ENTITY_TYPES.LEADS:
+          sampleData = getLeadsWithFilter('', 1);
+          break;
+        case ENTITY_TYPES.PRODUCTS:
+          sampleData = getProductsWithFilter('', 1);
+          break;
+      }
+      
+      if (sampleData && sampleData.length > 0) {
+        Logger.log(`Successfully retrieved sample data for ${entityType}`);
+      }
+    } catch (e) {
+      Logger.log(`Error getting sample data: ${e.message}`);
+    }
+    
+    // If we got sample data, extract fields from it
+    if (sampleData && sampleData.length > 0) {
+      return extractFields(sampleData);
+    }
+    
+    // If no sample data, try to get field definitions
+    try {
+      switch (entityType) {
+        case ENTITY_TYPES.DEALS:
+          fields = getDealFields(true);
+          break;
+        case ENTITY_TYPES.PERSONS:
+          fields = getPersonFields(true);
+          break;
+        case ENTITY_TYPES.ORGANIZATIONS:
+          fields = getOrganizationFields(true);
+          break;
+        case ENTITY_TYPES.ACTIVITIES:
+          fields = getActivityFields(true);
+          break;
+        case ENTITY_TYPES.LEADS:
+          fields = getLeadFields(true);
+          break;
+        case ENTITY_TYPES.PRODUCTS:
+          fields = getProductFields(true);
+          break;
+      }
+      
+      if (fields && fields.length > 0) {
+        Logger.log(`Got ${fields.length} field definitions for ${entityType}`);
+        
+        // Convert field definitions to column objects
+        return fields.map(field => {
+          return {
+            key: field.key,
+            path: field.key,
+            name: field.name || field.label || field.key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+            type: field.field_type || 'text',
+            isNested: false
+          };
+        });
+      }
+    } catch (e) {
+      Logger.log(`Error getting field definitions: ${e.message}`);
+    }
+    
+    // If all else fails, return common fields for this entity type
+    return getCommonFieldsForEntity(entityType);
+  } catch (e) {
+    Logger.log(`Error in getAvailableColumns: ${e.message}`);
+    return getCommonFieldsForEntity(entityType);
+  }
+}
+
+/**
+ * Gets common fields for an entity type as a fallback
+ * @param {string} entityType - The entity type
+ * @return {Array} Array of column objects
+ */
+function getCommonFieldsForEntity(entityType) {
+  // Define common fields by entity type
+  const commonFields = {
+    [ENTITY_TYPES.DEALS]: [
+      { key: 'id', name: 'ID', type: 'integer' },
+      { key: 'title', name: 'Title', type: 'text' },
+      { key: 'value', name: 'Value', type: 'number' },
+      { key: 'currency', name: 'Currency', type: 'text' },
+      { key: 'status', name: 'Status', type: 'text' },
+      { key: 'stage_id', name: 'Stage', type: 'integer' },
+      { key: 'add_time', name: 'Created Date', type: 'date' },
+      { key: 'update_time', name: 'Updated Date', type: 'date' },
+      { key: 'owner_id', name: 'Owner', type: 'user' },
+      { key: 'person_id', name: 'Person', type: 'person' },
+      { key: 'org_id', name: 'Organization', type: 'organization' }
+    ],
+    [ENTITY_TYPES.PERSONS]: [
+      { key: 'id', name: 'ID', type: 'integer' },
+      { key: 'name', name: 'Name', type: 'text' },
+      { key: 'email', name: 'Email', type: 'text' },
+      { key: 'phone', name: 'Phone', type: 'text' },
+      { key: 'owner_id', name: 'Owner', type: 'user' },
+      { key: 'org_id', name: 'Organization', type: 'organization' },
+      { key: 'add_time', name: 'Created Date', type: 'date' },
+      { key: 'update_time', name: 'Updated Date', type: 'date' }
+    ],
+    [ENTITY_TYPES.ORGANIZATIONS]: [
+      { key: 'id', name: 'ID', type: 'integer' },
+      { key: 'name', name: 'Name', type: 'text' },
+      { key: 'address', name: 'Address', type: 'text' },
+      { key: 'owner_id', name: 'Owner', type: 'user' },
+      { key: 'add_time', name: 'Created Date', type: 'date' },
+      { key: 'update_time', name: 'Updated Date', type: 'date' }
+    ],
+    [ENTITY_TYPES.ACTIVITIES]: [
+      { key: 'id', name: 'ID', type: 'integer' },
+      { key: 'subject', name: 'Subject', type: 'text' },
+      { key: 'type', name: 'Type', type: 'text' },
+      { key: 'due_date', name: 'Due Date', type: 'date' },
+      { key: 'deal_id', name: 'Deal', type: 'deal' },
+      { key: 'person_id', name: 'Person', type: 'person' },
+      { key: 'org_id', name: 'Organization', type: 'organization' },
+      { key: 'user_id', name: 'User', type: 'user' },
+      { key: 'add_time', name: 'Created Date', type: 'date' },
+      { key: 'update_time', name: 'Updated Date', type: 'date' }
+    ],
+    [ENTITY_TYPES.LEADS]: [
+      { key: 'id', name: 'ID', type: 'integer' },
+      { key: 'title', name: 'Title', type: 'text' },
+      { key: 'owner_id', name: 'Owner', type: 'user' },
+      { key: 'add_time', name: 'Created Date', type: 'date' },
+      { key: 'update_time', name: 'Updated Date', type: 'date' }
+    ],
+    [ENTITY_TYPES.PRODUCTS]: [
+      { key: 'id', name: 'ID', type: 'integer' },
+      { key: 'name', name: 'Name', type: 'text' },
+      { key: 'code', name: 'Code', type: 'text' },
+      { key: 'unit', name: 'Unit', type: 'text' },
+      { key: 'price', name: 'Price', type: 'number' },
+      { key: 'add_time', name: 'Created Date', type: 'date' },
+      { key: 'update_time', name: 'Updated Date', type: 'date' }
+    ]
+  };
+  
+  // Return common fields or default fields if not found
+  return commonFields[entityType] || [
+    { key: 'id', name: 'ID', type: 'integer' },
+    { key: 'name', name: 'Name', type: 'text' },
+    { key: 'add_time', name: 'Created Date', type: 'date' },
+    { key: 'update_time', name: 'Updated Date', type: 'date' }
+  ];
 }
