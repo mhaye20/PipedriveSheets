@@ -739,22 +739,148 @@ function setupOnEditTrigger() {
   try {
     // Check if the trigger already exists
     const triggers = ScriptApp.getProjectTriggers();
-    for (const trigger of triggers) {
+    for (let i = 0; i < triggers.length; i++) {
+      const trigger = triggers[i];
       if (trigger.getHandlerFunction() === 'onEdit') {
-        // Trigger already exists
+        Logger.log('onEdit trigger already exists');
+        return; // Exit if trigger already exists
+      }
+    }
+    
+    // Create the trigger if it doesn't exist
+    ScriptApp.newTrigger('onEdit')
+      .forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet())
+      .onEdit()
+      .create();
+    Logger.log('onEdit trigger created');
+  } catch (e) {
+    Logger.log(`Error setting up onEdit trigger: ${e.message}`);
+  }
+}
+
+/**
+ * Removes the onEdit trigger
+ */
+function removeOnEditTrigger() {
+  try {
+    // Get all triggers
+    const triggers = ScriptApp.getProjectTriggers();
+    
+    // Find and delete the onEdit trigger
+    for (let i = 0; i < triggers.length; i++) {
+      const trigger = triggers[i];
+      if (trigger.getHandlerFunction() === 'onEdit') {
+        ScriptApp.deleteTrigger(trigger);
+        Logger.log('onEdit trigger deleted');
         return;
       }
     }
     
-    // Create the trigger
-    ScriptApp.newTrigger('onEdit')
-      .forSpreadsheet(SpreadsheetApp.getActive())
-      .onEdit()
-      .create();
-      
-    Logger.log('onEdit trigger created');
+    Logger.log('No onEdit trigger found to delete');
   } catch (e) {
-    Logger.log(`Error setting up onEdit trigger: ${e.message}`);
+    Logger.log(`Error removing onEdit trigger: ${e.message}`);
+  }
+}
+
+/**
+ * Handles edits to the sheet and marks rows as modified for two-way sync
+ * This function is automatically triggered when a user edits the sheet
+ * @param {Object} e The edit event object
+ */
+function onEdit(e) {
+  try {
+    // Get the edited sheet
+    const sheet = e.range.getSheet();
+    const sheetName = sheet.getName();
+
+    // Check if two-way sync is enabled for this sheet
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
+    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
+
+    const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
+
+    // If two-way sync is not enabled, exit
+    if (!twoWaySyncEnabled) {
+      return;
+    }
+
+    // Get the tracking column
+    let trackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey) || '';
+    let trackingColumnIndex;
+
+    if (trackingColumn) {
+      // Convert column letter to index (0-based)
+      trackingColumnIndex = columnLetterToIndex(trackingColumn);
+    } else {
+      // Use the last column
+      trackingColumnIndex = sheet.getLastColumn() - 1;
+    }
+
+    // Get the edited range
+    const range = e.range;
+    const row = range.getRow();
+    const column = range.getColumn();
+
+    // Check if the edit is in the tracking column itself (to avoid loops)
+    if (column === trackingColumnIndex + 1) {
+      return;
+    }
+
+    // Check if the edit is in the header row
+    const headerRow = 1;
+    if (row === headerRow) {
+      return;
+    }
+
+    // Get the row content to check if it's a real data row or a timestamp/blank row
+    const rowContent = sheet.getRange(row, 1, 1, Math.min(10, sheet.getLastColumn())).getValues()[0];
+
+    // Check if this is a timestamp row
+    const firstCell = String(rowContent[0] || "").toLowerCase();
+    const isTimestampRow = firstCell.includes("last") ||
+      firstCell.includes("updated") ||
+      firstCell.includes("synced") ||
+      firstCell.includes("date");
+
+    // Count non-empty cells to determine if this is a data row
+    const nonEmptyCells = rowContent.filter(cell => cell !== "" && cell !== null && cell !== undefined).length;
+
+    // Skip if this is a timestamp row or has too few cells with data
+    if (isTimestampRow || nonEmptyCells < 3) {
+      return;
+    }
+
+    // Get the row ID from the first column
+    const idColumnIndex = 0;
+    const id = rowContent[idColumnIndex];
+
+    // Skip rows without an ID (likely empty rows)
+    if (!id) {
+      return;
+    }
+
+    // Update the tracking column to mark as modified
+    const trackingRange = sheet.getRange(row, trackingColumnIndex + 1);
+    const currentStatus = trackingRange.getValue();
+
+    // Only mark as modified if it's not already marked or if it was previously synced
+    if (currentStatus === "Not modified" || currentStatus === "Synced") {
+      trackingRange.setValue("Modified");
+
+      // Re-apply data validation to ensure consistent dropdown options
+      const rule = SpreadsheetApp.newDataValidation()
+        .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
+        .build();
+      trackingRange.setDataValidation(rule);
+
+      // Make sure the styling is consistent
+      // This will be overridden by conditional formatting but helps with visual feedback
+      trackingRange.setBackground('#FCE8E6').setFontColor('#D93025');
+    }
+  } catch (error) {
+    // Silent fail for onEdit triggers
+    Logger.log(`Error in onEdit trigger: ${error.message}`);
   }
 }
 
