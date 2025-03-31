@@ -2,281 +2,662 @@
 <html>
   <head>
     <base target="_top">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
     <style>
-      body {
-        font-family: Arial, sans-serif;
-        margin: 0;
-        padding: 20px;
+      :root {
+        --primary-color: #4285f4;
+        --primary-dark: #3367d6;
+        --success-color: #0f9d58;
+        --warning-color: #f4b400;
+        --error-color: #db4437;
+        --text-dark: #202124;
+        --text-light: #5f6368;
+        --bg-light: #f8f9fa;
+        --border-color: #dadce0;
+        --section-bg: #f8f9fa;
+        --shadow: 0 1px 3px rgba(60,64,67,0.15);
+        --shadow-hover: 0 4px 8px rgba(60,64,67,0.2);
+        --transition: all 0.2s ease;
       }
-      h3 {
-        margin-top: 0;
-        margin-bottom: 15px;
-      }
-      .container {
-        max-width: 600px;
-        margin: 0 auto;
-      }
-      .card {
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        padding: 15px;
-        margin-bottom: 20px;
-        background-color: #f9f9f9;
-      }
-      .section {
-        margin-bottom: 20px;
-      }
-      .section-title {
-        font-weight: bold;
-        margin-bottom: 10px;
-      }
-      input[type="text"] {
-        width: 100%;
-        padding: 8px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        margin-bottom: 10px;
+      
+      * {
         box-sizing: border-box;
+        margin: 0;
+        padding: 0;
       }
-      button {
-        background-color: #4285F4;
-        color: white;
-        border: none;
-        padding: 8px 15px;
+      
+      body {
+        font-family: 'Roboto', Arial, sans-serif;
+        color: var(--text-dark);
+        line-height: 1.5;
+        margin: 0;
+        padding: 16px;
+        font-size: 14px;
+      }
+      
+      h3 {
+        font-size: 18px;
+        font-weight: 500;
+        margin-bottom: 16px;
+        color: var(--text-dark);
+      }
+
+      /* Loading spinner animation */
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+
+      .loading-spinner {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border: 2px solid rgba(255,255,255,0.5);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 0.8s linear infinite;
+        margin-right: 5px;
+        vertical-align: middle;
+        position: relative;
+        top: -1px;
+      }
+
+      .button-text {
+        display: inline-block;
+        vertical-align: middle;
+      }
+
+      .button-loading {
+        background-color: #6B9AE7 !important;
+        cursor: wait !important;
+        opacity: 0.85;
+        transition: all 0.2s ease;
+      }
+      
+      .section-title {
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--text-dark);
+        margin-bottom: 12px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--border-color);
+      }
+      
+      .form-container {
+        max-width: 100%;
+      }
+      
+      .user-info {
+        background-color: var(--bg-light);
+        padding: 10px 14px;
+        border-radius: 6px;
+        margin-bottom: 16px;
+        border-left: 4px solid var(--primary-color);
+        display: flex;
+        align-items: center;
+        font-size: 13px;
+      }
+      
+      .user-info svg {
+        margin-right: 12px;
+        fill: var(--primary-color);
+      }
+      
+      .section {
+        background-color: var(--section-bg);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+        border: 1px solid var(--border-color);
+      }
+      
+      .form-row {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      
+      .form-group {
+        margin-bottom: 16px;
+        flex: 1;
+      }
+      
+      .form-group:last-child {
+        margin-bottom: 0;
+      }
+      
+      label {
+        display: block;
+        font-weight: 500;
+        margin-bottom: 6px;
+        color: var(--text-dark);
+        font-size: 13px;
+      }
+      
+      input, select {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid var(--border-color);
         border-radius: 4px;
-        cursor: pointer;
-        margin-right: 10px;
+        font-size: 14px;
+        transition: var(--transition);
       }
-      button:hover {
-        background-color: #3367D6;
+      
+      input:focus, select:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
       }
-      button.secondary {
-        background-color: #f1f1f1;
-        color: #333;
+      
+      .tooltip {
+        display: block;
+        font-size: 11px;
+        color: var(--text-light);
+        margin-top: 4px;
       }
-      button.secondary:hover {
-        background-color: #e4e4e4;
-      }
-      button.danger {
-        background-color: #EA4335;
-      }
-      button.danger:hover {
-        background-color: #D62516;
-      }
-      .footer {
-        margin-top: 20px;
+      
+      .button-container {
         display: flex;
         justify-content: flex-end;
+        margin-top: 20px;
       }
-      .team-info {
-        margin-bottom: 10px;
-      }
-      .team-actions {
-        margin-top: 15px;
-      }
-      .member-list {
-        border: 1px solid #ddd;
+      
+      .button-primary {
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        padding: 8px 20px;
         border-radius: 4px;
-        margin-top: 10px;
-        max-height: 200px;
-        overflow-y: auto;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
       }
-      .member-item {
-        padding: 8px 15px;
-        border-bottom: 1px solid #eee;
+      
+      .button-primary:hover {
+        background-color: var(--primary-dark);
+        box-shadow: var(--shadow-hover);
+      }
+      
+      .button-secondary {
+        background-color: transparent;
+        color: var(--primary-color);
+        border: 1px solid var(--primary-color);
+        padding: 7px 14px;
+        margin-right: 12px;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+      }
+      
+      .button-secondary:hover {
+        background-color: rgba(66, 133, 244, 0.04);
+      }
+      
+      .button-danger {
+        background-color: var(--error-color);
+        color: white;
+      }
+      
+      .button-danger:hover {
+        background-color: #c53929;
+      }
+      
+      .toggle-switch {
+        position: relative;
+        display: inline-block;
+        width: 40px;
+        height: 22px;
+        margin-right: 10px;
+        vertical-align: middle;
+      }
+      
+      .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      
+      .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        transition: .3s;
+        border-radius: 34px;
+      }
+      
+      .toggle-slider:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 2px;
+        bottom: 2px;
+        background-color: white;
+        transition: .3s;
+        border-radius: 50%;
+      }
+      
+      input:checked + .toggle-slider {
+        background-color: var(--primary-color);
+      }
+      
+      input:focus + .toggle-slider {
+        box-shadow: 0 0 1px var(--primary-color);
+      }
+      
+      input:checked + .toggle-slider:before {
+        transform: translateX(18px);
+      }
+      
+      .toggle-wrapper {
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      
+      .toggle-label {
+        font-weight: normal;
+        cursor: pointer;
+      }
+      
+      .tab-container {
+        margin-bottom: 20px;
+      }
+      
+      .tabs {
+        display: flex;
+        border-bottom: 1px solid var(--border-color);
+      }
+      
+      .tab {
+        padding: 8px 16px;
+        cursor: pointer;
+        font-weight: 500;
+        color: var(--text-light);
+        border-bottom: 2px solid transparent;
+        transition: var(--transition);
+      }
+      
+      .tab:hover {
+        color: var(--primary-color);
+      }
+      
+      .tab.active {
+        color: var(--primary-color);
+        border-bottom-color: var(--primary-color);
+      }
+      
+      .tab-content {
+        padding: 16px 0;
+        display: none;
+      }
+      
+      .tab-content.active {
+        display: block;
+      }
+      
+      .team-card {
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+        background-color: white;
+        transition: var(--transition);
+      }
+      
+      .team-card:hover {
+        box-shadow: var(--shadow);
+      }
+      
+      .team-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
+        margin-bottom: 12px;
       }
-      .member-item:last-child {
+      
+      .team-name {
+        font-size: 16px;
+        font-weight: 500;
+      }
+
+      button {
+        padding: 6px 12px;
+        border-radius: 4px;
+        border: none;
+        background-color: var(--primary-color);
+        color: white;
+        cursor: pointer;
+        font-weight: 500;
+        transition: background-color 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 32px;
+      }
+
+      button:hover {
+        background-color: var(--primary-dark);
+      }
+
+      .remove-member {
+        background-color: var(--error-color);
+        min-width: 80px;
+      }
+
+      .remove-member:hover {
+        background-color: #c53929;
+        color: white !important;
+      }
+      
+      .badge {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 12px;
+        background-color: var(--bg-light);
+        color: var(--text-light);
+      }
+      
+      .badge.admin {
+        background-color: #e8f0fe;
+        color: var(--primary-color);
+      }
+      
+      .team-members {
+        margin-top: 12px;
+      }
+      
+      .team-member {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 0;
+        border-bottom: 1px solid var(--border-color);
+      }
+      
+      .team-member:last-child {
         border-bottom: none;
       }
+      
+      .member-info {
+        display: flex;
+        align-items: center;
+        flex: 1;
+      }
+      
       .member-email {
-        flex-grow: 1;
+        flex: 1;
       }
-      .member-role {
-        margin: 0 10px;
+      
+      .member-actions {
+        display: flex;
+        gap: 8px;
+      }
+      
+      .member-action {
         font-size: 12px;
-        color: #666;
-        background-color: #f1f1f1;
         padding: 2px 8px;
-        border-radius: 10px;
+        min-height: 24px;
       }
-      .hidden {
+      
+      .add-member-form {
+        margin-top: 16px;
+        display: flex;
+        gap: 8px;
+      }
+      
+      .add-member-input {
+        flex: 1;
+      }
+      
+      .status-message {
+        margin-top: 16px;
+        padding: 12px;
+        border-radius: 4px;
+        font-size: 13px;
         display: none;
       }
-      .tabs {
-        display: flex;
-        margin-bottom: 20px;
-        border-bottom: 1px solid #ddd;
-      }
-      .tab {
-        padding: 10px 15px;
-        cursor: pointer;
-        position: relative;
-      }
-      .tab.active {
-        color: #4285F4;
-        font-weight: bold;
-      }
-      .tab.active:after {
-        content: '';
-        position: absolute;
-        bottom: -1px;
-        left: 0;
-        right: 0;
-        height: 2px;
-        background-color: #4285F4;
-      }
-      .status-message {
-        padding: 10px;
-        margin: 10px 0;
-        border-radius: 4px;
-      }
+      
       .status-success {
-        background-color: #d4edda;
-        color: #155724;
-        border: 1px solid #c3e6cb;
+        background-color: #e6f4ea;
+        color: var(--success-color);
+        border: 1px solid #ceead6;
+        display: block;
       }
+      
       .status-error {
-        background-color: #f8d7da;
-        color: #721c24;
-        border: 1px solid #f5c6cb;
+        background-color: #fce8e6;
+        color: var(--error-color);
+        border: 1px solid #f8ccc9;
+        display: block;
       }
+      
       .status-info {
-        background-color: #e1f5fe;
-        color: #0277bd;
-        border: 1px solid #b3e5fc;
+        background-color: #e8f0fe;
+        color: var(--primary-color);
+        border: 1px solid #c4dafc;
+        display: block;
       }
+      
       .loading {
         position: fixed;
         top: 0;
         left: 0;
         right: 0;
         bottom: 0;
-        background-color: rgba(255, 255, 255, 0.7);
+        background-color: rgba(255, 255, 255, 0.8);
         display: flex;
         justify-content: center;
         align-items: center;
-        z-index: 1000;
+        z-index: 9999;
       }
+      
       .spinner {
-        border: 4px solid #f3f3f3;
+        border: 4px solid rgba(66, 133, 244, 0.2);
         border-radius: 50%;
-        border-top: 4px solid #4285F4;
-        width: 30px;
-        height: 30px;
-        animation: spin 1s linear infinite;
+        border-top: 4px solid var(--primary-color);
+        width: 40px;
+        height: 40px;
+        animation: spin 0.8s linear infinite;
       }
-      @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
+      
+      .hidden {
+        display: none !important;
+      }
+      
+      .copy-tooltip {
+        position: relative;
+        display: inline-block;
+      }
+      
+      .copy-tooltip .copy-tooltiptext {
+        visibility: hidden;
+        width: 120px;
+        background-color: #555;
+        color: #fff;
+        text-align: center;
+        border-radius: 6px;
+        padding: 5px;
+        position: absolute;
+        z-index: 1;
+        bottom: 125%;
+        left: 50%;
+        margin-left: -60px;
+        opacity: 0;
+        transition: opacity 0.3s;
+        font-size: 12px;
+      }
+      
+      .copy-tooltip .copy-tooltiptext::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        margin-left: -5px;
+        border-width: 5px;
+        border-style: solid;
+        border-color: #555 transparent transparent transparent;
+      }
+      
+      .copy-tooltip:hover .copy-tooltiptext {
+        visibility: visible;
+        opacity: 1;
       }
     </style>
   </head>
   <body>
-    <div class="container">
-      <h3>Team Management</h3>
+    <div id="main-container">
+      <h3><?= hasTeam ? 'Team Management' : 'Team Access' ?></h3>
       
-      <div class="tabs">
-        <div class="tab <?= initialTab === 'join' ? 'active' : '' ?>" data-tab="join">Join Team</div>
-        <div class="tab <?= initialTab === 'create' ? 'active' : '' ?>" data-tab="create">Create Team</div>
-        <div class="tab <?= initialTab === 'manage' ? 'active' : '' ?> <?= hasTeam ? '' : 'hidden' ?>" data-tab="manage">Manage Team</div>
+      <div class="user-info">
+        <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24">
+          <path d="M0 0h24v24H0z" fill="none"/>
+          <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+        </svg>
+        <div>Current user: <strong><?= userEmail ?></strong></div>
       </div>
       
       <div id="status-container"></div>
       
-      <!-- Join Team Section -->
-      <div id="join-team-section" class="section <?= initialTab === 'join' ? '' : 'hidden' ?>">
-        <div class="card">
-          <div class="section-title">Join an Existing Team</div>
-          <p>Enter the team ID provided by your team administrator:</p>
-          <input type="text" id="team-id-input" placeholder="Team ID">
-          <div id="join-team-status"></div>
-          <div class="footer">
-            <button id="join-team-button">Join Team</button>
-          </div>
+      <!-- Tab Navigation -->
+      <div class="tab-container">
+        <div class="tabs">
+          <?php if (!hasTeam): ?>
+          <div class="tab <?= initialTab === 'join' ? 'active' : '' ?>" data-tab="join">Join Team</div>
+          <div class="tab <?= initialTab === 'create' ? 'active' : '' ?>" data-tab="create">Create Team</div>
+          <?php else: ?>
+          <div class="tab active" data-tab="manage">Manage Team</div>
+          <?php endif; ?>
         </div>
-      </div>
-      
-      <!-- Create Team Section -->
-      <div id="create-team-section" class="section <?= initialTab === 'create' ? '' : 'hidden' ?>">
-        <div class="card">
-          <div class="section-title">Create a New Team</div>
-          <p>Create a new team to share Pipedrive configuration with your colleagues:</p>
-          <input type="text" id="team-name-input" placeholder="Team Name">
-          <div id="create-team-status"></div>
-          <div class="footer">
-            <button id="create-team-button">Create Team</button>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Manage Team Section -->
-      <div id="manage-team-section" class="section <?= initialTab === 'manage' ? '' : 'hidden' ?> <?= hasTeam ? '' : 'hidden' ?>">
-        <div class="card">
-          <div class="section-title">Current Team</div>
-          <div class="team-info">
-            <div><strong>Team Name:</strong> <?= teamName || 'Not in a team' ?></div>
-            <div><strong>Team ID:</strong> <span id="team-id-display"><?= teamId || 'N/A' ?></span></div>
-            <div><strong>Your Role:</strong> <span id="user-role"><?= userRole || 'N/A' ?></span></div>
-          </div>
-          
-          <div class="section-title">Team Members</div>
-          <div class="member-list" id="members-container">
-            <? if (teamMembers && teamMembers.length > 0) { ?>
-              <? teamMembers.forEach(function(member) { ?>
-                <div class="member-item">
-                  <div class="member-email"><?= member.email ?></div>
-                  <div class="member-role"><?= member.role ?></div>
-                  <? if (userRole === 'Admin' && member.email !== userEmail) { ?>
-                    <button class="remove-member secondary" data-email="<?= member.email ?>">Remove</button>
-                  <? } ?>
-                </div>
-              <? }); ?>
-            <? } else { ?>
-              <div class="member-item">No team members found.</div>
-            <? } ?>
-          </div>
-          
-          <? if (userRole === 'Admin') { ?>
-            <div class="section-title" style="margin-top: 15px;">Add Team Member</div>
-            <input type="text" id="new-member-email" placeholder="Email Address">
-            <div class="footer">
-              <button id="add-member-button">Add Member</button>
+        
+        <?php if (!hasTeam): ?>
+        <!-- Join Team Tab -->
+        <div id="join-tab" class="tab-content <?= initialTab === 'join' ? 'active' : '' ?>">
+          <div class="section">
+            <div class="section-title">Join an Existing Team</div>
+            <p>Enter the team ID provided by your team administrator:</p>
+            <div class="form-group">
+              <input type="text" id="team-id-input" placeholder="Team ID">
             </div>
-          <? } ?>
-          
-          <div class="team-actions">
-            <button id="copy-team-id" class="secondary">Copy Team ID</button>
-            <button id="leave-team-button" class="danger">Leave Team</button>
-            <? if (userRole === 'Admin') { ?>
-              <button id="delete-team-button" class="danger">Delete Team</button>
-            <? } ?>
+            <div class="button-container">
+              <button id="join-team-button" class="button-primary">
+                <span class="button-text">Join Team</span>
+              </button>
+            </div>
           </div>
         </div>
+        
+        <!-- Create Team Tab -->
+        <div id="create-tab" class="tab-content <?= initialTab === 'create' ? 'active' : '' ?>">
+          <div class="section">
+            <div class="section-title">Create a New Team</div>
+            <p>Create a new team to share Pipedrive configuration with your colleagues:</p>
+            <div class="form-group">
+              <input type="text" id="team-name-input" placeholder="Team Name">
+            </div>
+            <div class="button-container">
+              <button id="create-team-button" class="button-primary">
+                <span class="button-text">Create Team</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <?php else: ?>
+        
+        <!-- Manage Team Tab -->
+        <div id="manage-tab" class="tab-content active">
+          <div class="section">
+            <div class="section-title">Your Team</div>
+            
+            <div class="team-card">
+              <div class="team-header">
+                <div class="team-name"><?= teamName ?></div>
+                <div class="badge <?= userRole === 'Admin' ? 'admin' : '' ?>"><?= userRole ?></div>
+              </div>
+              
+              <div>
+                <strong>Team ID:</strong> 
+                <span id="team-id-display"><?= teamId ?></span>
+                <button id="copy-team-id" class="button-secondary member-action">
+                  Copy ID
+                </button>
+                <div class="tooltip">Share this ID with team members you want to invite</div>
+              </div>
+              
+              <!-- Team Members Section -->
+              <div class="section-title" style="margin-top: 20px;">Team Members</div>
+              <div class="team-members">
+                <?php foreach ($teamMembers as $member): ?>
+                <div class="team-member">
+                  <div class="member-info">
+                    <div class="member-email"><?= member.email ?></div>
+                    <div class="badge <?= member.role === 'Admin' ? 'admin' : '' ?>"><?= member.role ?></div>
+                  </div>
+                  <?php if (userRole === 'Admin' && member.email !== userEmail): ?>
+                  <div class="member-actions">
+                    <?php if (member.role !== 'Admin'): ?>
+                    <button class="member-action promote-member" data-email="<?= member.email ?>">
+                      Make Admin
+                    </button>
+                    <?php else: ?>
+                    <button class="member-action demote-member" data-email="<?= member.email ?>">
+                      Remove Admin
+                    </button>
+                    <?php endif; ?>
+                    <button class="member-action remove-member" data-email="<?= member.email ?>">
+                      Remove
+                    </button>
+                  </div>
+                  <?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+              </div>
+              
+              <?php if (userRole === 'Admin'): ?>
+              <!-- Add Member Form -->
+              <div class="section-title" style="margin-top: 20px;">Add Team Member</div>
+              <div class="add-member-form">
+                <input type="email" id="new-member-email" class="add-member-input" placeholder="Email Address">
+                <button id="add-member-button" class="button-primary">
+                  <span class="button-text">Add Member</span>
+                </button>
+              </div>
+              <?php endif; ?>
+              
+              <!-- Team Actions -->
+              <div class="button-container" style="margin-top: 24px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                <button id="leave-team-button" class="button-danger">
+                  <span class="button-text">Leave Team</span>
+                </button>
+                <?php if (userRole === 'Admin'): ?>
+                <button id="delete-team-button" class="button-danger" style="margin-left: 12px;">
+                  <span class="button-text">Delete Team</span>
+                </button>
+                <?php endif; ?>
+              </div>
+            </div>
+          </div>
+        </div>
+        <?php endif; ?>
       </div>
       
-      <div class="footer">
-        <button id="close-button" class="secondary">Close</button>
+      <div class="button-container">
+        <button id="close-button" class="button-secondary">Close</button>
       </div>
     </div>
     
-    <div id="loading-indicator" class="loading hidden">
+    <div id="loading-container" class="loading hidden">
       <div class="spinner"></div>
     </div>
     
     <script>
-      // Immediately hide loading indicator
-      (function() {
-        document.getElementById('loading-indicator').classList.add('hidden');
-      })();
-      
-      // Also ensure loading indicator is hidden when content is fully loaded
-      document.addEventListener('DOMContentLoaded', function() {
-        document.getElementById('loading-indicator').classList.add('hidden');
-      });
-      
       // Tab switching
       document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', function() {
@@ -286,131 +667,184 @@
           
           // Show corresponding section
           const tabId = this.dataset.tab;
-          document.querySelectorAll('.section').forEach(section => {
-            section.classList.add('hidden');
+          document.querySelectorAll('.tab-content').forEach(section => {
+            section.classList.remove('active');
           });
-          document.getElementById(`${tabId}-team-section`).classList.remove('hidden');
+          document.getElementById(tabId + '-tab').classList.add('active');
         });
       });
       
       // Helper function to show status messages
-      function showStatus(message, type, containerId = 'status-container') {
-        const container = document.getElementById(containerId);
-        const statusDiv = document.createElement('div');
-        statusDiv.className = `status-message status-${type}`;
-        statusDiv.textContent = message;
-        container.innerHTML = '';
-        container.appendChild(statusDiv);
+      function showStatus(message, type) {
+        const container = document.getElementById('status-container');
         
-        // Auto-dismiss after 5 seconds for success messages
+        // Clear any existing message
+        container.innerHTML = '';
+        
+        // Create new message element
+        const statusEl = document.createElement('div');
+        statusEl.className = 'status-message status-' + type;
+        statusEl.textContent = message;
+        container.appendChild(statusEl);
+        
+        // Auto-dismiss success messages after 5 seconds
         if (type === 'success') {
           setTimeout(() => {
-            statusDiv.remove();
+            statusEl.remove();
           }, 5000);
         }
       }
       
-      // Show loading indicator
+      // Show loading overlay
       function showLoading() {
-        document.getElementById('loading-indicator').classList.remove('hidden');
+        document.getElementById('loading-container').classList.remove('hidden');
       }
       
-      // Hide loading indicator
+      // Hide loading overlay
       function hideLoading() {
-        document.getElementById('loading-indicator').classList.add('hidden');
+        document.getElementById('loading-container').classList.add('hidden');
       }
       
-      // Join team
-      document.getElementById('join-team-button').addEventListener('click', function() {
-        const teamId = document.getElementById('team-id-input').value.trim();
-        if (!teamId) {
-          showStatus('Please enter a team ID', 'error', 'join-team-status');
-          return;
-        }
-        
-        showLoading();
-        google.script.run
-          .withSuccessHandler(function(result) {
-            hideLoading();
-            if (result.success) {
-              showStatus('Successfully joined the team!', 'success');
-              // Wait a bit then reload the page to reflect changes
-              setTimeout(() => {
-                google.script.run.showTeamManager();
-                google.script.host.close();
-              }, 2000);
-            } else {
-              showStatus(result.message || 'Error joining team', 'error', 'join-team-status');
-            }
-          })
-          .withFailureHandler(function(error) {
-            hideLoading();
-            showStatus('Error: ' + error.message, 'error', 'join-team-status');
-          })
-          .joinTeam(teamId);
-      });
-      
-      // Create team
-      document.getElementById('create-team-button').addEventListener('click', function() {
-        const teamName = document.getElementById('team-name-input').value.trim();
-        if (!teamName) {
-          showStatus('Please enter a team name', 'error', 'create-team-status');
-          return;
-        }
-        
-        showLoading();
-        google.script.run
-          .withSuccessHandler(function(result) {
-            hideLoading();
-            if (result.success) {
-              showStatus('Team created successfully!', 'success');
-              // Wait a bit then reload the page to reflect changes
-              setTimeout(() => {
-                google.script.run.showTeamManager();
-                google.script.host.close();
-              }, 2000);
-            } else {
-              showStatus(result.message || 'Error creating team', 'error', 'create-team-status');
-            }
-          })
-          .withFailureHandler(function(error) {
-            hideLoading();
-            showStatus('Error: ' + error.message, 'error', 'create-team-status');
-          })
-          .createTeam(teamName);
-      });
-      
-      // Copy team ID
-      if (document.getElementById('copy-team-id')) {
-        document.getElementById('copy-team-id').addEventListener('click', function() {
-          const teamId = document.getElementById('team-id-display').textContent;
+      // Set button loading state
+      function setButtonLoading(button, isLoading) {
+        if (isLoading) {
+          button.classList.add('button-loading');
           
-          // Create a temporary input element
-          const tempInput = document.createElement('input');
-          tempInput.value = teamId;
-          document.body.appendChild(tempInput);
-          tempInput.select();
-          document.execCommand('copy');
-          document.body.removeChild(tempInput);
+          // Add spinner if not already present
+          if (!button.querySelector('.loading-spinner')) {
+            const spinner = document.createElement('span');
+            spinner.className = 'loading-spinner';
+            button.insertBefore(spinner, button.firstChild);
+          }
           
-          showStatus('Team ID copied to clipboard!', 'success');
+          button.disabled = true;
+        } else {
+          button.classList.remove('button-loading');
+          
+          // Remove spinner if present
+          const spinner = button.querySelector('.loading-spinner');
+          if (spinner) {
+            spinner.remove();
+          }
+          
+          button.disabled = false;
+        }
+      }
+      
+      // Join team handler
+      if (document.getElementById('join-team-button')) {
+        document.getElementById('join-team-button').addEventListener('click', function() {
+          const teamId = document.getElementById('team-id-input').value.trim();
+          if (!teamId) {
+            showStatus('Please enter a team ID', 'error');
+            return;
+          }
+          
+          setButtonLoading(this, true);
+          showLoading();
+          
+          google.script.run
+            .withSuccessHandler(function(result) {
+              hideLoading();
+              setButtonLoading(document.getElementById('join-team-button'), false);
+              
+              if (result.success) {
+                showStatus('Successfully joined team!', 'success');
+                
+                // Wait a moment, then reload
+                setTimeout(() => {
+                  google.script.run.showTeamManager();
+                  google.script.host.close();
+                }, 2000);
+              } else {
+                showStatus(result.message || 'Error joining team', 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              hideLoading();
+              setButtonLoading(document.getElementById('join-team-button'), false);
+              showStatus('Error: ' + error.message, 'error');
+            })
+            .joinTeam(teamId);
         });
       }
       
-      // Leave team
+      // Create team handler
+      if (document.getElementById('create-team-button')) {
+        document.getElementById('create-team-button').addEventListener('click', function() {
+          const teamName = document.getElementById('team-name-input').value.trim();
+          if (!teamName) {
+            showStatus('Please enter a team name', 'error');
+            return;
+          }
+          
+          setButtonLoading(this, true);
+          showLoading();
+          
+          google.script.run
+            .withSuccessHandler(function(result) {
+              hideLoading();
+              setButtonLoading(document.getElementById('create-team-button'), false);
+              
+              if (result.success) {
+                showStatus('Team created successfully!', 'success');
+                
+                // Wait a moment, then reload
+                setTimeout(() => {
+                  google.script.run.showTeamManager();
+                  google.script.host.close();
+                }, 2000);
+              } else {
+                showStatus(result.message || 'Error creating team', 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              hideLoading();
+              setButtonLoading(document.getElementById('create-team-button'), false);
+              showStatus('Error: ' + error.message, 'error');
+            })
+            .createTeam(teamName);
+        });
+      }
+      
+      // Copy team ID handler
+      if (document.getElementById('copy-team-id')) {
+        document.getElementById('copy-team-id').addEventListener('click', function() {
+          const teamId = document.getElementById('team-id-display').textContent;
+          navigator.clipboard.writeText(teamId).then(function() {
+            showStatus('Team ID copied to clipboard!', 'success');
+          }, function() {
+            // Fallback for browsers that don't support clipboard API
+            const tempInput = document.createElement('input');
+            tempInput.value = teamId;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+            showStatus('Team ID copied to clipboard!', 'success');
+          });
+        });
+      }
+      
+      // Leave team handler
       if (document.getElementById('leave-team-button')) {
         document.getElementById('leave-team-button').addEventListener('click', function() {
           if (!confirm('Are you sure you want to leave this team? You will lose access to shared configurations.')) {
             return;
           }
           
+          setButtonLoading(this, true);
           showLoading();
+          
           google.script.run
             .withSuccessHandler(function(result) {
               hideLoading();
+              setButtonLoading(document.getElementById('leave-team-button'), false);
+              
               if (result.success) {
                 showStatus('You have left the team.', 'success');
-                // Wait a bit then reload the page to reflect changes
+                
+                // Wait a moment, then reload
                 setTimeout(() => {
                   google.script.run.showTeamManager();
                   google.script.host.close();
@@ -421,26 +855,32 @@
             })
             .withFailureHandler(function(error) {
               hideLoading();
+              setButtonLoading(document.getElementById('leave-team-button'), false);
               showStatus('Error: ' + error.message, 'error');
             })
             .leaveTeam();
         });
       }
       
-      // Delete team (admin only)
+      // Delete team handler (admin only)
       if (document.getElementById('delete-team-button')) {
         document.getElementById('delete-team-button').addEventListener('click', function() {
           if (!confirm('Are you sure you want to delete this team? This will remove access for all team members and cannot be undone.')) {
             return;
           }
           
+          setButtonLoading(this, true);
           showLoading();
+          
           google.script.run
             .withSuccessHandler(function(result) {
               hideLoading();
+              setButtonLoading(document.getElementById('delete-team-button'), false);
+              
               if (result.success) {
                 showStatus('Team has been deleted.', 'success');
-                // Wait a bit then reload the page to reflect changes
+                
+                // Wait a moment, then reload
                 setTimeout(() => {
                   google.script.run.showTeamManager();
                   google.script.host.close();
@@ -451,13 +891,14 @@
             })
             .withFailureHandler(function(error) {
               hideLoading();
+              setButtonLoading(document.getElementById('delete-team-button'), false);
               showStatus('Error: ' + error.message, 'error');
             })
             .deleteTeam();
         });
       }
       
-      // Add member (admin only)
+      // Add member handler (admin only)
       if (document.getElementById('add-member-button')) {
         document.getElementById('add-member-button').addEventListener('click', function() {
           const email = document.getElementById('new-member-email').value.trim();
@@ -466,81 +907,148 @@
             return;
           }
           
+          setButtonLoading(this, true);
           showLoading();
+          
           google.script.run
             .withSuccessHandler(function(result) {
               hideLoading();
+              setButtonLoading(document.getElementById('add-member-button'), false);
+              
               if (result.success) {
                 showStatus('Member added successfully.', 'success');
                 document.getElementById('new-member-email').value = '';
                 
-                // Add the member to the UI list
-                const membersContainer = document.getElementById('members-container');
-                const newMemberDiv = document.createElement('div');
-                newMemberDiv.className = 'member-item';
-                newMemberDiv.innerHTML = `
-                  <div class="member-email">${email}</div>
-                  <div class="member-role">Member</div>
-                  <button class="remove-member secondary" data-email="${email}">Remove</button>
-                `;
-                membersContainer.appendChild(newMemberDiv);
-                
-                // Add event listener for the remove button
-                const removeButton = newMemberDiv.querySelector('.remove-member');
-                if (removeButton) {
-                  removeButton.addEventListener('click', handleRemoveMember);
-                }
+                // Reload the page to show new member
+                setTimeout(() => {
+                  google.script.run.showTeamManager();
+                  google.script.host.close();
+                }, 2000);
               } else {
                 showStatus(result.message || 'Error adding member', 'error');
               }
             })
             .withFailureHandler(function(error) {
               hideLoading();
+              setButtonLoading(document.getElementById('add-member-button'), false);
               showStatus('Error: ' + error.message, 'error');
             })
             .addTeamMember(email);
         });
       }
       
-      // Remove member event handler
-      function handleRemoveMember() {
-        const email = this.dataset.email;
-        if (!confirm(`Are you sure you want to remove ${email} from the team?`)) {
-          return;
-        }
-        
-        showLoading();
-        const memberItem = this.closest('.member-item');
-        
-        google.script.run
-          .withSuccessHandler(function(result) {
-            hideLoading();
-            if (result.success) {
-              showStatus('Member removed successfully.', 'success');
-              // Remove the item from the UI
-              if (memberItem) {
-                memberItem.remove();
+      // Promote member handler
+      document.querySelectorAll('.promote-member').forEach(button => {
+        button.addEventListener('click', function() {
+          const email = this.dataset.email;
+          if (!confirm(`Are you sure you want to promote ${email} to admin?`)) {
+            return;
+          }
+          
+          setButtonLoading(this, true);
+          showLoading();
+          
+          google.script.run
+            .withSuccessHandler(function(result) {
+              hideLoading();
+              
+              if (result.success) {
+                showStatus('Member promoted to admin successfully.', 'success');
+                
+                // Reload the page to show updated role
+                setTimeout(() => {
+                  google.script.run.showTeamManager();
+                  google.script.host.close();
+                }, 2000);
+              } else {
+                showStatus(result.message || 'Error promoting member', 'error');
               }
-            } else {
-              showStatus(result.message || 'Error removing member', 'error');
-            }
-          })
-          .withFailureHandler(function(error) {
-            hideLoading();
-            showStatus('Error: ' + error.message, 'error');
-          })
-          .removeTeamMember(email);
-      }
-      
-      // Attach event listeners to remove member buttons
-      document.querySelectorAll('.remove-member').forEach(button => {
-        button.addEventListener('click', handleRemoveMember);
+            })
+            .withFailureHandler(function(error) {
+              hideLoading();
+              showStatus('Error: ' + error.message, 'error');
+            })
+            .promoteTeamMember(email);
+        });
       });
       
-      // Close button
+      // Demote member handler
+      document.querySelectorAll('.demote-member').forEach(button => {
+        button.addEventListener('click', function() {
+          const email = this.dataset.email;
+          if (!confirm(`Are you sure you want to remove admin privileges from ${email}?`)) {
+            return;
+          }
+          
+          setButtonLoading(this, true);
+          showLoading();
+          
+          google.script.run
+            .withSuccessHandler(function(result) {
+              hideLoading();
+              
+              if (result.success) {
+                showStatus('Admin privileges removed successfully.', 'success');
+                
+                // Reload the page to show updated role
+                setTimeout(() => {
+                  google.script.run.showTeamManager();
+                  google.script.host.close();
+                }, 2000);
+              } else {
+                showStatus(result.message || 'Error removing admin privileges', 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              hideLoading();
+              showStatus('Error: ' + error.message, 'error');
+            })
+            .demoteTeamMember(email);
+        });
+      });
+      
+      // Remove member handler
+      document.querySelectorAll('.remove-member').forEach(button => {
+        button.addEventListener('click', function() {
+          const email = this.dataset.email;
+          if (!confirm(`Are you sure you want to remove ${email} from the team?`)) {
+            return;
+          }
+          
+          setButtonLoading(this, true);
+          showLoading();
+          
+          google.script.run
+            .withSuccessHandler(function(result) {
+              hideLoading();
+              
+              if (result.success) {
+                showStatus('Member removed successfully.', 'success');
+                
+                // Reload the page to show updated members list
+                setTimeout(() => {
+                  google.script.run.showTeamManager();
+                  google.script.host.close();
+                }, 2000);
+              } else {
+                showStatus(result.message || 'Error removing member', 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              hideLoading();
+              showStatus('Error: ' + error.message, 'error');
+            })
+            .removeTeamMember(email);
+        });
+      });
+      
+      // Close button handler
       document.getElementById('close-button').addEventListener('click', function() {
         google.script.host.close();
       });
+      
+      // Hide loading indicator on initial load
+      hideLoading();
     </script>
   </body>
 </html> 

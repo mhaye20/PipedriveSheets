@@ -999,1343 +999,240 @@ function showSyncStatus(sheetName) {
 }
 
 /**
- * Shows the team manager dialog
- * @param {boolean} joinOnly - Whether to show only the join team UI
+ * Shows the team management UI.
+ * @param {boolean} joinOnly - Whether to show only the join team section.
  */
-function showTeamManager(joinOnly = false) {
+function showTeamManager(joinOnly) {
   try {
-    // Get current user email
     const userEmail = Session.getActiveUser().getEmail();
     if (!userEmail) {
-      SpreadsheetApp.getUi().alert(
-        'Error',
-        'Unable to determine your email address. Please ensure you are signed in.',
-        SpreadsheetApp.getUi().ButtonSet.OK
-      );
-      return;
+      throw new Error('Unable to retrieve your email address. Please make sure you are logged in.');
     }
     
-    // Get teams data
-    const teamsData = getTeamsData();
+    // Get team data
+    const teamAccess = new TeamAccess();
+    const hasTeam = teamAccess.isUserInTeam(userEmail);
+    let teamName = '';
+    let teamId = '';
+    let teamMembers = [];
+    let userRole = '';
     
-    // Get user's team
-    const userTeam = getUserTeam(userEmail, teamsData);
-    
-    // Determine if user is in a team
-    const hasTeam = userTeam !== null;
-    
-    // If join-only mode and user isn't in a team, use the simpler join dialog
-    if (joinOnly && !hasTeam) {
-      return showTeamJoinRequest();
-    }
-    
-    // Create a direct HTML string rather than using a complex template
-    // This is more robust and less likely to have loading issues
-    let html = `
-      <style>
-        body {
-          font-family: Arial, sans-serif;
-          margin: 0;
-          padding: 20px;
-        }
-        .container {
-          max-width: 600px;
-          margin: 0 auto;
-        }
-        h3 {
-          margin-top: 0;
-          margin-bottom: 15px;
-          color: #4285F4;
-        }
-        .card {
-          border: 1px solid #ddd;
-          border-radius: 4px;
-          padding: 15px;
-          margin-bottom: 20px;
-          background-color: #f9f9f9;
-        }
-        .section-title {
-          font-weight: bold;
-          margin-bottom: 10px;
-        }
-        input[type="text"] {
-          width: 100%;
-          padding: 8px;
-          border: 1px solid #ddd;
-          border-radius: 4px;
-          margin-bottom: 10px;
-          box-sizing: border-box;
-        }
-        button {
-          background-color: #4285F4;
-          color: white;
-          border: none;
-          padding: 8px 15px;
-          border-radius: 4px;
-          cursor: pointer;
-          margin-right: 10px;
-          margin-bottom: 10px;
-        }
-        button:hover {
-          background-color: #3367D6;
-        }
-        button.secondary {
-          background-color: #f1f1f1;
-          color: #333;
-        }
-        button.secondary:hover {
-          background-color: #e4e4e4;
-        }
-        button.danger {
-          background-color: #EA4335;
-        }
-        button.danger:hover {
-          background-color: #D62516;
-        }
-        .footer {
-          margin-top: 20px;
-          display: flex;
-          justify-content: flex-end;
-        }
-        .tab-container {
-          display: flex;
-          margin-bottom: 20px;
-          border-bottom: 1px solid #ddd;
-        }
-        .tab {
-          padding: 10px 15px;
-          cursor: pointer;
-        }
-        .tab.active {
-          color: #4285F4;
-          font-weight: bold;
-          border-bottom: 2px solid #4285F4;
-        }
-        .tab-content {
-          display: none;
-        }
-        .tab-content.active {
-          display: block;
-        }
-        .member-list {
-          border: 1px solid #ddd;
-          border-radius: 4px;
-          margin-top: 10px;
-          max-height: 200px;
-          overflow-y: auto;
-        }
-        .member {
-          padding: 8px 12px;
-          border-bottom: 1px solid #eee;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        .member:last-child {
-          border-bottom: none;
-        }
-        .status-message {
-          padding: 10px;
-          margin: 10px 0;
-          border-radius: 4px;
-        }
-        .status-success {
-          background-color: #d4edda;
-          color: #155724;
-          border: 1px solid #c3e6cb;
-        }
-        .status-error {
-          background-color: #f8d7da;
-          color: #721c24;
-          border: 1px solid #f5c6cb;
-        }
-      </style>
-      
-      <div class="container">
-        <h3>${hasTeam ? 'Team Management' : 'Team Access'}</h3>
-        
-        <div id="status-container"></div>
-        
-        <div class="tab-container">
-          ${hasTeam ? '' : '<div class="tab active" data-tab="join">Join Team</div>'}
-          ${hasTeam ? '' : '<div class="tab" data-tab="create">Create Team</div>'}
-          ${hasTeam ? '<div class="tab active" data-tab="manage">Manage Team</div>' : ''}
-        </div>
-    `;
-    
-    // Join Team Tab
-    if (!hasTeam) {
-      html += `
-        <div id="join-tab" class="tab-content active">
-          <div class="card">
-            <div class="section-title">Join an Existing Team</div>
-            <p>Enter the team ID provided by your team administrator:</p>
-            <input type="text" id="team-id-input" placeholder="Team ID">
-            <div class="footer">
-              <button id="join-team-button">Join Team</button>
-            </div>
-          </div>
-        </div>
-        
-        <div id="create-tab" class="tab-content">
-          <div class="card">
-            <div class="section-title">Create a New Team</div>
-            <p>Create a new team to share Pipedrive configuration with your colleagues:</p>
-            <input type="text" id="team-name-input" placeholder="Team Name">
-            <div class="footer">
-              <button id="create-team-button">Create Team</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-    
-    // Manage Team Tab
     if (hasTeam) {
-      const teamName = userTeam.name || 'Unnamed Team';
-      const teamId = userTeam.teamId || '';
-      const userRole = userTeam.role || 'Member';
-      const isAdmin = userRole === 'Admin';
-      
-      // Get team members
-      const members = [];
-      if (teamsData[teamId]) {
-        if (teamsData[teamId].members) {
-          // New format
-          Object.keys(teamsData[teamId].members).forEach(email => {
-            members.push({
-              email: email,
-              role: teamsData[teamId].members[email]
-            });
-          });
-        } else if (teamsData[teamId].memberEmails) {
-          // Legacy format
-          teamsData[teamId].memberEmails.forEach(email => {
-            const isAdmin = teamsData[teamId].adminEmails && 
-                           teamsData[teamId].adminEmails.includes(email);
-            members.push({
-              email: email,
-              role: isAdmin ? 'Admin' : 'Member'
-            });
-          });
-        }
-      }
-      
-      html += `
-        <div id="manage-tab" class="tab-content active">
-          <div class="card">
-            <div class="section-title">Current Team</div>
-            <div style="margin-bottom: 15px;">
-              <div><strong>Team Name:</strong> ${teamName}</div>
-              <div><strong>Team ID:</strong> <span id="team-id-display">${teamId}</span></div>
-              <div><strong>Your Role:</strong> ${userRole}</div>
-            </div>
-            
-            <button id="copy-team-id" class="secondary">Copy Team ID</button>
-            
-            <div class="section-title" style="margin-top: 20px;">Team Members</div>
-            <div class="member-list">
-      `;
-      
-      if (members.length > 0) {
-        members.forEach(member => {
-          html += `
-            <div class="member">
-              <div>${member.email}</div>
-              <div>
-                <span style="margin-right: 10px;">${member.role}</span>
-                ${isAdmin && member.email !== userEmail ? 
-                  `<button class="secondary remove-member" data-email="${member.email}">Remove</button>` : ''}
-              </div>
-            </div>
-          `;
-        });
-      } else {
-        html += '<div class="member">No members found</div>';
-      }
-      
-      html += `
-            </div>
-      `;
-      
-      if (isAdmin) {
-        html += `
-            <div class="section-title" style="margin-top: 15px;">Add Team Member</div>
-            <input type="text" id="new-member-email" placeholder="Email Address">
-            <button id="add-member-button">Add Member</button>
-        `;
-      }
-      
-      html += `
-            <div style="margin-top: 20px;">
-              <button id="leave-team-button" class="danger">Leave Team</button>
-              ${isAdmin ? '<button id="delete-team-button" class="danger">Delete Team</button>' : ''}
-            </div>
-          </div>
-        </div>
-      `;
+      const teamData = teamAccess.getUserTeamData(userEmail);
+      teamName = teamData.name;
+      teamId = teamData.id;
+      teamMembers = teamAccess.getTeamMembers(teamId);
+      userRole = teamAccess.getUserRole(userEmail);
     }
     
-    // Footer
-    html += `
-        <div class="footer">
-          <button id="close-button" class="secondary">Close</button>
-        </div>
-      </div>
-      
-      <script>
-        // Document ready
-        (function() {
-          // Tab switching
-          document.querySelectorAll('.tab').forEach(tab => {
-            tab.addEventListener('click', function() {
-              // Update active tab
-              document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-              this.classList.add('active');
-              
-              // Show corresponding content
-              const tabId = this.dataset.tab + '-tab';
-              document.querySelectorAll('.tab-content').forEach(content => {
-                content.classList.remove('active');
-              });
-              document.getElementById(tabId).classList.add('active');
-            });
-          });
-          
-          // Status message helper
-          window.showStatus = function(message, type) {
-            const container = document.getElementById('status-container');
-            const statusDiv = document.createElement('div');
-            statusDiv.className = 'status-message status-' + type;
-            statusDiv.textContent = message;
-            container.innerHTML = '';
-            container.appendChild(statusDiv);
-            
-            if (type === 'success') {
-              setTimeout(() => statusDiv.remove(), 5000);
-            }
-          };
-          
-          // Close button
-          document.getElementById('close-button').addEventListener('click', function() {
-            google.script.host.close();
-          });
-    `;
-    
-    // Add join-specific handlers
-    if (!hasTeam) {
-      html += `
-          // Join team handler
-          document.getElementById('join-team-button').addEventListener('click', function() {
-            const teamId = document.getElementById('team-id-input').value.trim();
-            if (!teamId) {
-              showStatus('Please enter a team ID', 'error');
-              return;
-            }
-            
-            this.disabled = true;
-            showStatus('Joining team...', 'info');
-            
-            google.script.run
-              .withSuccessHandler(function(result) {
-                if (result.success) {
-                  showStatus('Successfully joined the team!', 'success');
-                  // Use fixMenuAfterJoin to properly refresh the menu
-                  google.script.run.fixMenuAfterJoin();
-                  setTimeout(() => google.script.host.close(), 1000);
-                } else {
-                  document.getElementById('join-team-button').disabled = false;
-                  showStatus(result.message || 'Error joining team', 'error');
-                }
-              })
-              .withFailureHandler(function(error) {
-                document.getElementById('join-team-button').disabled = false;
-                showStatus('Error: ' + error.message, 'error');
-              })
-              .joinTeam(teamId);
-          });
-          
-          // Create team handler
-          document.getElementById('create-team-button').addEventListener('click', function() {
-            const teamName = document.getElementById('team-name-input').value.trim();
-            if (!teamName) {
-              showStatus('Please enter a team name', 'error');
-              return;
-            }
-            
-            this.disabled = true;
-            showStatus('Creating team...', 'info');
-            
-            google.script.run
-              .withSuccessHandler(function(result) {
-                if (result.success) {
-                  showStatus('Team created successfully!', 'success');
-                  // Use fixMenuAfterJoin to properly refresh the menu
-                  google.script.run.fixMenuAfterJoin();
-                  setTimeout(() => google.script.host.close(), 1000);
-                } else {
-                  document.getElementById('create-team-button').disabled = false;
-                  showStatus(result.message || 'Error creating team', 'error');
-                }
-              })
-              .withFailureHandler(function(error) {
-                document.getElementById('create-team-button').disabled = false;
-                showStatus('Error: ' + error.message, 'error');
-              })
-              .createTeam(teamName);
-          });
-      `;
-    }
-    
-    // Add team management handlers
-    if (hasTeam) {
-      html += `
-          // Copy team ID handler
-          document.getElementById('copy-team-id').addEventListener('click', function() {
-            const teamId = document.getElementById('team-id-display').textContent;
-            
-            // Create a temporary input element
-            const tempInput = document.createElement('input');
-            tempInput.value = teamId;
-            document.body.appendChild(tempInput);
-            tempInput.select();
-            document.execCommand('copy');
-            document.body.removeChild(tempInput);
-            
-            showStatus('Team ID copied to clipboard!', 'success');
-          });
-          
-          // Leave team handler
-          document.getElementById('leave-team-button').addEventListener('click', function() {
-            if (!confirm('Are you sure you want to leave this team? You will lose access to shared configurations.')) {
-              return;
-            }
-            
-            this.disabled = true;
-            showStatus('Leaving team...', 'info');
-            
-            google.script.run
-              .withSuccessHandler(function(result) {
-                if (result.success) {
-                  showStatus('You have left the team.', 'success');
-                  setTimeout(() => window.top.location.reload(), 2000);
-                } else {
-                  document.getElementById('leave-team-button').disabled = false;
-                  showStatus(result.message || 'Error leaving team', 'error');
-                }
-              })
-              .withFailureHandler(function(error) {
-                document.getElementById('leave-team-button').disabled = false;
-                showStatus('Error: ' + error.message, 'error');
-              })
-              .leaveTeam();
-          });
-      `;
-      
-      // Add admin-specific handlers
-      if (userTeam && userTeam.role === 'Admin') {
-        html += `
-          // Add member handler
-          document.getElementById('add-member-button').addEventListener('click', function() {
-            const email = document.getElementById('new-member-email').value.trim();
-            if (!email) {
-              showStatus('Please enter an email address', 'error');
-              return;
-            }
-            
-            this.disabled = true;
-            showStatus('Adding member...', 'info');
-            
-            google.script.run
-              .withSuccessHandler(function(result) {
-                if (result.success) {
-                  showStatus('Member added successfully.', 'success');
-                  document.getElementById('new-member-email').value = '';
-                  document.getElementById('add-member-button').disabled = false;
-                  setTimeout(() => window.top.location.reload(), 2000);
-                } else {
-                  document.getElementById('add-member-button').disabled = false;
-                  showStatus(result.message || 'Error adding member', 'error');
-                }
-              })
-              .withFailureHandler(function(error) {
-                document.getElementById('add-member-button').disabled = false;
-                showStatus('Error: ' + error.message, 'error');
-              })
-              .addTeamMember(email);
-          });
-          
-          // Remove member handlers
-          document.querySelectorAll('.remove-member').forEach(button => {
-            button.addEventListener('click', function() {
-              const email = this.dataset.email;
-              if (!confirm('Are you sure you want to remove ' + email + ' from the team?')) {
-                return;
-              }
-              
-              this.disabled = true;
-              showStatus('Removing member...', 'info');
-              
-              google.script.run
-                .withSuccessHandler(function(result) {
-                  if (result.success) {
-                    showStatus('Member removed successfully.', 'success');
-                    setTimeout(() => window.top.location.reload(), 2000);
-                  } else {
-                    document.querySelectorAll('.remove-member').forEach(btn => btn.disabled = false);
-                    showStatus(result.message || 'Error removing member', 'error');
-                  }
-                })
-                .withFailureHandler(function(error) {
-                  document.querySelectorAll('.remove-member').forEach(btn => btn.disabled = false);
-                  showStatus('Error: ' + error.message, 'error');
-                })
-                .removeTeamMember(email);
-            });
-          });
-          
-          // Delete team handler
-          document.getElementById('delete-team-button').addEventListener('click', function() {
-            if (!confirm('Are you sure you want to delete this team? This will remove access for all team members and cannot be undone.')) {
-              return;
-            }
-            
-            this.disabled = true;
-            showStatus('Deleting team...', 'info');
-            
-            google.script.run
-              .withSuccessHandler(function(result) {
-                if (result.success) {
-                  showStatus('Team has been deleted.', 'success');
-                  setTimeout(() => window.top.location.reload(), 2000);
-                } else {
-                  document.getElementById('delete-team-button').disabled = false;
-                  showStatus(result.message || 'Error deleting team', 'error');
-                }
-              })
-              .withFailureHandler(function(error) {
-                document.getElementById('delete-team-button').disabled = false;
-                showStatus('Error: ' + error.message, 'error');
-              })
-              .deleteTeam();
-          });
-        `;
-      }
-    }
-    
-    // Close script tag
-    html += `
-        })(); // End of self-executing function
-      </script>
-    `;
-    
-    // Create HTML service object
-    const htmlOutput = HtmlService.createHtmlOutput(html)
-      .setTitle(hasTeam ? 'Team Management' : 'Join Team')
-      .setWidth(joinOnly ? 450 : 600)
-      .setHeight(joinOnly ? 400 : 550);
-    
-    // Show the dialog
-    SpreadsheetApp.getUi().showModalDialog(htmlOutput, hasTeam ? 'Team Management' : 'Join Team');
-  } catch (e) {
-    Logger.log(`Error in showTeamManager: ${e.message}`);
-    SpreadsheetApp.getUi().alert('Error', 'Failed to open team manager: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
-  }
-}
-
-/**
- * Reopens the team manager after an action
- */
-function reopenTeamManager() {
-  showTeamManager(false);
-}
-
-/**
- * Saves team-aware column preferences
- * @param {Array} columns - Array of column objects or keys to save
- * @param {string} entityType - Entity type
- * @param {string} sheetName - Sheet name
- * @returns {boolean} Success status
- */
-UI.saveTeamAwareColumnPreferences = function(columns, entityType, sheetName) {
-  try {
-    if (!entityType || !sheetName) {
-      throw new Error("Missing required parameters for saveTeamAwareColumnPreferences");
-    }
-    
-    const scriptProperties = PropertiesService.getScriptProperties();
-    const userEmail = Session.getActiveUser().getEmail();
-    
-    // Store full column objects in user-specific property
-    const userColumnSettingsKey = `COLUMNS_${userEmail}_${sheetName}_${entityType}`;
-    scriptProperties.setProperty(userColumnSettingsKey, JSON.stringify(columns));
-    Logger.log(`Saved user-specific column preferences with key: ${userColumnSettingsKey}`);
-    
-    // Also store in global property for backward compatibility
-    const columnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
-    scriptProperties.setProperty(columnSettingsKey, JSON.stringify(columns));
-    
-    // Check if two-way sync is enabled for this sheet
-    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
-    const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
-    
-    // When columns are changed and two-way sync is enabled, handle tracking column
-    if (twoWaySyncEnabled) {
-      Logger.log(`Two-way sync is enabled for sheet "${sheetName}". Checking if we need to adjust sync column.`);
-      
-      // When columns are changed, delete the tracking column property to force repositioning
-      const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
-      scriptProperties.deleteProperty(twoWaySyncTrackingColumnKey);
-      
-      // Add a flag to indicate that the Sync Status column should be repositioned at the end
-      const twoWaySyncColumnAtEndKey = `TWOWAY_SYNC_COLUMN_AT_END_${sheetName}`;
-      scriptProperties.setProperty(twoWaySyncColumnAtEndKey, 'true');
-      
-      Logger.log(`Removed tracking column property for sheet "${sheetName}" to ensure correct positioning on next sync.`);
-    }
-    
-    return true;
-  } catch (e) {
-    Logger.log(`Error in saveTeamAwareColumnPreferences: ${e.message}`);
-    Logger.log(`Stack trace: ${e.stack}`);
-    throw e;
-  }
-}
-
-/**
- * Gets team-aware column preferences
- * @param {string} entityType - Entity type
- * @param {string} sheetName - Sheet name
- * @returns {Array} Array of column configurations
- */
-UI.getTeamAwareColumnPreferences = function(entityType, sheetName) {
-  try {
-    const scriptProperties = PropertiesService.getScriptProperties();
-    const userEmail = Session.getActiveUser().getEmail();
-
-    // Get the user's team and check sharing settings
-    const userTeam = getUserTeam(userEmail);
-
-    // First try to get user-specific column preferences
-    const userColumnSettingsKey = `COLUMNS_${userEmail}_${sheetName}_${entityType}`;
-    let savedColumnsJson = scriptProperties.getProperty(userColumnSettingsKey);
-
-    // If the user is part of a team and column sharing is enabled, check team preferences
-    if ((!savedColumnsJson || savedColumnsJson === '[]') && userTeam && userTeam.shareColumns) {
-      // Look for team members' configurations
-      const memberEmails = userTeam.memberEmails || [];
-      for (const teamMemberEmail of memberEmails) {
-        if (teamMemberEmail === userEmail) continue; // Skip the current user
-
-        const teamMemberColumnSettingsKey = `COLUMNS_${teamMemberEmail}_${sheetName}_${entityType}`;
-        const teamMemberColumnsJson = scriptProperties.getProperty(teamMemberColumnSettingsKey);
-
-        if (teamMemberColumnsJson && teamMemberColumnsJson !== '[]') {
-          savedColumnsJson = teamMemberColumnsJson;
-          Logger.log(`Using team member ${teamMemberEmail}'s column preferences for ${entityType}`);
-          break;
-        }
-      }
-    }
-
-    // If still no team column preferences, fall back to the global setting
-    if (!savedColumnsJson || savedColumnsJson === '[]') {
-      const globalColumnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
-      savedColumnsJson = scriptProperties.getProperty(globalColumnSettingsKey);
-    }
-
-    let selectedColumns = [];
-    if (savedColumnsJson) {
-      try {
-        selectedColumns = JSON.parse(savedColumnsJson);
-      } catch (e) {
-        Logger.log(`Error parsing saved columns: ${e.message}`);
-        selectedColumns = [];
-      }
-    }
-
-    return selectedColumns;
-  } catch (e) {
-    Logger.log(`Error in getTeamAwareColumnPreferences: ${e.message}`);
-    return [];
-  }
-}
-
-/**
- * Gets team-aware Pipedrive filters
- * @return {Array} Array of filter objects
- */
-function getTeamAwarePipedriveFilters() {
-  try {
-    // Get user filters
-    const userFilters = getPipedriveFilters();
-    
-    // Check if user is in a team with shared filters
-    const userEmail = Session.getActiveUser().getEmail();
-    const userTeam = getUserTeam(userEmail);
-    
-    // If not in a team or team doesn't share filters, return user filters
-    if (!userTeam || !userTeam.settings || !userTeam.settings.shareFilters) {
-      return userFilters;
-    }
-    
-    // Return team filters if available
-    return userFilters;
-  } catch (e) {
-    Logger.log(`Error in getTeamAwarePipedriveFilters: ${e.message}`);
-    return [];
-  }
-}
-
-/**
- * Gets team-aware Pipedrive filters for a specific entity type
- * @param {string} entityType - The entity type to get filters for
- * @return {Array} Array of filter objects
- */
-function getFiltersForEntityType(entityType) {
-  try {
-    // Directly call the function with the same name in the PipedriveAPI.gs file
-    return PipedriveAPI.getFiltersForEntityType(entityType);
-  } catch (e) {
-    Logger.log(`Error in UI.getFiltersForEntityType: ${e.message}`);
-    return [];
-  }
-}
-
-/**
- * Saves settings for the add-on
- * @param {string} apiKey - Pipedrive API key
- * @param {string} entityType - Entity type
- * @param {string} filterId - Filter ID
- * @param {string} subdomain - Pipedrive subdomain
- * @param {string} sheetName - Sheet name
- * @param {boolean} enableTimestamp - Whether to enable timestamp
- * @return {boolean} True if successful, false otherwise
- */
-function saveSettings(apiKey, entityType, filterId, subdomain, sheetName, enableTimestamp = false) {
-  try {
-    const scriptProperties = PropertiesService.getScriptProperties();
-
-    // Save global settings (API key and subdomain are global)
-    if (apiKey) scriptProperties.setProperty('PIPEDRIVE_API_KEY', apiKey);
-    if (subdomain) scriptProperties.setProperty('PIPEDRIVE_SUBDOMAIN', subdomain);
-    if (sheetName) scriptProperties.setProperty('SHEET_NAME', sheetName);
-    
-    // Save sheet-specific settings
-    if (entityType && sheetName) {
-      const sheetEntityTypeKey = `ENTITY_TYPE_${sheetName}`;
-      scriptProperties.setProperty(sheetEntityTypeKey, entityType);
-    }
-    
-    // Only update filter ID if provided (may be empty intentionally)
-    if (filterId !== undefined && sheetName) {
-      const sheetFilterIdKey = `FILTER_ID_${sheetName}`;
-      scriptProperties.setProperty(sheetFilterIdKey, filterId);
-    }
-    
-    // Handle boolean property
-    const timestampEnabledKey = `TIMESTAMP_ENABLED_${sheetName}`;
-    scriptProperties.setProperty(timestampEnabledKey, enableTimestamp.toString());
-    
-    return true;
-  } catch (e) {
-    Logger.log(`Error in saveSettings: ${e.message}`);
-    throw e;
-  }
-}
-
-function showTriggerManager() {
-  try {
-    // Get current triggers
-    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    const sheetName = PropertiesService.getScriptProperties().getProperty('SHEET_NAME') || DEFAULT_SHEET_NAME;
-    
-    // Get all triggers for this sheet
-    const triggers = getTriggersForSheet(sheetName);
-    
-    // Create the HTML template
-    const htmlTemplate = HtmlService.createTemplateFromFile('TriggerManager');
-    
-    // Pass data to the template
-    htmlTemplate.sheetName = sheetName;
-    htmlTemplate.triggers = triggers;
-    
-    // Create the HTML from the template
-    const html = htmlTemplate.evaluate()
-      .setTitle('Schedule Sync')
-      .setWidth(600)
-      .setHeight(500);
-    
-    // Show the dialog
-    SpreadsheetApp.getUi().showModalDialog(html, 'Schedule Sync');
-  } catch (e) {
-    Logger.log(`Error in showTriggerManager: ${e.message}`);
-    SpreadsheetApp.getUi().alert('Error', 'Failed to open trigger manager: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
-  }
-}
-
-function showTwoWaySyncSettings() {
-  try {
-    // Get the active sheet name
-    const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    const activeSheetName = activeSheet.getName();
-
-    // Get current two-way sync settings from properties
-    const scriptProperties = PropertiesService.getScriptProperties();
-    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
-    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
-    const twoWaySyncLastSyncKey = `TWOWAY_SYNC_LAST_SYNC_${activeSheetName}`;
-
-    const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
-    const trackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey) || '';
-    const lastSync = scriptProperties.getProperty(twoWaySyncLastSyncKey) || 'Never';
-
-    // Get sheet-specific entity type
-    const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
-    const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
-
-    // Create settings object to pass to the HTML template
-    const settings = {
-      enabled: twoWaySyncEnabled,
-      trackingColumn: trackingColumn,
-      lastSync: lastSync
+    // Create template data object
+    const templateData = {
+      userEmail: userEmail,
+      hasTeam: hasTeam,
+      teamName: teamName,
+      teamId: teamId,
+      teamMembers: teamMembers,
+      userRole: userRole,
+      initialTab: joinOnly ? 'join' : (hasTeam ? 'manage' : 'create')
     };
-
-    // Create the HTML template
-    const htmlTemplate = HtmlService.createTemplateFromFile('TwoWaySyncSettings');
     
-    // Pass data to the template
-    htmlTemplate.settings = settings;
-    htmlTemplate.entityType = entityType;
-    htmlTemplate.sheetName = activeSheetName;
+    // Get HTML template content
+    const templateFile = HtmlService.createTemplateFromFile('TeamManager');
+    const rawHtml = templateFile.getRawContent();
     
-    // Create the HTML from the template
-    const html = htmlTemplate.evaluate()
-      .setWidth(600)
-      .setHeight(650)
-      .setTitle(`Two-Way Sync Settings for "${activeSheetName}"`);
+    // Process the template with our data
+    const processedHtml = processTemplate(rawHtml, templateData);
+    
+    // Create final HTML output
+    const htmlOutput = HtmlService.createHtmlOutput(processedHtml)
+      .setWidth(500)
+      .setHeight(hasTeam ? 600 : 400)
+      .setTitle(hasTeam ? 'Team Management' : 'Team Access');
     
     // Show the dialog
-    SpreadsheetApp.getUi().showModalDialog(html, `Two-Way Sync Settings for "${activeSheetName}"`);
-  } catch (e) {
-    Logger.log(`Error in showTwoWaySyncSettings: ${e.message}`);
-    SpreadsheetApp.getUi().alert('Error', 'Failed to open two-way sync settings: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
-  }
-}
-
-function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
-  try {
-    // Get the active sheet
-    const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    const activeSheetName = activeSheet.getName();
-
-    // Get script properties
-    const scriptProperties = PropertiesService.getScriptProperties();
-    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
-    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
-    const twoWaySyncLastSyncKey = `TWOWAY_SYNC_LAST_SYNC_${activeSheetName}`;
-
-    // Save settings to properties
-    scriptProperties.setProperty(twoWaySyncEnabledKey, enableTwoWaySync.toString());
-    scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
-
-    // Store the previous tracking column if it exists
-    const previousTrackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey) || '';
-    const previousPosStr = scriptProperties.getProperty(`CURRENT_SYNCSTATUS_POS_${activeSheetName}`) || '-1';
-    const previousPos = parseInt(previousPosStr, 10);
-    const currentPos = trackingColumn ? columnLetterToIndex(trackingColumn) : -1;
-
-    if (previousTrackingColumn && previousTrackingColumn !== trackingColumn) {
-      scriptProperties.setProperty(`PREVIOUS_TRACKING_COLUMN_${activeSheetName}`, previousTrackingColumn);
-
-      // Also track when columns have been removed (causing a left shift)
-      if (previousPos >= 0 && currentPos >= 0 && currentPos < previousPos) {
-        Logger.log(`Detected column removal: Sync Status moved left from ${previousPos} to ${currentPos}`);
-
-        // Check all columns between previous and current positions (inclusive)
-        const maxPos = Math.max(previousPos + 3, activeSheet.getLastColumn()); // Add buffer
-        for (let i = 0; i <= maxPos; i++) {
-          const colLetter = columnToLetter(i);
-          if (colLetter !== trackingColumn) {
-            // Look for sync status indicators in this column
-            try {
-              const headerCell = activeSheet.getRange(1, i + 1);  // i is 0-based, getRange is 1-based
-              const headerValue = headerCell.getValue();
-              const note = headerCell.getNote();
-
-              // Extra check for Sync Status indicators
-              if (headerValue === "Sync Status" ||
-                (note && (note.includes('sync') || note.includes('track')))) {
-                cleanupColumnFormatting(activeSheet, colLetter);
-              }
-            } catch (e) {
-              Logger.log(`Error checking column ${colLetter}: ${e.message}`);
-            }
-          }
-        }
-      }
-    }
-
-    // Clean up previous Sync Status column formatting
-    cleanupPreviousSyncStatusColumn(activeSheet, activeSheetName);
-
-    // If enabling two-way sync, set up the tracking column
-    if (enableTwoWaySync) {
-      // Determine which column to use for tracking
-      let trackingColumnIndex;
-      if (trackingColumn) {
-        // Convert column letter to index (0-based)
-        trackingColumnIndex = columnLetterToIndex(trackingColumn);
-      } else {
-        // Use the last column
-        trackingColumnIndex = activeSheet.getLastColumn();
-      }
-
-      // Set up the tracking column header
-      const headerRow = 1; // Assuming first row is header
-      const trackingHeader = "Sync Status";
-
-      // Create the tracking column if it doesn't exist
-      if (trackingColumnIndex >= activeSheet.getLastColumn()) {
-        // Column doesn't exist yet, add it
-        activeSheet.getRange(headerRow, trackingColumnIndex + 1).setValue(trackingHeader);
-
-        // Update the tracking column letter based on the actual position
-        const actualColumnIndex = trackingColumnIndex;
-        trackingColumn = columnToLetter(actualColumnIndex);
-        scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
-        Logger.log(`Created tracking column at position ${trackingColumnIndex + 1} (${trackingColumn})`);
-      } else {
-        // Column exists, update header
-        activeSheet.getRange(headerRow, trackingColumnIndex + 1).setValue(trackingHeader);
-
-        // Verify the tracking column letter is correct
-        const actualColumnIndex = trackingColumnIndex;
-        trackingColumn = columnToLetter(actualColumnIndex);
-        scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
-        Logger.log(`Updated tracking column at position ${trackingColumnIndex + 1} (${trackingColumn})`);
-      }
-
-      // Visually style the Sync Status column
-      const headerCell = activeSheet.getRange(headerRow, trackingColumnIndex + 1);
-      headerCell.setBackground('#E8F0FE') // Light blue background
-        .setFontWeight('bold')
-        .setNote('This column tracks changes for two-way sync with Pipedrive');
-
-      // Style the entire status column with a light background and border
-      const fullStatusColumn = activeSheet.getRange(1, trackingColumnIndex + 1, Math.max(activeSheet.getLastRow(), 2), 1);
-      fullStatusColumn.setBackground('#F8F9FA') // Light gray background
-        .setBorder(null, true, null, true, false, false, '#DADCE0', SpreadsheetApp.BorderStyle.SOLID);
-
-      // Set up the onEdit trigger
-      setupOnEditTrigger();
-    } else {
-      removeOnEditTrigger();
-    }
-    
-    return true;
-  } catch (e) {
-    Logger.log(`Error in saveTwoWaySyncSettings: ${e.message}`);
-    throw e;
-  }
-}
-
-function addSyncStatusColumn(sheet, specificColumn = '') {
-  try {
-    // First, check if there's already a Sync Status column
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    let syncStatusColumnIndex = -1;
-    
-    // Search for existing Sync Status column
-    for (let i = 0; i < headers.length; i++) {
-      if (headers[i] === 'Sync Status') {
-        syncStatusColumnIndex = i;
-        break;
-      }
-    }
-    
-    // If we found an existing column, use it
-    if (syncStatusColumnIndex >= 0) {
-      const columnLetter = columnToLetter(syncStatusColumnIndex + 1); // +1 because it's 1-based
-      Logger.log(`Found existing Sync Status column at ${columnLetter}`);
-      return;
-    }
-    
-    // If we specified a specific column, use that
-    if (specificColumn) {
-      const columnIndex = columnLetterToIndex(specificColumn);
-      
-      // Check if this column already has a header
-      if (columnIndex <= sheet.getLastColumn()) {
-        const existingHeader = sheet.getRange(1, columnIndex).getValue();
-        if (existingHeader) {
-          // If there's already a header, append to the end instead
-          Logger.log(`Column ${specificColumn} already has header "${existingHeader}". Will append Sync Status to the end instead.`);
-          specificColumn = '';
-        }
-      }
-    }
-    
-    // Add the Sync Status column
-    let targetColumnIndex;
-    if (specificColumn) {
-      // Use the specified column
-      targetColumnIndex = columnLetterToIndex(specificColumn);
-    } else {
-      // Append to the end
-      targetColumnIndex = sheet.getLastColumn() + 1;
-    }
-    
-    // Set the header
-    sheet.getRange(1, targetColumnIndex).setValue('Sync Status');
-    
-    // Format the header cell
-    sheet.getRange(1, targetColumnIndex)
-         .setFontWeight('bold')
-         .setBackground('#E8F0FE');
-    
-    // Save the column location for later
-    const sheetName = sheet.getName();
-    const trackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
-    const columnLetter = columnToLetter(targetColumnIndex);
-    PropertiesService.getScriptProperties().setProperty(trackingColumnKey, columnLetter);
-    
-    Logger.log(`Added Sync Status column at column ${columnLetter}`);
-    
-    // Add conditional formatting for the Sync Status column
-    const lastRow = Math.max(sheet.getLastRow(), 100); // Format at least 100 rows
-    if (lastRow > 1) {
-      const statusRange = sheet.getRange(2, targetColumnIndex, lastRow - 1, 1);
-      const rules = sheet.getConditionalFormatRules();
-      
-      // Create rule for "Modified" cells
-      const modifiedRule = SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo('Modified')
-        .setBackground('#FCE8E6') // Light red
-        .setBold(true)
-        .setRanges([statusRange])
-        .build();
-      
-      // Create rule for "Synced" cells
-      const syncedRule = SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo('Synced')
-        .setBackground('#E6F4EA') // Light green
-        .setRanges([statusRange])
-        .build();
-      
-      // Create rule for "Error" cells
-      const errorRule = SpreadsheetApp.newConditionalFormatRule()
-        .whenTextContains('Error')
-        .setBackground('#FCE8E6') // Light red
-        .setBold(true)
-        .setRanges([statusRange])
-        .build();
-      
-      // Add the new rules to the existing rules
-      rules.push(modifiedRule);
-      rules.push(syncedRule);
-      rules.push(errorRule);
-      sheet.setConditionalFormatRules(rules);
-    }
-    
-    // Add data validation for the Sync Status column
-    const validationRule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(['Modified', 'Synced'], true)
-      .build();
-    
-    if (lastRow > 1) {
-      sheet.getRange(2, targetColumnIndex, lastRow - 1, 1).setDataValidation(validationRule);
-    }
-    
-    return true;
-  } catch (e) {
-    Logger.log(`Error adding Sync Status column: ${e.message}`);
-    return false;
-  }
-}
-
-/**
- * Converts a column index to letter format (e.g., 1 = A, 27 = AA)
- * @param {number} column - The column index (1-based)
- * @return {string} The column letter
- */
-function columnToLetter(column) {
-  let temp, letter = '';
-  while (column > 0) {
-    temp = (column - 1) % 26;
-    letter = String.fromCharCode(temp + 65) + letter;
-    column = (column - temp - 1) / 26;
-  }
-  return letter;
-}
-
-/**
- * Converts a column letter to index format (e.g., A = 1, AA = 27)
- * @param {string} letter - The column letter
- * @return {number} The column index (1-based)
- */
-function columnLetterToIndex(letter) {
-  let column = 0;
-  const length = letter.length;
-  for (let i = 0; i < length; i++) {
-    column += (letter.charCodeAt(i) - 64) * Math.pow(26, length - i - 1);
-  }
-  return column;
-}
-
-/**
- * Gets all available columns for a given entity type
- * @param {string} entityType - The entity type to get columns for (deals, persons, etc.)
- * @return {Array} Array of column objects
- */
-function getAvailableColumns(entityType) {
-  try {
-    Logger.log(`Getting available columns for ${entityType}`);
-    
-    // Get sample data to extract fields from
-    let sampleData = [];
-    let fields = [];
-    
-    // First try to get sample data to determine available fields
-    try {
-      switch (entityType) {
-        case ENTITY_TYPES.DEALS:
-          sampleData = getDealsWithFilter('', 1);
-          break;
-        case ENTITY_TYPES.PERSONS:
-          sampleData = getPersonsWithFilter('', 1);
-          break;
-        case ENTITY_TYPES.ORGANIZATIONS:
-          sampleData = getOrganizationsWithFilter('', 1);
-          break;
-        case ENTITY_TYPES.ACTIVITIES:
-          sampleData = getActivitiesWithFilter('', 1);
-          break;
-        case ENTITY_TYPES.LEADS:
-          sampleData = getLeadsWithFilter('', 1);
-          break;
-        case ENTITY_TYPES.PRODUCTS:
-          sampleData = getProductsWithFilter('', 1);
-          break;
-      }
-      
-      if (sampleData && sampleData.length > 0) {
-        Logger.log(`Successfully retrieved sample data for ${entityType}`);
-      }
-    } catch (e) {
-      Logger.log(`Error getting sample data: ${e.message}`);
-    }
-    
-    // If we got sample data, extract fields from it
-    if (sampleData && sampleData.length > 0) {
-      return extractFields(sampleData);
-    }
-    
-    // If no sample data, try to get field definitions
-    try {
-      switch (entityType) {
-        case ENTITY_TYPES.DEALS:
-          fields = getDealFields(true);
-          break;
-        case ENTITY_TYPES.PERSONS:
-          fields = getPersonFields(true);
-          break;
-        case ENTITY_TYPES.ORGANIZATIONS:
-          fields = getOrganizationFields(true);
-          break;
-        case ENTITY_TYPES.ACTIVITIES:
-          fields = getActivityFields(true);
-          break;
-        case ENTITY_TYPES.LEADS:
-          fields = getLeadFields(true);
-          break;
-        case ENTITY_TYPES.PRODUCTS:
-          fields = getProductFields(true);
-          break;
-      }
-      
-      if (fields && fields.length > 0) {
-        Logger.log(`Got ${fields.length} field definitions for ${entityType}`);
-        
-        // Convert field definitions to column objects
-        return fields.map(field => {
-          return {
-            key: field.key,
-            path: field.key,
-            name: field.name || field.label || field.key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-            type: field.field_type || 'text',
-            isNested: false
-          };
-        });
-      }
-    } catch (e) {
-      Logger.log(`Error getting field definitions: ${e.message}`);
-    }
-    
-    // If all else fails, return common fields for this entity type
-    return getCommonFieldsForEntity(entityType);
-  } catch (e) {
-    Logger.log(`Error in getAvailableColumns: ${e.message}`);
-    return getCommonFieldsForEntity(entityType);
-  }
-}
-
-/**
- * Gets common fields for an entity type as a fallback
- * @param {string} entityType - The entity type
- * @return {Array} Array of column objects
- */
-function getCommonFieldsForEntity(entityType) {
-  // Define common fields by entity type
-  const commonFields = {
-    [ENTITY_TYPES.DEALS]: [
-      { key: 'id', name: 'ID', type: 'integer' },
-      { key: 'title', name: 'Title', type: 'text' },
-      { key: 'value', name: 'Value', type: 'number' },
-      { key: 'currency', name: 'Currency', type: 'text' },
-      { key: 'status', name: 'Status', type: 'text' },
-      { key: 'stage_id', name: 'Stage', type: 'integer' },
-      { key: 'add_time', name: 'Created Date', type: 'date' },
-      { key: 'update_time', name: 'Updated Date', type: 'date' },
-      { key: 'owner_id', name: 'Owner', type: 'user' },
-      { key: 'person_id', name: 'Person', type: 'person' },
-      { key: 'org_id', name: 'Organization', type: 'organization' }
-    ],
-    [ENTITY_TYPES.PERSONS]: [
-      { key: 'id', name: 'ID', type: 'integer' },
-      { key: 'name', name: 'Name', type: 'text' },
-      { key: 'email', name: 'Email', type: 'text' },
-      { key: 'phone', name: 'Phone', type: 'text' },
-      { key: 'owner_id', name: 'Owner', type: 'user' },
-      { key: 'org_id', name: 'Organization', type: 'organization' },
-      { key: 'add_time', name: 'Created Date', type: 'date' },
-      { key: 'update_time', name: 'Updated Date', type: 'date' }
-    ],
-    [ENTITY_TYPES.ORGANIZATIONS]: [
-      { key: 'id', name: 'ID', type: 'integer' },
-      { key: 'name', name: 'Name', type: 'text' },
-      { key: 'address', name: 'Address', type: 'text' },
-      { key: 'owner_id', name: 'Owner', type: 'user' },
-      { key: 'add_time', name: 'Created Date', type: 'date' },
-      { key: 'update_time', name: 'Updated Date', type: 'date' }
-    ],
-    [ENTITY_TYPES.ACTIVITIES]: [
-      { key: 'id', name: 'ID', type: 'integer' },
-      { key: 'subject', name: 'Subject', type: 'text' },
-      { key: 'type', name: 'Type', type: 'text' },
-      { key: 'due_date', name: 'Due Date', type: 'date' },
-      { key: 'deal_id', name: 'Deal', type: 'deal' },
-      { key: 'person_id', name: 'Person', type: 'person' },
-      { key: 'org_id', name: 'Organization', type: 'organization' },
-      { key: 'user_id', name: 'User', type: 'user' },
-      { key: 'add_time', name: 'Created Date', type: 'date' },
-      { key: 'update_time', name: 'Updated Date', type: 'date' }
-    ],
-    [ENTITY_TYPES.LEADS]: [
-      { key: 'id', name: 'ID', type: 'integer' },
-      { key: 'title', name: 'Title', type: 'text' },
-      { key: 'owner_id', name: 'Owner', type: 'user' },
-      { key: 'add_time', name: 'Created Date', type: 'date' },
-      { key: 'update_time', name: 'Updated Date', type: 'date' }
-    ],
-    [ENTITY_TYPES.PRODUCTS]: [
-      { key: 'id', name: 'ID', type: 'integer' },
-      { key: 'name', name: 'Name', type: 'text' },
-      { key: 'code', name: 'Code', type: 'text' },
-      { key: 'unit', name: 'Unit', type: 'text' },
-      { key: 'price', name: 'Price', type: 'number' },
-      { key: 'add_time', name: 'Created Date', type: 'date' },
-      { key: 'update_time', name: 'Updated Date', type: 'date' }
-    ]
-  };
-  
-  // Return common fields or default fields if not found
-  return commonFields[entityType] || [
-    { key: 'id', name: 'ID', type: 'integer' },
-    { key: 'name', name: 'Name', type: 'text' },
-    { key: 'add_time', name: 'Created Date', type: 'date' },
-    { key: 'update_time', name: 'Updated Date', type: 'date' }
-  ];
-}
-
-/**
- * Gets field definitions from Pipedrive for a specific entity type
- * @param {string} entityType - The entity type (deals, persons, etc.)
- * @return {Array} Array of field objects from Pipedrive
- */
-function getPipedriverFields(entityType) {
-  try {
-    // Get access token
-    const scriptProps = PropertiesService.getScriptProperties();
-    const accessToken = scriptProps.getProperty('PIPEDRIVE_ACCESS_TOKEN');
-    
-    if (!accessToken) {
-      Logger.log('No access token found for Pipedrive API');
-      return [];
-    }
-    
-    // Ensure token is fresh
-    refreshAccessTokenIfNeeded();
-    
-    // Convert plural entity type to singular for fields endpoints
-    let fieldsEndpoint;
-    switch (entityType) {
-      case ENTITY_TYPES.DEALS:
-        fieldsEndpoint = 'dealFields';
-        break;
-      case ENTITY_TYPES.PERSONS:
-        fieldsEndpoint = 'personFields';
-        break;
-      case ENTITY_TYPES.ORGANIZATIONS:
-        fieldsEndpoint = 'organizationFields';
-        break;
-      case ENTITY_TYPES.ACTIVITIES:
-        fieldsEndpoint = 'activityFields';
-        break;
-      case ENTITY_TYPES.LEADS:
-        fieldsEndpoint = 'leadFields';
-        break;
-      case ENTITY_TYPES.PRODUCTS:
-        fieldsEndpoint = 'productFields';
-        break;
-      default:
-        Logger.log(`Unknown entity type: ${entityType}`);
-        return [];
-    }
-    
-    // Get API URL from properties
-    const apiUrl = getPipedriveApiUrl();
-    const url = `${apiUrl}/${fieldsEndpoint}`;
-    
-    Logger.log(`Fetching fields for ${entityType} from ${url}`);
-    
-    // Make API request
-    const response = UrlFetchApp.fetch(url, {
-      headers: {
-        'Authorization': 'Bearer ' + accessToken
-      },
-      muteHttpExceptions: true
-    });
-    
-    const responseCode = response.getResponseCode();
-    const responseText = response.getContentText();
-    
-    if (responseCode === 200) {
-      const responseData = JSON.parse(responseText);
-      
-      if (responseData.success) {
-        Logger.log(`Successfully retrieved ${responseData.data.length} fields for ${entityType}`);
-        return responseData.data;
-      } else {
-        Logger.log(`Failed to retrieve fields: ${responseData.error}`);
-        return [];
-      }
-    } else {
-      Logger.log(`API request failed with status ${responseCode}: ${responseText}`);
-      return [];
-    }
+    SpreadsheetApp.getUi().showModalDialog(htmlOutput, hasTeam ? 'Team Management' : 'Team Access');
   } catch (error) {
     Logger.log(`Error in getPipedriverFields: ${error.message}`);
     return [];
+  }
+}
+
+/**
+ * Shows an error message to the user in a dialog
+ * @param {string} message - The error message to display
+ */
+function showError(message) {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.alert('Error', message, ui.ButtonSet.OK);
+  } catch (error) {
+    Logger.log('Error showing error dialog: ' + error.message);
+  }
+}
+
+/**
+ * Process a template string with PHP-like syntax using a data object
+ * @param {string} template - Template string with PHP-like syntax
+ * @param {Object} data - Data object containing values to substitute
+ * @return {string} - Processed template
+ */
+function processTemplate(template, data) {
+  let processedTemplate = template;
+  
+  // Handle conditionals
+  processedTemplate = processIfElse(processedTemplate, data);
+  
+  // Handle foreach loops
+  processedTemplate = processForEach(processedTemplate, data);
+  
+  // Process simple variable substitutions like <?= variable ?>
+  processedTemplate = processedTemplate.replace(/\<\?=\s*([^?>]+?)\s*\?>/g, (match, variable) => {
+    try {
+      // Handle nested properties like member.email or complex expressions
+      const value = evalInContext(variable, data) || '';
+      return value;
+    } catch (e) {
+      Logger.log('Error processing variable: ' + e.message);
+      return '';
+    }
+  });
+  
+  return processedTemplate;
+}
+
+/**
+ * Process if/else statements in PHP-like template syntax
+ * @param {string} template - The template content
+ * @param {Object} data - Data object
+ * @return {string} - Processed template
+ */
+function processIfElse(template, data) {
+  let result = template;
+  
+  // Handle if statements: <?php if (condition): ?>content<?php endif; ?>
+  const IF_PATTERN = /\<\?php\s+if\s+\((.+?)\)\s*:\s*\?>([\s\S]*?)(?:\<\?php\s+else\s*:\s*\?>([\s\S]*?))?\<\?php\s+endif;\s*\?>/g;
+  
+  result = result.replace(IF_PATTERN, (match, condition, ifContent, elseContent = '') => {
+    try {
+      // Convert PHP-like condition to JavaScript
+      let jsCondition = condition
+        .replace(/\!\=/g, '!==')
+        .replace(/\=\=/g, '===')
+        .replace(/\!([\w\.]+)/g, '!$1');
+      
+      // Evaluate the condition in the context of the data object
+      const conditionResult = evalInContext(jsCondition, data);
+      
+      return conditionResult ? ifContent : elseContent;
+    } catch (e) {
+      Logger.log('Error processing if condition: ' + e.message);
+      return '';
+    }
+  });
+  
+  return result;
+}
+
+/**
+ * Process foreach loops in PHP-like template syntax
+ * @param {string} template - The template content
+ * @param {Object} data - Data object
+ * @return {string} - Processed template
+ */
+function processForEach(template, data) {
+  let result = template;
+  
+  // Handle foreach loops: <?php foreach ($items as $item): ?>content<?php endforeach; ?>
+  const FOREACH_PATTERN = /\<\?php\s+foreach\s+\(\$(\w+)\s+as\s+\$(\w+)\)\s*:\s*\?>([\s\S]*?)\<\?php\s+endforeach;\s*\?>/g;
+  
+  result = result.replace(FOREACH_PATTERN, (match, collection, item, content) => {
+    try {
+      const items = data[collection];
+      if (!Array.isArray(items) || items.length === 0) {
+        return '';
+      }
+      
+      return items.map(itemData => {
+        // Create a context with the item for nested variable replacement
+        const itemContext = Object.assign({}, data, { [item]: itemData });
+        
+        // Replace item variables within the loop content
+        let itemContent = content;
+        
+        // Process variables like <?= item.property ?>
+        itemContent = itemContent.replace(/\<\?=\s*(\$?)([\w\.]+)\s*\?>/g, (m, dollar, varName) => {
+          try {
+            // If it's a loop item variable like $member or $member.property
+            if (varName.startsWith(item + '.')) {
+              const propPath = varName.substring(item.length + 1);
+              return evalPropertyPath(itemData, propPath) || '';
+            } 
+            // If it's just $member (the whole item)
+            else if (varName === item) {
+              return itemData || '';
+            } 
+            // Other variables from the parent context
+            else {
+              return evalInContext(varName, itemContext) || '';
+            }
+          } catch (e) {
+            Logger.log('Error in foreach variable replacement: ' + e.message);
+            return '';
+          }
+        });
+        
+        return itemContent;
+      }).join('');
+    } catch (e) {
+      Logger.log('Error processing foreach: ' + e.message);
+      return '';
+    }
+  });
+  
+  return result;
+}
+
+/**
+ * Evaluate a JavaScript expression in the context of a data object
+ * @param {string} expr - The expression to evaluate
+ * @param {Object} context - The context object
+ * @return {*} - The result of the evaluation
+ */
+function evalInContext(expr, context) {
+  try {
+    // Handle simple variable access first
+    if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(expr)) {
+      return context[expr];
+    }
+    
+    // Handle nested properties with dot notation
+    if (/^[a-zA-Z_$][a-zA-Z0-9_$]*(\.[a-zA-Z_$][a-zA-Z0-9_$]*)+$/.test(expr)) {
+      return evalPropertyPath(context, expr);
+    }
+    
+    // Handle comparisons and more complex expressions
+    // Create a safe function to evaluate in the context
+    const keys = Object.keys(context);
+    const values = keys.map(key => context[key]);
+    const evaluator = new Function(...keys, `return ${expr};`);
+    return evaluator(...values);
+  } catch (e) {
+    Logger.log('Error evaluating expression: ' + e.message);
+    return null;
+  }
+}
+
+/**
+ * Evaluate a property path on an object (e.g. "user.profile.name")
+ * @param {Object} obj - The object to evaluate on
+ * @param {string} path - The property path
+ * @return {*} - The value at the path or undefined
+ */
+function evalPropertyPath(obj, path) {
+  try {
+    return path.split('.').reduce((o, p) => o && o[p], obj);
+  } catch (e) {
+    Logger.log('Error evaluating property path: ' + e.message);
+    return undefined;
   }
 }
