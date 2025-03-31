@@ -999,6 +999,28 @@ function showSyncStatus(sheetName) {
 }
 
 /**
+ * Includes an HTML file with the content of a script file.
+ * @param {string} filename - The name of the file to include without the extension
+ * @return {string} The content to be included
+ */
+function include(filename) {
+  return HtmlService.createHtmlOutput(getFileContent_(filename)).getContent();
+}
+
+/**
+ * Gets the content of a script file.
+ * @param {string} filename - The name of the file without the extension
+ * @return {string} The content of the file
+ * @private
+ */
+function getFileContent_(filename) {
+  if (filename === 'TeamManagerUI') {
+    return `<style>${TeamManagerUI.getStyles()}</style><script>${TeamManagerUI.getScripts()}</script>`;
+  }
+  return '';
+}
+
+/**
  * Shows the team management UI.
  * @param {boolean} joinOnly - Whether to show only the join team section.
  */
@@ -1026,7 +1048,7 @@ function showTeamManager(joinOnly = false) {
       userRole = teamData.role;
     }
 
-    // Create the HTML template and populate it with data
+    // Create the HTML template
     const template = HtmlService.createTemplateFromFile('TeamManager');
     
     // Set template variables
@@ -1038,11 +1060,15 @@ function showTeamManager(joinOnly = false) {
     template.userRole = userRole;
     template.initialTab = joinOnly ? 'join' : (hasTeam ? 'manage' : 'create');
     
+    // Make include function available to the template
+    template.include = include;
+    
     // Evaluate the template
     const htmlOutput = template.evaluate()
       .setWidth(500)
       .setHeight(hasTeam ? 600 : 400)
-      .setTitle(hasTeam ? 'Team Management' : 'Team Access');
+      .setTitle(hasTeam ? 'Team Management' : 'Team Access')
+      .setSandboxMode(HtmlService.SandboxMode.IFRAME);
 
     // Show the dialog
     SpreadsheetApp.getUi().showModalDialog(htmlOutput, hasTeam ? 'Team Management' : 'Team Access');
