@@ -663,6 +663,8 @@ function showColumnSelectorUI() {
     
     // Pass data to template
     template.dataScript = dataScript;
+    template.entityTypeName = formatEntityTypeName(entityType);
+    template.sheetName = activeSheetName;
     
     // Create and show dialog
     const html = template.evaluate()
@@ -679,27 +681,16 @@ function showColumnSelectorUI() {
 }
 
 /**
- * Formats entity type name for display
+ * Formats an entity type name for display
  * @param {string} entityType - The entity type to format
- * @return {string} Formatted entity type name
+ * @return {string} The formatted entity type name
  */
 function formatEntityTypeName(entityType) {
-  switch (entityType) {
-    case ENTITY_TYPES.DEALS:
-      return 'Deals';
-    case ENTITY_TYPES.PERSONS:
-      return 'Contacts';
-    case ENTITY_TYPES.ORGANIZATIONS:
-      return 'Organizations';
-    case ENTITY_TYPES.ACTIVITIES:
-      return 'Activities';
-    case ENTITY_TYPES.LEADS:
-      return 'Leads';
-    case ENTITY_TYPES.PRODUCTS:
-      return 'Products';
-    default:
-      return entityType;
-  }
+  if (!entityType) return '';
+  
+  // Remove any prefix/suffix and convert to title case
+  const name = entityType.replace(/^ENTITY_TYPES\./, '').toLowerCase();
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 /**
