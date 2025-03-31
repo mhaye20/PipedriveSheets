@@ -2,556 +2,122 @@
 <html>
   <head>
     <base target="_top">
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        margin: 0;
-        padding: 20px;
-      }
-      h3 {
-        margin-top: 0;
-        margin-bottom: 15px;
-      }
-      .container {
-        max-width: 600px;
-        margin: 0 auto;
-      }
-      .card {
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        padding: 15px;
-        margin-bottom: 20px;
-        background-color: #f9f9f9;
-      }
-      .section {
-        margin-bottom: 20px;
-      }
-      .section-title {
-        font-weight: bold;
-        margin-bottom: 10px;
-      }
-      .form-group {
-        margin-bottom: 15px;
-      }
-      label {
-        display: block;
-        margin-bottom: 5px;
-        font-weight: bold;
-      }
-      select, input[type="text"], input[type="number"] {
-        width: 100%;
-        padding: 8px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        box-sizing: border-box;
-      }
-      .checkbox-container {
-        display: flex;
-        align-items: center;
-        margin-bottom: 8px;
-      }
-      .checkbox-container input[type="checkbox"] {
-        margin-right: 10px;
-      }
-      button {
-        background-color: #4285F4;
-        color: white;
-        border: none;
-        padding: 8px 15px;
-        border-radius: 4px;
-        cursor: pointer;
-        margin-right: 10px;
-      }
-      button:hover {
-        background-color: #3367D6;
-      }
-      button.secondary {
-        background-color: #f1f1f1;
-        color: #333;
-      }
-      button.secondary:hover {
-        background-color: #e4e4e4;
-      }
-      button.danger {
-        background-color: #EA4335;
-      }
-      button.danger:hover {
-        background-color: #D62516;
-      }
-      .footer {
-        margin-top: 20px;
-        display: flex;
-        justify-content: flex-end;
-      }
-      .help-text {
-        font-size: 12px;
-        color: #666;
-        margin-top: 4px;
-      }
-      .status-message {
-        padding: 10px;
-        margin: 10px 0;
-        border-radius: 4px;
-      }
-      .status-success {
-        background-color: #d4edda;
-        color: #155724;
-        border: 1px solid #c3e6cb;
-      }
-      .status-error {
-        background-color: #f8d7da;
-        color: #721c24;
-        border: 1px solid #f5c6cb;
-      }
-      .status-info {
-        background-color: #e1f5fe;
-        color: #0277bd;
-        border: 1px solid #b3e5fc;
-      }
-      .loading {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background-color: rgba(255, 255, 255, 0.7);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 1000;
-      }
-      .spinner {
-        border: 4px solid #f3f3f3;
-        border-radius: 50%;
-        border-top: 4px solid #4285F4;
-        width: 30px;
-        height: 30px;
-        animation: spin 1s linear infinite;
-      }
-      @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-      }
-      .trigger-list {
-        margin-top: 15px;
-      }
-      .trigger-item {
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        padding: 12px;
-        margin-bottom: 10px;
-        background-color: #fff;
-        position: relative;
-      }
-      .trigger-title {
-        font-weight: bold;
-        margin-bottom: 5px;
-      }
-      .trigger-details {
-        font-size: 13px;
-        color: #666;
-      }
-      .trigger-actions {
-        position: absolute;
-        top: 12px;
-        right: 12px;
-      }
-      .no-triggers {
-        text-align: center;
-        padding: 20px;
-        color: #666;
-        font-style: italic;
-      }
-      .tabs {
-        display: flex;
-        margin-bottom: 20px;
-        border-bottom: 1px solid #ddd;
-      }
-      .tab {
-        padding: 10px 15px;
-        cursor: pointer;
-        position: relative;
-      }
-      .tab.active {
-        color: #4285F4;
-        font-weight: bold;
-      }
-      .tab.active:after {
-        content: '';
-        position: absolute;
-        bottom: -1px;
-        left: 0;
-        right: 0;
-        height: 2px;
-        background-color: #4285F4;
-      }
-      .hidden {
-        display: none;
-      }
-      .frequency-container {
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 10px;
-      }
-      .time-input {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-      .time-input select, .time-input input {
-        width: auto;
-      }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    <?!= include('TriggerManagerUI') ?>
   </head>
-  <body>
+  <body onload="onLoad()">
     <div class="container">
-      <h3>Sync Schedule Manager</h3>
+      <h3>Schedule Automatic Sync</h3>
       
-      <div id="status-container"></div>
+      <div id="statusIndicator" class="indicator"></div>
       
-      <div class="tabs">
-        <div class="tab active" data-tab="existing">Existing Schedules</div>
-        <div class="tab" data-tab="create">Create Schedule</div>
+      <div class="sheet-info">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
+          <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
+          <path d="M7 7h10v2H7zm0 4h10v2H7zm0 4h7v2H7z"/>
+        </svg>
+        <div>Scheduling automatic sync for <strong id="sheetNameDisplay"></strong></div>
       </div>
       
-      <!-- Existing Triggers Section -->
-      <div id="existing-triggers-section" class="section">
-        <div class="card">
-          <div class="section-title">Your Scheduled Syncs</div>
-          
-          <div class="trigger-list">
-            <? if (triggers && triggers.length > 0) { ?>
-              <? triggers.forEach(function(trigger) { ?>
-                <div class="trigger-item" data-id="<?= trigger.id ?>">
-                  <div class="trigger-title"><?= trigger.name || 'Scheduled Sync' ?></div>
-                  <div class="trigger-details">
-                    <div><strong>Frequency:</strong> <?= trigger.frequencyLabel ?></div>
-                    <div><strong>Last Run:</strong> <?= trigger.lastRun || 'Never' ?></div>
-                    <div><strong>Next Run:</strong> <?= trigger.nextRun || 'Not scheduled' ?></div>
-                    <div><strong>Sheets:</strong> <?= trigger.sheetsLabel || 'All sheets' ?></div>
-                  </div>
-                  <div class="trigger-actions">
-                    <button class="delete-trigger danger" data-id="<?= trigger.id ?>">Delete</button>
-                  </div>
-                </div>
-              <? }); ?>
-            <? } else { ?>
-              <div class="no-triggers">
-                No scheduled syncs found. Create one to automatically keep your data up to date.
-              </div>
+      <div id="twoWaySyncNotice" class="two-way-sync-notice" style="display: none;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
+          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+        </svg>
+        <div>
+          <strong>Two-way sync is enabled</strong>
+          <p>Changes in this sheet will be pushed to Pipedrive before pulling new data during scheduled syncs.</p>
+        </div>
+      </div>
+      
+      <div id="existingTriggers"></div>
+      
+      <h4>Create New Schedule</h4>
+      
+      <form id="triggerForm">
+        <div class="form-group">
+          <label for="frequency">Sync Frequency</label>
+          <select id="frequency" required>
+            <option value="hourly">Hourly</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </div>
+        
+        <div id="hourlyIntervalInput" class="form-group">
+          <label for="hourlyInterval">Sync Every</label>
+          <select id="hourlyInterval">
+            <option value="1">1 hour</option>
+            <option value="2">2 hours</option>
+            <option value="3">3 hours</option>
+            <option value="4">4 hours</option>
+            <option value="6">6 hours</option>
+            <option value="8">8 hours</option>
+            <option value="12">12 hours</option>
+          </select>
+        </div>
+        
+        <div id="timeInputs" class="form-group time-inputs" style="display: none;">
+          <div>
+            <label for="hour">Hour</label>
+            <select id="hour">
+              <? for (let i = 0; i < 24; i++) { ?>
+                <? const hour12 = i % 12 === 0 ? 12 : i % 12; ?>
+                <? const ampm = i < 12 ? 'AM' : 'PM'; ?>
+                <option value="<?= i ?>"><?= hour12 ?>:00 <?= ampm ?></option>
+              <? } ?>
+            </select>
+          </div>
+          <div>
+            <label for="minute">Minute</label>
+            <select id="minute">
+              <? for (let i = 0; i < 60; i++) { ?>
+                <option value="<?= i ?>"><?= i.toString().padStart(2, '0') ?></option>
+              <? } ?>
+            </select>
+          </div>
+        </div>
+        
+        <div id="daySelection" class="form-group" style="display: none;">
+          <label>Days of the Week</label>
+          <div class="day-selection">
+            <button type="button" class="day-button" data-day="2">Monday</button>
+            <button type="button" class="day-button" data-day="3">Tuesday</button>
+            <button type="button" class="day-button" data-day="4">Wednesday</button>
+            <button type="button" class="day-button" data-day="5">Thursday</button>
+            <button type="button" class="day-button" data-day="6">Friday</button>
+            <button type="button" class="day-button" data-day="7">Saturday</button>
+            <button type="button" class="day-button" data-day="1">Sunday</button>
+          </div>
+          <p class="help-text">Select one or more days</p>
+        </div>
+        
+        <div id="monthDayInput" class="form-group" style="display: none;">
+          <label for="monthDay">Day of Month</label>
+          <select id="monthDay">
+            <? for (let i = 1; i <= 31; i++) { ?>
+              <? const suffix = ['st', 'nd', 'rd'][i - 1] || 'th'; ?>
+              <option value="<?= i ?>"><?= i ?><?= suffix ?></option>
             <? } ?>
-          </div>
+          </select>
         </div>
-      </div>
-      
-      <!-- Create Trigger Section -->
-      <div id="create-trigger-section" class="section hidden">
-        <div class="card">
-          <div class="section-title">Create a New Scheduled Sync</div>
-          
-          <div class="form-group">
-            <label for="trigger-name">Schedule Name</label>
-            <input type="text" id="trigger-name" placeholder="e.g., Daily Deals Sync">
-            <div class="help-text">Optional: Give your schedule a descriptive name</div>
-          </div>
-          
-          <div class="form-group">
-            <label>Frequency</label>
-            <select id="frequency-type">
-              <option value="hourly">Hourly</option>
-              <option value="daily" selected>Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-          </div>
-          
-          <div class="form-group frequency-options" id="hourly-options">
-            <label>Every</label>
-            <div class="frequency-container">
-              <select id="hourly-interval">
-                <option value="1">1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="6">6</option>
-                <option value="12">12</option>
-              </select>
-              <div>hour(s)</div>
-            </div>
-          </div>
-          
-          <div class="form-group frequency-options" id="daily-options">
-            <label>Time of Day</label>
-            <div class="time-input">
-              <select id="daily-hour">
-                <? for (let i = 0; i < 24; i++) { ?>
-                  <option value="<?= i ?>"><?= (i < 10 ? '0' : '') + i ?>:00</option>
-                <? } ?>
-              </select>
-            </div>
-          </div>
-          
-          <div class="form-group frequency-options hidden" id="weekly-options">
-            <label>Day of Week</label>
-            <select id="weekly-day">
-              <option value="1">Monday</option>
-              <option value="2">Tuesday</option>
-              <option value="3">Wednesday</option>
-              <option value="4">Thursday</option>
-              <option value="5">Friday</option>
-              <option value="6">Saturday</option>
-              <option value="0">Sunday</option>
-            </select>
-            <div class="time-input" style="margin-top: 10px;">
-              <label>Time:</label>
-              <select id="weekly-hour">
-                <? for (let i = 0; i < 24; i++) { ?>
-                  <option value="<?= i ?>"><?= (i < 10 ? '0' : '') + i ?>:00</option>
-                <? } ?>
-              </select>
-            </div>
-          </div>
-          
-          <div class="form-group frequency-options hidden" id="monthly-options">
-            <label>Day of Month</label>
-            <select id="monthly-day">
-              <? for (let i = 1; i <= 28; i++) { ?>
-                <option value="<?= i ?>"><?= i ?></option>
-              <? } ?>
-              <option value="last">Last day</option>
-            </select>
-            <div class="time-input" style="margin-top: 10px;">
-              <label>Time:</label>
-              <select id="monthly-hour">
-                <? for (let i = 0; i < 24; i++) { ?>
-                  <option value="<?= i ?>"><?= (i < 10 ? '0' : '') + i ?>:00</option>
-                <? } ?>
-              </select>
-            </div>
-          </div>
-          
-          <div class="form-group">
-            <label>Sheets to Sync</label>
-            <div class="checkbox-container">
-              <input type="checkbox" id="sync-all-sheets" checked>
-              <label for="sync-all-sheets">Sync all configured sheets</label>
-            </div>
-            
-            <div id="sheet-selection" class="hidden" style="margin-top: 10px;">
-              <? if (configuredSheets && configuredSheets.length > 0) { ?>
-                <? configuredSheets.forEach(function(sheet) { ?>
-                  <div class="checkbox-container">
-                    <input type="checkbox" class="sheet-checkbox" id="sheet-<?= sheet.id ?>" value="<?= sheet.id ?>">
-                    <label for="sheet-<?= sheet.id ?>"><?= sheet.name ?> (<?= sheet.type ?>)</label>
-                  </div>
-                <? }); ?>
-              <? } else { ?>
-                <div class="help-text">No configured sheets found. Please set up at least one sheet first.</div>
-              <? } ?>
-            </div>
-          </div>
-          
-          <div class="footer">
-            <button id="create-schedule-button">Create Schedule</button>
-            <button id="create-cancel-button" class="secondary">Cancel</button>
-          </div>
+        
+        <input type="hidden" id="sheetName" value="<?= sheetName ?>">
+        <input type="hidden" id="twoWaySyncEnabled" value="<?= twoWaySyncEnabled ?>">
+        <input type="hidden" id="currentTriggers" value="<?= JSON.stringify(currentTriggers) ?>">
+        
+        <div class="button-container">
+          <button type="button" class="secondary-btn" onclick="google.script.host.close()">Cancel</button>
+          <button type="button" class="primary-btn" id="createButton" onclick="createSchedule()">
+            <span class="loading" id="buttonLoading">
+              <span class="loader"></span>
+            </span>
+            Create Schedule
+          </button>
         </div>
-      </div>
+      </form>
     </div>
     
-    <div id="loading-indicator" class="loading hidden">
-      <div class="spinner"></div>
-    </div>
-    
-    <script>
-      // Tab switching
-      document.querySelectorAll('.tab').forEach(tab => {
-        tab.addEventListener('click', function() {
-          // Update active tab
-          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-          this.classList.add('active');
-          
-          // Show corresponding section
-          const tabId = this.dataset.tab;
-          if (tabId === 'existing') {
-            document.getElementById('existing-triggers-section').classList.remove('hidden');
-            document.getElementById('create-trigger-section').classList.add('hidden');
-          } else {
-            document.getElementById('existing-triggers-section').classList.add('hidden');
-            document.getElementById('create-trigger-section').classList.remove('hidden');
-          }
-        });
-      });
-      
-      // Helper function to show status messages
-      function showStatus(message, type) {
-        const container = document.getElementById('status-container');
-        const statusDiv = document.createElement('div');
-        statusDiv.className = `status-message status-${type}`;
-        statusDiv.textContent = message;
-        container.innerHTML = '';
-        container.appendChild(statusDiv);
-        
-        // Auto-dismiss after 5 seconds for success messages
-        if (type === 'success') {
-          setTimeout(() => {
-            statusDiv.remove();
-          }, 5000);
-        }
-      }
-      
-      // Show/hide loading indicator
-      function showLoading() {
-        document.getElementById('loading-indicator').classList.remove('hidden');
-      }
-      
-      function hideLoading() {
-        document.getElementById('loading-indicator').classList.add('hidden');
-      }
-      
-      // Frequency type change handler
-      document.getElementById('frequency-type').addEventListener('change', function() {
-        // Hide all frequency options
-        document.querySelectorAll('.frequency-options').forEach(el => {
-          el.classList.add('hidden');
-        });
-        
-        // Show the selected frequency options
-        const selected = this.value;
-        document.getElementById(`${selected}-options`).classList.remove('hidden');
-      });
-      
-      // Show/hide sheet selection based on "sync all sheets" checkbox
-      document.getElementById('sync-all-sheets').addEventListener('change', function() {
-        const sheetSelection = document.getElementById('sheet-selection');
-        if (this.checked) {
-          sheetSelection.classList.add('hidden');
-        } else {
-          sheetSelection.classList.remove('hidden');
-        }
-      });
-      
-      // Delete trigger handler
-      document.querySelectorAll('.delete-trigger').forEach(button => {
-        button.addEventListener('click', function() {
-          const triggerId = this.dataset.id;
-          if (!confirm('Are you sure you want to delete this scheduled sync?')) {
-            return;
-          }
-          
-          showLoading();
-          google.script.run
-            .withSuccessHandler(function(result) {
-              hideLoading();
-              if (result.success) {
-                // Remove the trigger item from UI
-                const triggerItem = document.querySelector(`.trigger-item[data-id="${triggerId}"]`);
-                if (triggerItem) {
-                  triggerItem.remove();
-                }
-                
-                // Check if there are no more triggers
-                const triggerItems = document.querySelectorAll('.trigger-item');
-                if (triggerItems.length === 0) {
-                  const triggerList = document.querySelector('.trigger-list');
-                  triggerList.innerHTML = `
-                    <div class="no-triggers">
-                      No scheduled syncs found. Create one to automatically keep your data up to date.
-                    </div>
-                  `;
-                }
-                
-                showStatus('Scheduled sync deleted successfully', 'success');
-              } else {
-                showStatus(result.message || 'Error deleting scheduled sync', 'error');
-              }
-            })
-            .withFailureHandler(function(error) {
-              hideLoading();
-              showStatus('Error: ' + error.message, 'error');
-            })
-            .deleteTrigger(triggerId);
-        });
-      });
-      
-      // Create schedule handler
-      document.getElementById('create-schedule-button').addEventListener('click', function() {
-        // Gather schedule settings
-        const name = document.getElementById('trigger-name').value.trim();
-        const frequencyType = document.getElementById('frequency-type').value;
-        
-        let schedule = {
-          name: name || 'Scheduled Sync',
-          frequency: frequencyType,
-          syncAllSheets: document.getElementById('sync-all-sheets').checked,
-          sheets: []
-        };
-        
-        // Add frequency-specific settings
-        switch (frequencyType) {
-          case 'hourly':
-            schedule.interval = document.getElementById('hourly-interval').value;
-            break;
-          case 'daily':
-            schedule.hour = document.getElementById('daily-hour').value;
-            break;
-          case 'weekly':
-            schedule.day = document.getElementById('weekly-day').value;
-            schedule.hour = document.getElementById('weekly-hour').value;
-            break;
-          case 'monthly':
-            schedule.day = document.getElementById('monthly-day').value;
-            schedule.hour = document.getElementById('monthly-hour').value;
-            break;
-        }
-        
-        // Collect selected sheets if not syncing all
-        if (!schedule.syncAllSheets) {
-          document.querySelectorAll('.sheet-checkbox:checked').forEach(checkbox => {
-            schedule.sheets.push(checkbox.value);
-          });
-          
-          // Validate at least one sheet is selected
-          if (schedule.sheets.length === 0) {
-            showStatus('Please select at least one sheet to sync', 'error');
-            return;
-          }
-        }
-        
-        // Create the schedule
-        showLoading();
-        google.script.run
-          .withSuccessHandler(function(result) {
-            hideLoading();
-            if (result.success) {
-              showStatus('Scheduled sync created successfully', 'success');
-              
-              // Switch to existing triggers tab and reload
-              setTimeout(() => {
-                google.script.run.showTriggerManager();
-                google.script.host.close();
-              }, 2000);
-            } else {
-              showStatus(result.message || 'Error creating scheduled sync', 'error');
-            }
-          })
-          .withFailureHandler(function(error) {
-            hideLoading();
-            showStatus('Error: ' + error.message, 'error');
-          })
-          .createTrigger(schedule);
-      });
-      
-      // Cancel button
-      document.getElementById('create-cancel-button').addEventListener('click', function() {
-        // Switch back to existing triggers tab
-        document.querySelector('.tab[data-tab="existing"]').click();
-      });
-      
-      // Initialize - show the correct frequency options based on default selection
-      const defaultFrequency = document.getElementById('frequency-type').value;
-      document.getElementById(`${defaultFrequency}-options`).classList.remove('hidden');
-    </script>
+    <div id="indicator" class="indicator" style="display: none;"></div>
   </body>
 </html> 
