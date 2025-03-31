@@ -1763,32 +1763,66 @@ function showTwoWaySyncSettings() {
     const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     const activeSheetName = activeSheet.getName();
     
+    // Get entity type for the sheet
+    const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
+    const entityType = scriptProps.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
+    
     // Get current settings
     const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
-    const enableTwoWaySync = scriptProps.getProperty(twoWaySyncEnabledKey) === 'true';
-    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
-    const trackingColumn = scriptProps.getProperty(twoWaySyncTrackingColumnKey) || '';
+    const keyColumnKey = `TWOWAY_SYNC_KEY_COLUMN_${activeSheetName}`;
+    const changeDetectionKey = `TWOWAY_SYNC_DETECTION_${activeSheetName}`;
+    const createNewRecordsKey = `TWOWAY_SYNC_CREATE_NEW_${activeSheetName}`;
+    const syncOnEditKey = `TWOWAY_SYNC_ON_EDIT_${activeSheetName}`;
+    const fieldMappingsKey = `TWOWAY_SYNC_MAPPINGS_${activeSheetName}`;
     
-    // Create a settings object with all properties the template might need
+    const enabledStr = scriptProps.getProperty(twoWaySyncEnabledKey);
+    const keyColumn = scriptProps.getProperty(keyColumnKey) || '';
+    const changeDetection = scriptProps.getProperty(changeDetectionKey) || 'cell';
+    const createNewRecordsStr = scriptProps.getProperty(createNewRecordsKey);
+    const syncOnEditStr = scriptProps.getProperty(syncOnEditKey);
+    const fieldMappingsStr = scriptProps.getProperty(fieldMappingsKey);
+    
+    // Get available columns
+    const availableColumns = getAvailableColumns(entityType);
+    
+    // Get Pipedrive fields for this entity type
+    const pipedriveFields = getPipedriverFields(entityType);
+    
+    // Parse field mappings if they exist
+    let fieldMappings = [];
+    try {
+      if (fieldMappingsStr) {
+        fieldMappings = JSON.parse(fieldMappingsStr);
+      }
+    } catch (e) {
+      Logger.log(`Error parsing field mappings: ${e.message}`);
+    }
+    
+    // Create a settings object with all properties the template needs
     const settings = {
-      enableTwoWaySync: enableTwoWaySync,
-      trackingColumn: trackingColumn,
-      sheetName: activeSheetName
+      enabled: enabledStr === 'true',
+      keyColumn: keyColumn,
+      changeDetection: changeDetection,
+      createNewRecords: createNewRecordsStr === 'true',
+      syncOnEdit: syncOnEditStr === 'true',
+      fieldMappings: fieldMappings
     };
     
     // Create the HTML template
     const htmlTemplate = HtmlService.createTemplateFromFile('TwoWaySyncSettings');
     
     // Pass data to the template
-    htmlTemplate.enableTwoWaySync = enableTwoWaySync;
-    htmlTemplate.trackingColumn = trackingColumn;
-    htmlTemplate.settings = settings; // Pass the entire settings object
+    htmlTemplate.settings = settings;
+    htmlTemplate.availableColumns = availableColumns;
+    htmlTemplate.pipedriveFields = pipedriveFields;
+    htmlTemplate.entityType = entityType;
+    htmlTemplate.sheetName = activeSheetName;
     
     // Create the HTML from the template
     const html = htmlTemplate.evaluate()
       .setTitle('Two-Way Sync Settings')
-      .setWidth(500)
-      .setHeight(400);
+      .setWidth(600)
+      .setHeight(650);
     
     // Show the dialog
     SpreadsheetApp.getUi().showModalDialog(html, 'Two-Way Sync Settings');
@@ -1798,45 +1832,50 @@ function showTwoWaySyncSettings() {
   }
 }
 
-function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
+function saveTwoWaySyncSettings(settings, entityType, sheetName) {
   try {
-    const scriptProps = PropertiesService.getScriptProperties();
-    const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    const activeSheetName = activeSheet.getName();
-    
-    // Save settings with sheet-specific keys
-    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
-    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
-    
-    // Save the settings
-    scriptProps.setProperty(twoWaySyncEnabledKey, enableTwoWaySync ? 'true' : 'false');
-    
-    // Debug log to verify what we're saving
-    Logger.log(`Saving two-way sync setting: ${twoWaySyncEnabledKey} = ${enableTwoWaySync ? 'true' : 'false'}`);
-    
-    if (trackingColumn) {
-      // Save the tracking column
-      scriptProps.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
-    } else {
-      // If no column specified, clean up the property
-      scriptProps.deleteProperty(twoWaySyncTrackingColumnKey);
+    if (!sheetName) {
+      // If no sheet name provided, use the active sheet
+      sheetName = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet().getName();
     }
     
-    // If two-way sync is enabled, set up the onEdit trigger and immediately add the Sync Status column
-    if (enableTwoWaySync) {
-      // Set up the onEdit trigger
+    const scriptProps = PropertiesService.getScriptProperties();
+    
+    // Store all settings with sheet-specific keys
+    const enabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
+    const keyColumnKey = `TWOWAY_SYNC_KEY_COLUMN_${sheetName}`;
+    const changeDetectionKey = `TWOWAY_SYNC_DETECTION_${sheetName}`;
+    const createNewRecordsKey = `TWOWAY_SYNC_CREATE_NEW_${sheetName}`;
+    const syncOnEditKey = `TWOWAY_SYNC_ON_EDIT_${sheetName}`;
+    const fieldMappingsKey = `TWOWAY_SYNC_MAPPINGS_${sheetName}`;
+    
+    // Save all settings
+    scriptProps.setProperty(enabledKey, settings.enabled ? 'true' : 'false');
+    scriptProps.setProperty(keyColumnKey, settings.keyColumn || '');
+    scriptProps.setProperty(changeDetectionKey, settings.changeDetection || 'cell');
+    scriptProps.setProperty(createNewRecordsKey, settings.createNewRecords ? 'true' : 'false');
+    scriptProps.setProperty(syncOnEditKey, settings.syncOnEdit ? 'true' : 'false');
+    
+    // Save field mappings as JSON
+    if (settings.fieldMappings && settings.fieldMappings.length > 0) {
+      scriptProps.setProperty(fieldMappingsKey, JSON.stringify(settings.fieldMappings));
+    } else {
+      scriptProps.deleteProperty(fieldMappingsKey);
+    }
+    
+    // If two-way sync is enabled, set up the onEdit trigger
+    if (settings.enabled) {
       setupOnEditTrigger();
-      
-      // Add Sync Status column if it doesn't exist yet
-      addSyncStatusColumn(activeSheet, trackingColumn);
     } else {
       removeOnEditTrigger();
     }
     
-    return true;
+    Logger.log(`Two-way sync settings saved successfully for ${sheetName}`);
+    
+    return { success: true };
   } catch (e) {
     Logger.log(`Error in saveTwoWaySyncSettings: ${e.message}`);
-    throw e;
+    return { success: false, message: e.message };
   }
 }
 
@@ -2156,4 +2195,86 @@ function getCommonFieldsForEntity(entityType) {
     { key: 'add_time', name: 'Created Date', type: 'date' },
     { key: 'update_time', name: 'Updated Date', type: 'date' }
   ];
+}
+
+/**
+ * Gets field definitions from Pipedrive for a specific entity type
+ * @param {string} entityType - The entity type (deals, persons, etc.)
+ * @return {Array} Array of field objects from Pipedrive
+ */
+function getPipedriverFields(entityType) {
+  try {
+    // Get access token
+    const scriptProps = PropertiesService.getScriptProperties();
+    const accessToken = scriptProps.getProperty('PIPEDRIVE_ACCESS_TOKEN');
+    
+    if (!accessToken) {
+      Logger.log('No access token found for Pipedrive API');
+      return [];
+    }
+    
+    // Ensure token is fresh
+    refreshAccessTokenIfNeeded();
+    
+    // Convert plural entity type to singular for fields endpoints
+    let fieldsEndpoint;
+    switch (entityType) {
+      case ENTITY_TYPES.DEALS:
+        fieldsEndpoint = 'dealFields';
+        break;
+      case ENTITY_TYPES.PERSONS:
+        fieldsEndpoint = 'personFields';
+        break;
+      case ENTITY_TYPES.ORGANIZATIONS:
+        fieldsEndpoint = 'organizationFields';
+        break;
+      case ENTITY_TYPES.ACTIVITIES:
+        fieldsEndpoint = 'activityFields';
+        break;
+      case ENTITY_TYPES.LEADS:
+        fieldsEndpoint = 'leadFields';
+        break;
+      case ENTITY_TYPES.PRODUCTS:
+        fieldsEndpoint = 'productFields';
+        break;
+      default:
+        Logger.log(`Unknown entity type: ${entityType}`);
+        return [];
+    }
+    
+    // Get API URL from properties
+    const apiUrl = getPipedriveApiUrl();
+    const url = `${apiUrl}/${fieldsEndpoint}`;
+    
+    Logger.log(`Fetching fields for ${entityType} from ${url}`);
+    
+    // Make API request
+    const response = UrlFetchApp.fetch(url, {
+      headers: {
+        'Authorization': 'Bearer ' + accessToken
+      },
+      muteHttpExceptions: true
+    });
+    
+    const responseCode = response.getResponseCode();
+    const responseText = response.getContentText();
+    
+    if (responseCode === 200) {
+      const responseData = JSON.parse(responseText);
+      
+      if (responseData.success) {
+        Logger.log(`Successfully retrieved ${responseData.data.length} fields for ${entityType}`);
+        return responseData.data;
+      } else {
+        Logger.log(`Failed to retrieve fields: ${responseData.error}`);
+        return [];
+      }
+    } else {
+      Logger.log(`API request failed with status ${responseCode}: ${responseText}`);
+      return [];
+    }
+  } catch (error) {
+    Logger.log(`Error in getPipedriverFields: ${error.message}`);
+    return [];
+  }
 }

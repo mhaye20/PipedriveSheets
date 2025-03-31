@@ -228,6 +228,9 @@
       .toggle-label span {
         margin-left: 15px;
       }
+      .hidden {
+        display: none !important;
+      }
     </style>
   </head>
   <body>
@@ -369,6 +372,12 @@
     </div>
     
     <script>
+      // Hide loading indicator when the document is fully loaded
+      document.addEventListener('DOMContentLoaded', function() {
+        // Hide the loading indicator
+        document.getElementById('loading-indicator').classList.add('hidden');
+      });
+      
       // Helper function to show status messages
       function showStatus(message, type) {
         const container = document.getElementById('status-container');
