@@ -628,6 +628,33 @@ function showColumnSelectorUI(availableColumns, selectedColumns, entityType, she
       Logger.log(`Column keys preview: ${availableColumns.slice(0, 5).map(c => c.key).join(', ')}`);
     }
     
+    // Log selected columns for debugging
+    Logger.log(`Selected columns: ${selectedColumns.length}`);
+    if (selectedColumns.length > 0) {
+      Logger.log(`First selected column: ${JSON.stringify(selectedColumns[0])}`);
+    }
+    
+    // Ensure all selected columns have complete information
+    const normalizedSelectedColumns = selectedColumns.map(col => {
+      // If it's just a key string, find the object in availableColumns
+      if (typeof col === 'string' || !col.name) {
+        const key = typeof col === 'string' ? col : col.key;
+        const availableCol = availableColumns.find(ac => ac.key === key);
+        
+        if (availableCol) {
+          return availableCol;
+        } else {
+          // Create a basic object if no match found
+          return {
+            key: key,
+            name: key, // Use key as name if no better name is available
+            path: key
+          };
+        }
+      }
+      return col;
+    });
+    
     // Create a simple HTML UI instead of using the complex template
     let html = `
       <style>
@@ -677,12 +704,12 @@ function showColumnSelectorUI(availableColumns, selectedColumns, entityType, she
         </div>
         
         <div class="column">
-          <div class="column-heading">Selected Columns (<span id="selectedCount">${selectedColumns.length}</span>)</div>
+          <div class="column-heading">Selected Columns (<span id="selectedCount">${normalizedSelectedColumns.length}</span>)</div>
           <div class="scrollable" id="selectedList">
     `;
     
     // Add selected columns
-    for (const col of selectedColumns) {
+    for (const col of normalizedSelectedColumns) {
       html += `
         <div class="item" data-key="${col.key}">
           <span class="item-name">${col.name}</span>
@@ -691,7 +718,7 @@ function showColumnSelectorUI(availableColumns, selectedColumns, entityType, she
       `;
     }
     
-    if (selectedColumns.length === 0) {
+    if (normalizedSelectedColumns.length === 0) {
       html += `<div style="padding: 10px; color: #666;">No columns selected yet. Click on columns on the left to add them.</div>`;
     }
     
@@ -708,7 +735,7 @@ function showColumnSelectorUI(availableColumns, selectedColumns, entityType, she
       <script>
         // Column data
         const availableColumnsData = ${JSON.stringify(availableColumns)};
-        let selectedColumnsData = ${JSON.stringify(selectedColumns)};
+        let selectedColumnsData = ${JSON.stringify(normalizedSelectedColumns)};
         
         // Element references
         const availableList = document.getElementById('availableList');
@@ -1451,7 +1478,7 @@ function reopenTeamManager() {
 
 /**
  * Saves team-aware column preferences
- * @param {Array} columns - Array of column keys to save
+ * @param {Array} columns - Array of column objects or keys to save
  * @param {string} entityType - Entity type
  * @param {string} sheetName - Sheet name
  * @returns {boolean} Success status
@@ -1465,7 +1492,7 @@ UI.saveTeamAwareColumnPreferences = function(columns, entityType, sheetName) {
     const scriptProperties = PropertiesService.getScriptProperties();
     const userEmail = Session.getActiveUser().getEmail();
     
-    // Store columns in user-specific property
+    // Store full column objects in user-specific property
     const userColumnSettingsKey = `COLUMNS_${userEmail}_${sheetName}_${entityType}`;
     scriptProperties.setProperty(userColumnSettingsKey, JSON.stringify(columns));
     Logger.log(`Saved user-specific column preferences with key: ${userColumnSettingsKey}`);

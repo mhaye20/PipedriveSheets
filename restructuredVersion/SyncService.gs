@@ -196,29 +196,48 @@ function syncPipedriveDataToSheet(entityType, skipPush = false) {
     updateSyncStatus('processing', 'In Progress', `Processing ${items.length} ${entityType}...`, 30);
     
     // Get team-aware column preferences
-    const selectedColumns = SyncService.getTeamAwareColumnPreferences(entityType, sheetName);
+    let selectedColumns = SyncService.getTeamAwareColumnPreferences(entityType, sheetName);
     
-    // If no columns are selected, select default ones or all
+    // If no columns are selected, create default column objects
     if (!selectedColumns || selectedColumns.length === 0) {
-      // Set default columns based on entity type
-      let defaultColumns = ['id', 'name', 'owner_id', 'created_at', 'updated_at'];
+      Logger.log(`No columns selected for ${entityType}, using defaults`);
+      
+      // Set default column keys based on entity type
+      let defaultColumnKeys = ['id', 'name', 'owner_id', 'created_at', 'updated_at'];
       
       switch (entityType) {
         case ENTITY_TYPES.DEALS:
-          defaultColumns = ['id', 'title', 'status', 'value', 'currency', 'owner_id', 'created_at', 'updated_at'];
+          defaultColumnKeys = ['id', 'title', 'status', 'value', 'currency', 'owner_id', 'created_at', 'updated_at'];
           break;
         case ENTITY_TYPES.PERSONS:
-          defaultColumns = ['id', 'name', 'email', 'phone', 'owner_id', 'created_at', 'updated_at'];
+          defaultColumnKeys = ['id', 'name', 'email', 'phone', 'owner_id', 'created_at', 'updated_at'];
           break;
         case ENTITY_TYPES.ORGANIZATIONS:
-          defaultColumns = ['id', 'name', 'address', 'owner_id', 'created_at', 'updated_at'];
+          defaultColumnKeys = ['id', 'name', 'address', 'owner_id', 'created_at', 'updated_at'];
           break;
       }
+      
+      // Convert keys to column objects with names
+      selectedColumns = defaultColumnKeys.map(key => {
+        // Find the field name from available fields
+        let name = key; // Default if not found
+        for (const field of fields) {
+          if (field.key === key) {
+            name = field.name;
+            break;
+          }
+        }
+        
+        return {
+          key: key,
+          name: name
+        };
+      });
       
       updateSyncStatus('processing', 'In Progress', `No columns selected, using defaults`, 40);
       
       // Save the default columns as preferences
-      SyncService.saveTeamAwareColumnPreferences(defaultColumns, entityType, sheetName);
+      SyncService.saveTeamAwareColumnPreferences(selectedColumns, entityType, sheetName);
     }
     
     // Process the data
@@ -294,27 +313,37 @@ function writeDataToSheet(items, options) {
     // Clear existing content
     sheet.clear();
     
-    // Determine columns to use
-    let columnsToPull = selectedColumns;
-    
-    // If no columns specified, use all available
-    if (!columnsToPull || columnsToPull.length === 0) {
-      columnsToPull = fields.map(field => field.key);
-    }
+    // Extract column keys if selectedColumns contains objects
+    const columnsToPull = selectedColumns.map(col => {
+      return typeof col === 'object' && col.key ? col.key : col;
+    });
     
     // Create header row
     const headerRow = ['ID'];
     
     // Add selected columns to header
-    for (const columnPath of columnsToPull) {
+    for (const columnKey of columnsToPull) {
       // Get user-friendly column name
-      let columnName = columnPath; // Default to path if name not found
-      for (const field of fields) {
-        if (field.key === columnPath) {
-          columnName = formatColumnName(field.name);
-          break;
+      let columnName = columnKey; // Default to key if name not found
+      
+      // First look in selectedColumns for a matching object with name
+      const columnObj = selectedColumns.find(col => {
+        if (typeof col === 'object' && col.key === columnKey) return true;
+        return col === columnKey;
+      });
+      
+      if (columnObj && typeof columnObj === 'object' && columnObj.name) {
+        columnName = formatColumnName(columnObj.name);
+      } else {
+        // Fall back to searching fields
+        for (const field of fields) {
+          if (field.key === columnKey) {
+            columnName = formatColumnName(field.name);
+            break;
+          }
         }
       }
+      
       headerRow.push(columnName);
     }
     
@@ -340,9 +369,9 @@ function writeDataToSheet(items, options) {
       const row = [item.id.toString()];
       
       // Add values for selected columns
-      for (const columnPath of columnsToPull) {
-        let value = getValueByPath(item, columnPath);
-        value = formatValue(value, columnPath, optionMappings);
+      for (const columnKey of columnsToPull) {
+        let value = getValueByPath(item, columnKey);
+        value = formatValue(value, columnKey, optionMappings);
         row.push(value);
       }
       
@@ -1252,23 +1281,17 @@ SyncService.saveColumnPreferences = function(columns, entityType, sheetName, use
   try {
     Logger.log(`SyncService.saveColumnPreferences for ${entityType} in sheet "${sheetName}" for user ${userEmail}`);
     
-    // Extract column keys if we received full column objects
-    let columnKeys = columns;
-    if (columns.length > 0 && typeof columns[0] === 'object' && columns[0].key) {
-      Logger.log(`Received column objects, extracting keys from ${columns.length} columns`);
-      columnKeys = columns.map(col => col.key);
-    }
-    
+    // Store the full column objects to preserve names and other properties
     const scriptProperties = PropertiesService.getScriptProperties();
     
     // Store columns based on both entity type and sheet name for sheet-specific preferences
     const columnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
-    scriptProperties.setProperty(columnSettingsKey, JSON.stringify(columnKeys));
+    scriptProperties.setProperty(columnSettingsKey, JSON.stringify(columns));
     
     // Also store in user-specific property if email is provided
     if (userEmail) {
       const userColumnSettingsKey = `COLUMNS_${userEmail}_${sheetName}_${entityType}`;
-      scriptProperties.setProperty(userColumnSettingsKey, JSON.stringify(columnKeys));
+      scriptProperties.setProperty(userColumnSettingsKey, JSON.stringify(columns));
       Logger.log(`Saved user-specific column preferences with key: ${userColumnSettingsKey}`);
     }
     
@@ -1482,15 +1505,9 @@ SyncService.getTeamAwareColumnPreferences = function(entityType, sheetName) {
  */
 SyncService.saveTeamAwareColumnPreferences = function(columns, entityType, sheetName) {
   try {
-    // Extract column keys if we received full column objects
-    let columnKeys = columns;
-    if (columns.length > 0 && typeof columns[0] === 'object' && columns[0].key) {
-      Logger.log(`Received column objects in saveTeamAwareColumnPreferences, extracting keys from ${columns.length} columns`);
-      columnKeys = columns.map(col => col.key);
-    }
-    
+    // Keep full column objects intact to preserve names
     // Call the function in UI.gs that handles saving to both storage locations
-    return UI.saveTeamAwareColumnPreferences(columnKeys, entityType, sheetName);
+    return UI.saveTeamAwareColumnPreferences(columns, entityType, sheetName);
   } catch (e) {
     Logger.log(`Error in SyncService.saveTeamAwareColumnPreferences: ${e.message}`);
     
@@ -1498,12 +1515,7 @@ SyncService.saveTeamAwareColumnPreferences = function(columns, entityType, sheet
     const scriptProperties = PropertiesService.getScriptProperties();
     const key = `COLUMNS_${sheetName}_${entityType}`;
     
-    // Extract column keys if needed
-    let columnKeysToSave = columns;
-    if (columns.length > 0 && typeof columns[0] === 'object' && columns[0].key) {
-      columnKeysToSave = columns.map(col => col.key);
-    }
-    
-    scriptProperties.setProperty(key, JSON.stringify(columnKeysToSave));
+    // Store the full column objects
+    scriptProperties.setProperty(key, JSON.stringify(columns));
   }
 }
