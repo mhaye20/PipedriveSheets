@@ -1,8 +1,19 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <base target="_top">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+/**
+ * Column Selector UI Helper
+ * 
+ * This module provides helper functions for the column selector UI:
+ * - Styles for the column selector dialog
+ * - Scripts for the column selector dialog
+ */
+
+var ColumnSelectorUI = ColumnSelectorUI || {};
+
+/**
+ * Gets the styles for the column selector dialog
+ * @return {string} CSS styles
+ */
+ColumnSelectorUI.getStyles = function() {
+  return `
     <style>
       :root {
         --primary-color: #4285f4;
@@ -333,65 +344,15 @@
         to { transform: rotate(360deg); }
       }
     </style>
-    
-    <?!= dataScript ?>
-    <?!= include('ColumnSelectorUI') ?>
-  </head>
-  <body>
-    <div class="header">
-      <h3>Column Selection</h3>
-      
-      <div id="statusIndicator" class="indicator"></div>
-      
-      <div class="sheet-info">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-          <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
-          <path d="M7 12h10v2H7zm0-4h10v2H7zm0 8h7v2H7z"/>
-        </svg>
-        <div>
-          Configuring columns for <strong><?= entityTypeName ?></strong> in sheet <strong>"<?= sheetName ?>"</strong>
-        </div>
-      </div>
-      
-      <p class="info">
-        Select which Pipedrive data columns to display in your sheet. Drag items in the right panel to change their order.
-      </p>
-    </div>
-    
-    <div class="container">
-      <div class="column">
-        <input type="text" id="searchBox" class="search" placeholder="Search for columns...">
-        <div class="column-header">
-          Available Columns <span id="availableCount" class="column-count"></span>
-        </div>
-        <div id="availableList" class="scrollable">
-          <!-- Available columns will be populated here by JavaScript -->
-        </div>
-      </div>
-      
-      <div class="column">
-        <div class="column-header">
-          Selected Columns <span id="selectedCount" class="column-count"></span>
-        </div>
-        <div id="selectedList" class="scrollable">
-          <!-- Selected columns will be populated here by JavaScript -->
-        </div>
-      </div>
-    </div>
-    
-    <div class="footer">
-      <div class="action-btns">
-        <button class="secondary-btn" id="helpBtn">Help & Tips</button>
-      </div>
-      <div class="action-btns">
-        <div class="loading" id="saveLoading">
-          <span class="loader"></span>
-        </div>
-        <button class="secondary-btn" id="cancelBtn">Cancel</button>
-        <button class="primary-btn" id="saveBtn">Save & Close</button>
-      </div>
-    </div>
+  `;
+};
 
+/**
+ * Gets the scripts for the column selector dialog
+ * @return {string} JavaScript code
+ */
+ColumnSelectorUI.getScripts = function() {
+  return `
     <script>
       // DOM elements
       const availableList = document.getElementById('availableList');
@@ -400,22 +361,12 @@
       const availableCountEl = document.getElementById('availableCount');
       const selectedCountEl = document.getElementById('selectedCount');
       
-      // Debug information
-      console.log("Working with availableColumns:", availableColumns.length);
-      
       // Create a deep copy of the original available columns to ensure we don't lose data
       const originalAvailableColumns = JSON.parse(JSON.stringify(availableColumns));
       
       // Render the lists
       function renderAvailableList(searchTerm = '') {
-        console.log("Rendering available list with search term:", searchTerm);
-        console.log("Available columns before rendering:", availableColumns.length);
-        console.log("Original available columns before rendering:", originalAvailableColumns.length);
-        
         availableList.innerHTML = '';
-        
-        // Ensure search term is lowercase for case-insensitive comparison
-        searchTerm = (searchTerm || '').toLowerCase();
         
         // Group columns by parent key or top-level
         const topLevel = [];
@@ -428,7 +379,7 @@
           if (!selectedColumns.some(selected => selected.key === col.key)) {
             availableCount++;
             
-            if (!searchTerm || col.name.toLowerCase().includes(searchTerm)) {
+            if (!searchTerm || col.name.toLowerCase().includes(searchTerm.toLowerCase())) {
               if (!col.isNested) {
                 topLevel.push(col);
               } else {
@@ -441,10 +392,6 @@
             }
           }
         });
-        
-        console.log("Top level columns:", topLevel.length);
-        console.log("Nested column categories:", Object.keys(nested).length);
-        console.log("Total available count:", availableCount);
         
         // Update available count
         availableCountEl.textContent = '(' + availableCount + ')';
@@ -723,12 +670,12 @@
       };
       
       document.getElementById('helpBtn').onclick = () => {
-        const helpContent = 'Tips for selecting columns:\n' +
-                           '\n• Search for specific columns using the search box' +
-                           '\n• Main fields are top-level Pipedrive fields' +
-                           '\n• Nested fields provide more detailed information' +
-                           '\n• Drag and drop to reorder selected columns' +
-                           '\n• The column order here determines the order in your sheet';
+        const helpContent = 'Tips for selecting columns:\\n' +
+                           '\\n• Search for specific columns using the search box' +
+                           '\\n• Main fields are top-level Pipedrive fields' +
+                           '\\n• Nested fields provide more detailed information' +
+                           '\\n• Drag and drop to reorder selected columns' +
+                           '\\n• The column order here determines the order in your sheet';
                            
         alert(helpContent);
       };
@@ -741,5 +688,5 @@
       renderAvailableList();
       renderSelectedList();
     </script>
-  </body>
-</html> 
+  `;
+}; 

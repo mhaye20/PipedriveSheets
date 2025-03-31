@@ -5,7 +5,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
     <?!= include('TriggerManagerUI') ?>
   </head>
-  <body onload="onLoad()">
+  <body>
     <div class="container">
       <h3>Schedule Automatic Sync</h3>
       
@@ -13,39 +13,74 @@
       
       <div class="sheet-info">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-          <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
-          <path d="M7 7h10v2H7zm0 4h10v2H7zm0 4h7v2H7z"/>
+          <path d="M15 1H9v2h6V1zm-4 13h2V8h-2v6zm8.03-6.61l1.42-1.42c-.43-.51-.9-.99-1.41-1.41l-1.42 1.42C16.07 4.74 14.12 4 12 4c-4.97 0-9 4.03-9 9s4.02 9 9 9 9-4.03 9-9c0-2.12-.74-4.07-1.97-5.61zM12 20c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/>
         </svg>
-        <div>Scheduling automatic sync for <strong id="sheetNameDisplay"></strong></div>
+        <div>Scheduling automatic sync for <strong><?= sheetName ?></strong></div>
       </div>
       
-      <div id="twoWaySyncNotice" class="two-way-sync-notice" style="display: none;">
+      <? if (twoWaySyncEnabled) { ?>
+      <div class="two-way-sync-notice">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+          <path d="M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/>
         </svg>
         <div>
-          <strong>Two-way sync is enabled</strong>
-          <p>Changes in this sheet will be pushed to Pipedrive before pulling new data during scheduled syncs.</p>
+          <strong>Two-Way Sync is enabled for this sheet.</strong>
+          <p>When scheduled sync runs, any modified rows will be pushed to Pipedrive before pulling new data.</p>
         </div>
       </div>
+      <? } ?>
       
-      <div id="existingTriggers"></div>
+      <? if (currentTriggers && currentTriggers.length > 0) { ?>
+      <div class="existing-triggers">
+        <h4>Existing Sync Schedules</h4>
+        <table class="triggers-table">
+          <thead>
+            <tr>
+              <th>Frequency</th>
+              <th>Details</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <? currentTriggers.forEach(function(trigger) { ?>
+            <tr id="trigger-row-<?= trigger.id ?>">
+              <td><?= trigger.type ?></td>
+              <td><?= trigger.description ?></td>
+              <td>
+                <div id="remove-loading-<?= trigger.id ?>" class="mini-loading" style="display:none;">
+                  <span class="mini-loader"></span>
+                </div>
+                <button type="button" id="remove-btn-<?= trigger.id ?>" class="delete-trigger" 
+                  onclick="deleteTrigger('<?= trigger.id ?>')">
+                  Remove
+                </button>
+              </td>
+            </tr>
+            <? }); ?>
+          </tbody>
+        </table>
+      </div>
+      <? } else { ?>
+      <div class="no-triggers">
+        <p>No automatic sync schedules are set up for this sheet.</p>
+      </div>
+      <? } ?>
       
       <h4>Create New Schedule</h4>
       
       <form id="triggerForm">
         <div class="form-group">
           <label for="frequency">Sync Frequency</label>
-          <select id="frequency" required>
-            <option value="hourly">Hourly</option>
+          <select id="frequency" onchange="updateFormVisibility()">
             <option value="daily">Daily</option>
             <option value="weekly">Weekly</option>
             <option value="monthly">Monthly</option>
+            <option value="hourly">Hourly</option>
           </select>
         </div>
         
-        <div id="hourlyIntervalInput" class="form-group">
-          <label for="hourlyInterval">Sync Every</label>
+        <div class="form-group" id="hourlyGroup" style="display:none;">
+          <label>Run every</label>
           <select id="hourlyInterval">
             <option value="1">1 hour</option>
             <option value="2">2 hours</option>
@@ -55,69 +90,94 @@
             <option value="8">8 hours</option>
             <option value="12">12 hours</option>
           </select>
+          <p class="help-text">The sync will run at regular intervals throughout the day.</p>
         </div>
         
-        <div id="timeInputs" class="form-group time-inputs" style="display: none;">
-          <div>
-            <label for="hour">Hour</label>
-            <select id="hour">
-              <? for (let i = 0; i < 24; i++) { ?>
-                <? const hour12 = i % 12 === 0 ? 12 : i % 12; ?>
-                <? const ampm = i < 12 ? 'AM' : 'PM'; ?>
-                <option value="<?= i ?>"><?= hour12 ?>:00 <?= ampm ?></option>
-              <? } ?>
-            </select>
-          </div>
-          <div>
-            <label for="minute">Minute</label>
-            <select id="minute">
-              <? for (let i = 0; i < 60; i++) { ?>
-                <option value="<?= i ?>"><?= i.toString().padStart(2, '0') ?></option>
-              <? } ?>
-            </select>
-          </div>
-        </div>
-        
-        <div id="daySelection" class="form-group" style="display: none;">
-          <label>Days of the Week</label>
+        <div class="form-group" id="weeklyGroup" style="display:none;">
+          <label>Days of Week</label>
           <div class="day-selection">
-            <button type="button" class="day-button" data-day="2">Monday</button>
-            <button type="button" class="day-button" data-day="3">Tuesday</button>
-            <button type="button" class="day-button" data-day="4">Wednesday</button>
-            <button type="button" class="day-button" data-day="5">Thursday</button>
-            <button type="button" class="day-button" data-day="6">Friday</button>
-            <button type="button" class="day-button" data-day="7">Saturday</button>
-            <button type="button" class="day-button" data-day="1">Sunday</button>
+            <button type="button" class="day-button" data-day="1" onclick="toggleDay(this)">Monday</button>
+            <button type="button" class="day-button" data-day="2" onclick="toggleDay(this)">Tuesday</button>
+            <button type="button" class="day-button" data-day="3" onclick="toggleDay(this)">Wednesday</button>
+            <button type="button" class="day-button" data-day="4" onclick="toggleDay(this)">Thursday</button>
+            <button type="button" class="day-button" data-day="5" onclick="toggleDay(this)">Friday</button>
+            <button type="button" class="day-button" data-day="6" onclick="toggleDay(this)">Saturday</button>
+            <button type="button" class="day-button" data-day="7" onclick="toggleDay(this)">Sunday</button>
           </div>
-          <p class="help-text">Select one or more days</p>
         </div>
         
-        <div id="monthDayInput" class="form-group" style="display: none;">
+        <div class="form-group" id="monthlyGroup" style="display:none;">
           <label for="monthDay">Day of Month</label>
           <select id="monthDay">
-            <? for (let i = 1; i <= 31; i++) { ?>
-              <? const suffix = ['st', 'nd', 'rd'][i - 1] || 'th'; ?>
-              <option value="<?= i ?>"><?= i ?><?= suffix ?></option>
-            <? } ?>
+            <option value="1">1st</option>
+            <option value="2">2nd</option>
+            <option value="3">3rd</option>
+            <option value="4">4th</option>
+            <option value="5">5th</option>
+            <option value="10">10th</option>
+            <option value="15">15th</option>
+            <option value="20">20th</option>
+            <option value="25">25th</option>
+            <option value="28">28th</option>
           </select>
+          <p class="help-text">The sync will run once per month on this day.</p>
+        </div>
+        
+        <div class="form-group" id="timeGroup">
+          <label>Time of Day</label>
+          <div class="time-inputs">
+            <div>
+              <label for="hour">Hour</label>
+              <select id="hour">
+                <option value="0">12 AM</option>
+                <option value="1">1 AM</option>
+                <option value="2">2 AM</option>
+                <option value="3">3 AM</option>
+                <option value="4">4 AM</option>
+                <option value="5">5 AM</option>
+                <option value="6">6 AM</option>
+                <option value="7">7 AM</option>
+                <option value="8" selected>8 AM</option>
+                <option value="9">9 AM</option>
+                <option value="10">10 AM</option>
+                <option value="11">11 AM</option>
+                <option value="12">12 PM</option>
+                <option value="13">1 PM</option>
+                <option value="14">2 PM</option>
+                <option value="15">3 PM</option>
+                <option value="16">4 PM</option>
+                <option value="17">5 PM</option>
+                <option value="18">6 PM</option>
+                <option value="19">7 PM</option>
+                <option value="20">8 PM</option>
+                <option value="21">9 PM</option>
+                <option value="22">10 PM</option>
+                <option value="23">11 PM</option>
+              </select>
+            </div>
+            <div>
+              <label for="minute">Minute</label>
+              <select id="minute">
+                <option value="0" selected>00</option>
+                <option value="15">15</option>
+                <option value="30">30</option>
+                <option value="45">45</option>
+              </select>
+            </div>
+          </div>
+          <p class="help-text">Times are based on your Google account's timezone.</p>
         </div>
         
         <input type="hidden" id="sheetName" value="<?= sheetName ?>">
-        <input type="hidden" id="twoWaySyncEnabled" value="<?= twoWaySyncEnabled ?>">
-        <input type="hidden" id="currentTriggers" value="<?= JSON.stringify(currentTriggers) ?>">
         
         <div class="button-container">
-          <button type="button" class="secondary-btn" onclick="google.script.host.close()">Cancel</button>
-          <button type="button" class="primary-btn" id="createButton" onclick="createSchedule()">
-            <span class="loading" id="buttonLoading">
-              <span class="loader"></span>
-            </span>
-            Create Schedule
-          </button>
+          <button type="button" class="secondary-btn" id="cancelBtn" onclick="google.script.host.close()">Cancel</button>
+          <div class="loading" id="saveLoading">
+            <span class="loader"></span>
+          </div>
+          <button type="button" class="primary-btn" id="saveBtn" onclick="createTrigger()">Create Schedule</button>
         </div>
       </form>
     </div>
-    
-    <div id="indicator" class="indicator" style="display: none;"></div>
   </body>
 </html> 

@@ -316,192 +316,163 @@ const TriggerManagerUI = {
   getScripts() {
     return `
       <script>
-        let selectedDays = [];
-        let isLoading = false;
-
-        function onLoad() {
-          // Get current sheet name and two-way sync status
-          const sheetName = <?= JSON.stringify(sheetName) ?>;
-          const twoWaySyncEnabled = <?= JSON.stringify(twoWaySyncEnabled) ?>;
-          const currentTriggers = <?= JSON.stringify(currentTriggers) ?>;
-
-          // Update UI with current sheet info
-          document.getElementById('sheetNameDisplay').textContent = sheetName;
-          
-          // Show two-way sync notice if enabled
-          if (twoWaySyncEnabled) {
-            document.getElementById('twoWaySyncNotice').style.display = 'flex';
-          }
-
-          // Display existing triggers
-          displayExistingTriggers(currentTriggers);
-
-          // Set up event listeners
-          document.getElementById('frequency').addEventListener('change', handleFrequencyChange);
-          document.querySelectorAll('.day-button').forEach(btn => {
-            btn.addEventListener('click', () => toggleDaySelection(btn));
-          });
-        }
-
-        function handleFrequencyChange() {
+        // Form visibility based on frequency selection
+        function updateFormVisibility() {
           const frequency = document.getElementById('frequency').value;
-          const timeInputs = document.getElementById('timeInputs');
-          const daySelection = document.getElementById('daySelection');
-          const monthDayInput = document.getElementById('monthDayInput');
-
-          // Hide all inputs first
-          timeInputs.style.display = 'none';
-          daySelection.style.display = 'none';
-          monthDayInput.style.display = 'none';
-
-          // Show relevant inputs based on frequency
-          switch (frequency) {
-            case 'hourly':
-              break;
-            case 'daily':
-            case 'weekly':
-              timeInputs.style.display = 'flex';
-              if (frequency === 'weekly') {
-                daySelection.style.display = 'flex';
-              }
-              break;
-            case 'monthly':
-              timeInputs.style.display = 'flex';
-              monthDayInput.style.display = 'block';
-              break;
-          }
-        }
-
-        function toggleDaySelection(button) {
-          const day = parseInt(button.dataset.day);
-          const index = selectedDays.indexOf(day);
           
-          if (index === -1) {
-            selectedDays.push(day);
-            button.classList.add('selected');
-          } else {
-            selectedDays.splice(index, 1);
-            button.classList.remove('selected');
+          // Hide all frequency-specific groups first
+          document.getElementById('hourlyGroup').style.display = 'none';
+          document.getElementById('weeklyGroup').style.display = 'none';
+          document.getElementById('monthlyGroup').style.display = 'none';
+          document.getElementById('timeGroup').style.display = 'block';
+          
+          // Show the relevant group based on selection
+          if (frequency === 'hourly') {
+            document.getElementById('hourlyGroup').style.display = 'block';
+            document.getElementById('timeGroup').style.display = 'none';
+          } else if (frequency === 'weekly') {
+            document.getElementById('weeklyGroup').style.display = 'block';
+          } else if (frequency === 'monthly') {
+            document.getElementById('monthlyGroup').style.display = 'block';
           }
         }
-
-        function createSchedule() {
-          if (isLoading) return;
-          isLoading = true;
-
+        
+        // Toggle day selection in weekly view
+        function toggleDay(button) {
+          button.classList.toggle('selected');
+        }
+        
+        // Get selected days from weekly view
+        function getSelectedDays() {
+          const buttons = document.querySelectorAll('.day-button.selected');
+          return Array.from(buttons).map(btn => parseInt(btn.dataset.day));
+        }
+        
+        // Create a new trigger
+        function createTrigger() {
           const frequency = document.getElementById('frequency').value;
-          const hour = parseInt(document.getElementById('hour').value) || 0;
-          const minute = parseInt(document.getElementById('minute').value) || 0;
-          const monthDay = parseInt(document.getElementById('monthDay').value) || 1;
-          const hourlyInterval = parseInt(document.getElementById('hourlyInterval').value) || 1;
-
-          // Show loading state
-          const button = document.getElementById('createButton');
-          button.disabled = true;
-          document.getElementById('buttonLoading').style.display = 'inline-flex';
-
-          // Prepare trigger data
-          const triggerData = {
+          const hour = parseInt(document.getElementById('hour').value);
+          const minute = parseInt(document.getElementById('minute').value);
+          const sheetName = document.getElementById('sheetName').value;
+          
+          let triggerData = {
             frequency: frequency,
-            sheetName: <?= JSON.stringify(sheetName) ?>,
             hour: hour,
             minute: minute,
-            monthDay: monthDay,
-            hourlyInterval: hourlyInterval,
-            weekDays: selectedDays
+            sheetName: sheetName
           };
-
-          // Call server-side function
+          
+          // Add frequency-specific data
+          if (frequency === 'hourly') {
+            triggerData.hourlyInterval = parseInt(document.getElementById('hourlyInterval').value);
+          } else if (frequency === 'weekly') {
+            const selectedDays = getSelectedDays();
+            if (selectedDays.length === 0) {
+              showStatus('error', 'Please select at least one day of the week');
+              return;
+            }
+            triggerData.weekDays = selectedDays;
+          } else if (frequency === 'monthly') {
+            triggerData.monthDay = parseInt(document.getElementById('monthDay').value);
+          }
+          
+          // Show loading spinner
+          document.getElementById('saveLoading').style.display = 'flex';
+          document.getElementById('saveBtn').disabled = true;
+          document.getElementById('cancelBtn').disabled = true;
+          
+          // Create the trigger
           google.script.run
-            .withSuccessHandler(onScheduleCreated)
-            .withFailureHandler(onScheduleError)
+            .withSuccessHandler(function(result) {
+              document.getElementById('saveLoading').style.display = 'none';
+              document.getElementById('saveBtn').disabled = false;
+              document.getElementById('cancelBtn').disabled = false;
+              
+              if (result.success) {
+                showStatus('success', 'Sync schedule created successfully!');
+                
+                // Reload after short delay to show the new trigger
+                setTimeout(function() {
+                  google.script.run.showTriggerManager();
+                }, 1500);
+              } else {
+                showStatus('error', 'Error: ' + result.error);
+              }
+            })
+            .withFailureHandler(function(error) {
+              document.getElementById('saveLoading').style.display = 'none';
+              document.getElementById('saveBtn').disabled = false;
+              document.getElementById('cancelBtn').disabled = false;
+              showStatus('error', 'Error: ' + error.message);
+            })
             .createSyncTrigger(triggerData);
         }
-
-        function onScheduleCreated(result) {
-          isLoading = false;
-          const button = document.getElementById('createButton');
-          button.disabled = false;
-          document.getElementById('buttonLoading').style.display = 'none';
-
-          if (result.success) {
-            // Show success message
-            showIndicator('success', 'Sync schedule created successfully!');
-            // Reload the page to show new trigger
-            setTimeout(() => google.script.run.showTriggerManager(), 2000);
-          } else {
-            showIndicator('error', result.error || 'Failed to create sync schedule.');
-          }
-        }
-
-        function onScheduleError(error) {
-          isLoading = false;
-          const button = document.getElementById('createButton');
-          button.disabled = false;
-          document.getElementById('buttonLoading').style.display = 'none';
-          showIndicator('error', error.message || 'Failed to create sync schedule.');
-        }
-
-        function displayExistingTriggers(triggers) {
-          const container = document.getElementById('existingTriggers');
-          container.innerHTML = '';
-
-          if (!triggers || triggers.length === 0) {
-            container.innerHTML = '<p class="help-text">No sync schedules configured.</p>';
-            return;
-          }
-
-          triggers.forEach(trigger => {
-            const triggerEl = document.createElement('div');
-            triggerEl.className = 'trigger-item';
-            triggerEl.innerHTML = \`
-              <div class="trigger-info">
-                <strong>\${trigger.type}</strong>
-                <span>\${trigger.description}</span>
-              </div>
-              <button class="delete-trigger" onclick="deleteTrigger('\${trigger.id}')">
-                <span class="mini-loading" style="display: none;">
-                  <span class="mini-loader"></span>
-                </span>
-                <span class="button-text">Delete</span>
-              </button>
-            \`;
-            container.appendChild(triggerEl);
-          });
-        }
-
+        
+        // Delete a trigger
         function deleteTrigger(triggerId) {
-          const button = event.target.closest('.delete-trigger');
-          if (!button || button.disabled) return;
-
-          button.disabled = true;
-          button.querySelector('.mini-loading').style.display = 'inline-flex';
-          button.querySelector('.button-text').style.display = 'none';
-
-          google.script.run
-            .withSuccessHandler(() => {
-              showIndicator('success', 'Sync schedule deleted successfully!');
-              setTimeout(() => google.script.run.showTriggerManager(), 2000);
-            })
-            .withFailureHandler(error => {
-              button.disabled = false;
-              button.querySelector('.mini-loading').style.display = 'none';
-              button.querySelector('.button-text').style.display = 'inline';
-              showIndicator('error', error.message || 'Failed to delete sync schedule.');
-            })
-            .deleteSyncTrigger(triggerId);
+          if (confirm('Are you sure you want to delete this sync schedule?')) {
+            // Show loading spinner and disable button
+            const loadingElement = document.getElementById('remove-loading-' + triggerId);
+            const buttonElement = document.getElementById('remove-btn-' + triggerId);
+            
+            if (loadingElement && buttonElement) {
+              loadingElement.style.display = 'inline-flex';
+              buttonElement.style.display = 'none';
+            }
+            
+            google.script.run
+              .withSuccessHandler(function(result) {
+                if (result.success) {
+                  // Animation for removing the row
+                  const row = document.getElementById('trigger-row-' + triggerId);
+                  if (row) {
+                    row.classList.add('fade-out');
+                    setTimeout(() => {
+                      // Reload to show updated triggers after animation
+                      google.script.run.showTriggerManager();
+                    }, 500);
+                  } else {
+                    // Fallback if row not found
+                    google.script.run.showTriggerManager();
+                  }
+                } else {
+                  // Show error and reset loading state
+                  if (loadingElement && buttonElement) {
+                    loadingElement.style.display = 'none';
+                    buttonElement.style.display = 'inline-block';
+                  }
+                  showStatus('error', 'Error: ' + result.error);
+                }
+              })
+              .withFailureHandler(function(error) {
+                // Show error and reset loading state
+                if (loadingElement && buttonElement) {
+                  loadingElement.style.display = 'none';
+                  buttonElement.style.display = 'inline-block';
+                }
+                showStatus('error', 'Error: ' + error.message);
+              })
+              .deleteTrigger(triggerId);
+          }
         }
-
-        function showIndicator(type, message) {
-          const indicator = document.getElementById('indicator');
-          indicator.className = \`indicator \${type}\`;
+        
+        // Show status message
+        function showStatus(type, message) {
+          const indicator = document.getElementById('statusIndicator');
+          indicator.className = 'indicator ' + type;
           indicator.textContent = message;
           indicator.style.display = 'block';
-
-          setTimeout(() => {
-            indicator.style.display = 'none';
-          }, 5000);
+          
+          // Auto-hide success messages after a delay
+          if (type === 'success') {
+            setTimeout(function() {
+              indicator.style.display = 'none';
+            }, 3000);
+          }
         }
+        
+        // Initial form setup
+        updateFormVisibility();
       </script>
     `;
   },
@@ -532,8 +503,8 @@ const TriggerManagerUI = {
     
     // Create and show dialog
     const html = template.evaluate()
-      .setWidth(600)
-      .setHeight(700)
+      .setWidth(500)
+      .setHeight(650)
       .setTitle('Schedule Automatic Sync');
       
     SpreadsheetApp.getUi().showModalDialog(html, 'Schedule Automatic Sync');

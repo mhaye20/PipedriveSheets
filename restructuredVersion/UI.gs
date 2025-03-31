@@ -545,3 +545,200 @@ function getTriggerInfo(trigger) {
     };
   }
 }
+
+/**
+ * Shows the column selector UI
+ */
+function showColumnSelectorUI() {
+  try {
+    // Get the active sheet name
+    const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const activeSheetName = activeSheet.getName();
+
+    // Get sheet-specific settings
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const sheetFilterIdKey = `FILTER_ID_${activeSheetName}`;
+    const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
+
+    const filterId = scriptProperties.getProperty(sheetFilterIdKey);
+    const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
+
+    // Check if we can connect to Pipedrive
+    SpreadsheetApp.getActiveSpreadsheet().toast(`Connecting to Pipedrive to retrieve ${entityType} data...`);
+
+    // Get sample data based on entity type (1 item only)
+    let sampleData = [];
+    switch (entityType) {
+      case ENTITY_TYPES.DEALS:
+        sampleData = getDealsWithFilter(filterId, 1);
+        break;
+      case ENTITY_TYPES.PERSONS:
+        sampleData = getPersonsWithFilter(filterId, 1);
+        break;
+      case ENTITY_TYPES.ORGANIZATIONS:
+        sampleData = getOrganizationsWithFilter(filterId, 1);
+        break;
+      case ENTITY_TYPES.ACTIVITIES:
+        sampleData = getActivitiesWithFilter(filterId, 1);
+        break;
+      case ENTITY_TYPES.LEADS:
+        sampleData = getLeadsWithFilter(filterId, 1);
+        break;
+      case ENTITY_TYPES.PRODUCTS:
+        sampleData = getProductsWithFilter(filterId, 1);
+        break;
+    }
+
+    if (!sampleData || sampleData.length === 0) {
+      throw new Error(`No ${entityType} data found. Please check your filter settings.`);
+    }
+
+    const sampleItem = sampleData[0];
+    const availableColumns = [];
+
+    // Get field mappings for this entity type
+    const fieldMap = getCustomFieldMappings(entityType);
+
+    // Extract fields from sample data
+    function extractFields(obj, parentKey = '', parentName = '') {
+      for (const key in obj) {
+        if (key.startsWith('_') || typeof obj[key] === 'function') continue;
+
+        const fullKey = parentKey ? `${parentKey}.${key}` : key;
+        const displayName = parentName ? `${parentName} - ${key}` : (fieldMap[key] || formatColumnName(key));
+
+        if (typeof obj[key] === 'object' && obj[key] !== null) {
+          // Add parent field
+          availableColumns.push({
+            key: fullKey,
+            name: displayName,
+            isNested: !!parentKey,
+            parentKey: parentKey || null
+          });
+
+          // Recursively extract nested fields
+          extractFields(obj[key], fullKey, displayName);
+        } else {
+          availableColumns.push({
+            key: fullKey,
+            name: displayName,
+            isNested: !!parentKey,
+            parentKey: parentKey || null
+          });
+        }
+      }
+    }
+
+    // Build available columns list
+    extractFields(sampleItem);
+
+    // Get previously saved column preferences
+    const columnSettingsKey = `COLUMNS_${activeSheetName}_${entityType}`;
+    const savedColumnsJson = scriptProperties.getProperty(columnSettingsKey);
+    let selectedColumns = [];
+
+    if (savedColumnsJson) {
+      try {
+        selectedColumns = JSON.parse(savedColumnsJson);
+        selectedColumns = selectedColumns.filter(col =>
+          availableColumns.some(availCol => availCol.key === col.key)
+        );
+      } catch (e) {
+        Logger.log('Error parsing saved columns: ' + e.message);
+        selectedColumns = [];
+      }
+    }
+
+    // Create the data script that will be injected into the HTML template
+    const dataScript = `<script>
+      const availableColumns = ${JSON.stringify(availableColumns)};
+      const selectedColumns = ${JSON.stringify(selectedColumns)};
+      const entityType = "${entityType}";
+      const sheetName = "${activeSheetName}";
+      const entityTypeName = "${formatEntityTypeName(entityType)}";
+    </script>`;
+
+    // Create the HTML template
+    const template = HtmlService.createTemplateFromFile('ColumnSelector');
+    
+    // Pass data to template
+    template.dataScript = dataScript;
+    
+    // Create and show dialog
+    const html = template.evaluate()
+      .setWidth(800)
+      .setHeight(600)
+      .setTitle(`Select Columns for ${entityType} in "${activeSheetName}"`);
+      
+    SpreadsheetApp.getUi().showModalDialog(html, `Select Columns for ${entityType} in "${activeSheetName}"`);
+  } catch (error) {
+    Logger.log('Error in showColumnSelectorUI: ' + error.message);
+    SpreadsheetApp.getActiveSpreadsheet().toast('Error: ' + error.message);
+    throw error;
+  }
+}
+
+/**
+ * Formats entity type name for display
+ * @param {string} entityType - The entity type to format
+ * @return {string} Formatted entity type name
+ */
+function formatEntityTypeName(entityType) {
+  switch (entityType) {
+    case ENTITY_TYPES.DEALS:
+      return 'Deals';
+    case ENTITY_TYPES.PERSONS:
+      return 'Contacts';
+    case ENTITY_TYPES.ORGANIZATIONS:
+      return 'Organizations';
+    case ENTITY_TYPES.ACTIVITIES:
+      return 'Activities';
+    case ENTITY_TYPES.LEADS:
+      return 'Leads';
+    case ENTITY_TYPES.PRODUCTS:
+      return 'Products';
+    default:
+      return entityType;
+  }
+}
+
+/**
+ * Shows the help and about dialog
+ */
+function showHelp() {
+  try {
+    // Get current version from script properties
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const currentVersion = scriptProperties.getProperty('APP_VERSION') || '1.0.0';
+
+    // Get version history if available
+    const versionHistoryJson = scriptProperties.getProperty('VERSION_HISTORY');
+    let versionHistory = [];
+    
+    if (versionHistoryJson) {
+      try {
+        versionHistory = JSON.parse(versionHistoryJson);
+      } catch (e) {
+        Logger.log('Error parsing version history: ' + e.message);
+      }
+    }
+
+    // Create the HTML template
+    const template = HtmlService.createTemplateFromFile('Help');
+    
+    // Pass data to template
+    template.currentVersion = currentVersion;
+    template.versionHistory = versionHistory;
+    
+    // Create and show dialog
+    const html = template.evaluate()
+      .setWidth(600)
+      .setHeight(400)
+      .setTitle('Help & About');
+      
+    SpreadsheetApp.getUi().showModalDialog(html, 'Help & About');
+  } catch (error) {
+    Logger.log('Error in showHelp: ' + error.message);
+    SpreadsheetApp.getActiveSpreadsheet().toast('Error showing help: ' + error.message);
+  }
+}
