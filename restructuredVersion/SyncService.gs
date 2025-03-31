@@ -1909,3 +1909,260 @@ function getFieldMappingsForEntity(entityType) {
   // Combine common mappings with entity-specific mappings
   return { ...commonMappings, ...(entityMappings[entityType] || {}) };
 }
+
+/**
+ * Detects if columns in the sheet have shifted and updates tracking accordingly
+ */
+SyncService.detectColumnShifts = function() {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const sheetName = sheet.getName();
+    const scriptProperties = PropertiesService.getScriptProperties();
+
+    // Get current and previous positions
+    const trackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
+    const currentColLetter = scriptProperties.getProperty(trackingColumnKey) || '';
+    const previousPosStr = scriptProperties.getProperty(`CURRENT_SYNCSTATUS_POS_${sheetName}`) || '-1';
+    const previousPos = parseInt(previousPosStr, 10);
+
+    // Find all "Sync Status" headers in the sheet
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    let syncStatusColumns = [];
+
+    // Find ALL instances of "Sync Status" headers
+    for (let i = 0; i < headers.length; i++) {
+      if (headers[i] === "Sync Status") {
+        syncStatusColumns.push(i);
+      }
+    }
+
+    // If we have multiple "Sync Status" columns, clean up all but the rightmost one
+    if (syncStatusColumns.length > 1) {
+      Logger.log(`Found ${syncStatusColumns.length} Sync Status columns`);
+      // Keep only the rightmost column
+      const rightmostIndex = Math.max(...syncStatusColumns);
+
+      // Clean up all other columns
+      for (const colIndex of syncStatusColumns) {
+        if (colIndex !== rightmostIndex) {
+          const colLetter = SyncService.columnToLetter(colIndex + 1);
+          Logger.log(`Cleaning up duplicate Sync Status column at ${colLetter}`);
+          SyncService.cleanupColumnFormatting(sheet, colLetter);
+        }
+      }
+
+      // Update the tracking to the rightmost column
+      const rightmostColLetter = SyncService.columnToLetter(rightmostIndex + 1);
+      scriptProperties.setProperty(trackingColumnKey, rightmostColLetter);
+      scriptProperties.setProperty(`CURRENT_SYNCSTATUS_POS_${sheetName}`, rightmostIndex.toString());
+      return;
+    }
+
+    let actualSyncStatusIndex = syncStatusColumns.length > 0 ? syncStatusColumns[0] : -1;
+
+    if (actualSyncStatusIndex >= 0) {
+      const actualColLetter = SyncService.columnToLetter(actualSyncStatusIndex + 1);
+
+      // If there's a mismatch, columns might have shifted
+      if (currentColLetter && actualColLetter !== currentColLetter) {
+        Logger.log(`Column shift detected: was ${currentColLetter}, now ${actualColLetter}`);
+
+        // If the actual position is less than the recorded position, columns were removed
+        if (actualSyncStatusIndex < previousPos) {
+          Logger.log(`Columns were likely removed (${previousPos} → ${actualSyncStatusIndex})`);
+
+          // Clean ALL columns to be safe
+          for (let i = 0; i < sheet.getLastColumn(); i++) {
+            if (i !== actualSyncStatusIndex) { // Skip current Sync Status column
+              SyncService.cleanupColumnFormatting(sheet, SyncService.columnToLetter(i + 1));
+            }
+          }
+        }
+
+        // Clean up all potential previous locations
+        SyncService.scanAndCleanupAllSyncColumns(sheet, actualColLetter);
+
+        // Update the tracking column property
+        scriptProperties.setProperty(trackingColumnKey, actualColLetter);
+        scriptProperties.setProperty(`CURRENT_SYNCSTATUS_POS_${sheetName}`, actualSyncStatusIndex.toString());
+      }
+    }
+  } catch (error) {
+    Logger.log(`Error in detectColumnShifts: ${error.message}`);
+  }
+};
+
+/**
+ * Cleans up formatting in a column
+ * @param {Sheet} sheet - The sheet containing the column
+ * @param {string} columnLetter - The letter of the column to clean up
+ */
+SyncService.cleanupColumnFormatting = function(sheet, columnLetter) {
+  try {
+    Logger.log(`Cleaning up formatting in column ${columnLetter}`);
+    const columnIndex = SyncService.columnLetterToIndex(columnLetter);
+    
+    // Clear the column header formatting if it's "Sync Status"
+    const header = sheet.getRange(`${columnLetter}1`).getValue();
+    if (header === "Sync Status") {
+      sheet.getRange(`${columnLetter}1`).setValue(""); // Clear the header
+    }
+    
+    // Clear cell formatting in this column
+    const lastRow = Math.max(sheet.getLastRow(), 2);
+    if (lastRow > 1) {
+      const range = sheet.getRange(2, columnIndex, lastRow - 1, 1);
+      range.clearContent();
+      range.clearFormat();
+    }
+    
+    // Clear validation rules in the column
+    const dataValidations = sheet.getRange(1, columnIndex, lastRow, 1).getDataValidations();
+    const newValidations = [];
+    
+    for (let i = 0; i < dataValidations.length; i++) {
+      newValidations.push([null]);
+    }
+    
+    if (newValidations.length > 0) {
+      sheet.getRange(1, columnIndex, newValidations.length, 1).setDataValidations(newValidations);
+    }
+    
+    // Clean up any conditional formatting rules for this column
+    SyncService.cleanupOrphanedConditionalFormatting(sheet, -1); // Pass -1 to clean up all
+  } catch (error) {
+    Logger.log(`Error cleaning up column formatting: ${error.message}`);
+  }
+};
+
+/**
+ * Scans and cleans up all sync status columns except the current one
+ * @param {Sheet} sheet - The sheet to scan
+ * @param {string} currentColumnLetter - The letter of the current sync status column
+ */
+SyncService.scanAndCleanupAllSyncColumns = function(sheet, currentColumnLetter) {
+  try {
+    Logger.log(`Scanning for Sync Status columns to clean up. Current: ${currentColumnLetter}`);
+    const lastColumn = sheet.getLastColumn();
+    
+    // Loop through all columns
+    for (let i = 1; i <= lastColumn; i++) {
+      const colLetter = SyncService.columnToLetter(i);
+      
+      // Skip the current sync status column
+      if (colLetter === currentColumnLetter) {
+        continue;
+      }
+      
+      // Check if this column has "Sync Status" as header
+      const header = sheet.getRange(`${colLetter}1`).getValue();
+      if (header === "Sync Status") {
+        Logger.log(`Found Sync Status column at ${colLetter} to clean up`);
+        SyncService.cleanupColumnFormatting(sheet, colLetter);
+      }
+      
+      // Check second row for keywords indicating it might be a sync status column
+      if (sheet.getLastRow() >= 2) {
+        const secondRowVal = sheet.getRange(`${colLetter}2`).getValue();
+        if (typeof secondRowVal === 'string' && 
+            (secondRowVal.includes('Synced') || 
+             secondRowVal.includes('Modified') || 
+             secondRowVal.includes('Error'))) {
+          Logger.log(`Found potential Sync Status column at ${colLetter} based on content`);
+          SyncService.cleanupColumnFormatting(sheet, colLetter);
+        }
+      }
+    }
+  } catch (error) {
+    Logger.log(`Error in scanAndCleanupAllSyncColumns: ${error.message}`);
+  }
+};
+
+/**
+ * Cleans up orphaned conditional formatting rules
+ * @param {Sheet} sheet - The sheet to clean up
+ * @param {number} currentColumnIndex - The index of the current Sync Status column
+ */
+SyncService.cleanupOrphanedConditionalFormatting = function(sheet, currentColumnIndex) {
+  try {
+    const rules = sheet.getConditionalFormatRules();
+    const newRules = [];
+    let removedRules = 0;
+
+    for (const rule of rules) {
+      const ranges = rule.getRanges();
+      let keepRule = true;
+
+      // Check if this rule applies to columns other than our current one
+      // and has formatting that matches our Sync Status patterns
+      for (const range of ranges) {
+        const column = range.getColumn();
+
+        // Skip our current column
+        if (column === (currentColumnIndex + 1)) {
+          continue;
+        }
+
+        // Check if this rule's formatting matches our Sync Status patterns
+        const bgColor = rule.getBold() || rule.getBackground();
+        if (bgColor) {
+          const background = rule.getBackground();
+          // If background matches our Sync Status colors, this is likely an orphaned rule
+          if (background === '#FCE8E6' || background === '#E6F4EA' || background === '#F8F9FA') {
+            keepRule = false;
+            Logger.log(`Found orphaned conditional formatting at column ${SyncService.columnToLetter(column)}`);
+            break;
+          }
+        }
+      }
+
+      if (keepRule) {
+        newRules.push(rule);
+      } else {
+        removedRules++;
+      }
+    }
+
+    if (removedRules > 0) {
+      sheet.setConditionalFormatRules(newRules);
+      Logger.log(`Removed ${removedRules} orphaned conditional formatting rules`);
+    }
+  } catch (error) {
+    Logger.log(`Error cleaning up orphaned conditional formatting: ${error.message}`);
+  }
+};
+
+/**
+ * Converts a column index to letter (e.g., 1 -> A, 27 -> AA)
+ * @param {number} columnIndex - The 1-based column index
+ * @return {string} The column letter
+ */
+SyncService.columnToLetter = function(columnIndex) {
+  let temp;
+  let letter = '';
+  let col = columnIndex;
+  
+  while (col > 0) {
+    temp = (col - 1) % 26;
+    letter = String.fromCharCode(temp + 65) + letter;
+    col = (col - temp - 1) / 26;
+  }
+  
+  return letter;
+};
+
+/**
+ * Converts a column letter to index (e.g., A -> 1, AA -> 27)
+ * @param {string} columnLetter - The column letter
+ * @return {number} The 1-based column index
+ */
+SyncService.columnLetterToIndex = function(columnLetter) {
+  let column = 0;
+  const length = columnLetter.length;
+  
+  for (let i = 0; i < length; i++) {
+    column += (columnLetter.charCodeAt(i) - 64) * Math.pow(26, length - i - 1);
+  }
+  
+  return column;
+};
