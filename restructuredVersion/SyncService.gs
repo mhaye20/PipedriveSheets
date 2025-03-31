@@ -328,6 +328,14 @@ function syncPipedriveDataToSheet(entityType, skipPush = false) {
       const now = new Date().toISOString();
       docProps.setProperty(`TWOWAY_SYNC_LAST_SYNC_${sheetName}`, now);
     }
+
+    // Refresh the sync status column styling - just like in the original implementation
+    refreshSyncStatusStyling();
+    
+    // Show success toast
+    SpreadsheetApp.getActiveSpreadsheet().toast(
+      `${entityType} successfully synced from Pipedrive to "${sheetName}"! (${items.length} items total)`
+    );
   } catch (e) {
     Logger.log(`Error in syncPipedriveDataToSheet: ${e.message}`);
     updateSyncStatus('3', 'error', e.message, 100);
@@ -352,6 +360,7 @@ function writeDataToSheet(items, options) {
     const trackingColumn = options.trackingColumn || '';
     const optionMappings = options.optionMappings || {};
     
+    // Log the values we're working with for debugging
     Logger.log(`Writing data to sheet: ${sheetName}, entityType: ${entityType}`);
     Logger.log(`Selected columns: ${columns.length}, isWriteTimestamp: ${isWriteTimestamp}, isTwoWaySync: ${isTwoWaySync}`);
     
@@ -445,12 +454,15 @@ function writeDataToSheet(items, options) {
         // Process each column according to the original structure
         columns.forEach((column, index) => {
           try {
+            // Get the column key (extract from object if needed)
+            const columnKey = typeof column === 'object' && column.key ? column.key : column;
+            
             // Get the value using path notation
-            let value = getValueByPath(item, column);
+            let value = getValueByPath(item, columnKey);
             
             // Format the value
             if (typeof formatValue === 'function') {
-              value = formatValue(value, column, optionMappings);
+              value = formatValue(value, columnKey, optionMappings);
             } else {
               // Basic fallback
               value = value !== null && value !== undefined ? value.toString() : '';
@@ -538,39 +550,8 @@ function writeDataToSheet(items, options) {
       const scriptProperties = PropertiesService.getScriptProperties();
       scriptProperties.setProperty(`TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`, syncStatusColumnLetter);
       
-      // Create conditional formatting rules
-      const range = sheet.getRange(`${syncStatusColumnLetter}2:${syncStatusColumnLetter}${dataRows.length + 1}`);
-      
-      // Clear existing rules
-      const rules = sheet.getConditionalFormatRules();
-      sheet.clearConditionalFormatRules();
-      
-      // Add rule for "Modified" status
-      let rule = SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo('Modified')
-        .setBackground('#FFEB3B')
-        .setRanges([range])
-        .build();
-      rules.push(rule);
-      
-      // Add rule for "Synced" status
-      rule = SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo('Synced')
-        .setBackground('#C8E6C9')
-        .setRanges([range])
-        .build();
-      rules.push(rule);
-      
-      // Add rule for "Sync Failed" status
-      rule = SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo('Sync Failed')
-        .setBackground('#FFCDD2')
-        .setRanges([range])
-        .build();
-      rules.push(rule);
-      
-      // Set the rules
-      sheet.setConditionalFormatRules(rules);
+      // We'll let refreshSyncStatusStyling handle the formatting later
+      // This ensures we use the same formatting as the original script
       
       // Set up onEdit trigger if it doesn't exist
       setupOnEditTrigger();
