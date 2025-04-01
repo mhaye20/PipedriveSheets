@@ -313,12 +313,12 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
           }
         }
         
-        // For email and phone columns without dot notation, use capitalized name
+        // For email and phone columns without dot notation, use capitalized name with "(Primary)"
         if (column.key === 'email') {
-          return 'Email';
+          return 'Email (Primary)';
         }
         if (column.key === 'phone') {
-          return 'Phone';
+          return 'Phone (Primary)';
         }
         
         // Use the name if provided for other fields
@@ -333,13 +333,36 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
       // Fall back to string value
       return typeof column === 'string' ? formatColumnName(column) : String(column);
     });
-    Logger.log(`Created ${headers.length} headers: ${headers.join(', ')}`);
+    
+    // Ensure header names are unique by adding indices to duplicates
+    const uniqueHeaders = [];
+    const headerCounts = {};
+    
+    for (let i = 0; i < headers.length; i++) {
+      const header = headers[i];
+      
+      if (!headerCounts[header]) {
+        headerCounts[header] = 1;
+        uniqueHeaders.push(header);
+      } else {
+        headerCounts[header]++;
+        
+        // For email and phone, use more descriptive naming
+        if (header === 'Email' || header === 'Phone' || header.startsWith('Email ') || header.startsWith('Phone ')) {
+          uniqueHeaders.push(`${header} (${headerCounts[header]})`);
+        } else {
+          uniqueHeaders.push(`${header} ${headerCounts[header]}`);
+        }
+      }
+    }
+    
+    Logger.log(`Created ${uniqueHeaders.length} unique headers: ${uniqueHeaders.join(', ')}`);
     
     // Options for writing data
     const options = {
       sheetName: sheetName,
       columns: columns,
-      headerRow: headers,
+      headerRow: uniqueHeaders,
       entityType: entityType,
       optionMappings: optionMappings,
       twoWaySyncEnabled: twoWaySyncEnabled
