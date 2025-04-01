@@ -39,15 +39,40 @@ function syncFromPipedrive() {
     const sheetName = sheet.getName();
     Logger.log(`Active sheet: ${sheetName}`);
     
+    // Get script properties
+    const scriptProperties = PropertiesService.getScriptProperties();
+    
+    // Check for two-way sync
+    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
+    const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
+    
+    // Show confirmation dialog
+    const ui = SpreadsheetApp.getUi();
+    let confirmMessage = `This will sync data from Pipedrive to the current sheet "${sheetName}". Any existing data in this sheet will be replaced.`;
+    
+    if (twoWaySyncEnabled) {
+      confirmMessage += `\n\nTwo-way sync is enabled for this sheet. Modified rows will be pushed to Pipedrive before pulling new data.`;
+    }
+    
+    const response = ui.alert(
+      'Confirm Sync',
+      confirmMessage,
+      ui.ButtonSet.OK_CANCEL
+    );
+    
+    if (response !== ui.Button.OK) {
+      Logger.log("User cancelled sync operation");
+      return;
+    }
+    
     // Prevent multiple syncs running at once
     if (isSyncRunning()) {
       Logger.log("Sync already running, showing alert");
-      SpreadsheetApp.getUi().alert('A sync operation is already running. Please wait for it to complete.');
+      ui.alert('A sync operation is already running. Please wait for it to complete.');
       return;
     }
 
     // Get configuration
-    const scriptProperties = PropertiesService.getScriptProperties();
     const entityTypeKey = `ENTITY_TYPE_${sheetName}`;
     const filterIdKey = `FILTER_ID_${sheetName}`;
     
