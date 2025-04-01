@@ -401,6 +401,17 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
       twoWaySyncEnabled: twoWaySyncEnabled
     };
     
+    // Store original data for undo detection when two-way sync is enabled
+    if (twoWaySyncEnabled) {
+      try {
+        Logger.log('Storing original Pipedrive data for undo detection');
+        storeOriginalData(items, options);
+      } catch (storageError) {
+        Logger.log(`Error storing original data: ${storageError.message}`);
+        // Continue with sync even if storage fails
+      }
+    }
+    
     // Write data to the sheet
     writeDataToSheet(items, options);
     
@@ -418,7 +429,7 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
     Logger.log(`Error in syncPipedriveDataToSheet: ${error.message}`);
     Logger.log(`Stack trace: ${error.stack}`);
     
-    // Update sync status to error
+    // Update sync status
     updateSyncStatus('3', 'error', `Error: ${error.message}`, 0);
     
     // Show error in UI
@@ -1152,86 +1163,150 @@ function onEdit(e) {
       return;
     }
 
-    // For undo detection, check if the edited cell was changed back to its original value
-    // We'll need to store the original values somewhere or check if the current edit reverts to a previously known value
-    // For now, we can implement a simple version that checks if the cell is empty or matches default values
-    
-    // Get the current value and old value if available in the edit event
-    const newValue = e.value;
-    const oldValue = e.oldValue;
-    
-    // Track the cell that was edited
-    const editedCellKey = `${sheetName}_${row}_${column}_original`;
-    
-    // Check if this is an undo operation
-    let isUndoOperation = false;
-    
     // Get the sync status cell
     const syncStatusCell = sheet.getRange(row, syncStatusColPos);
     const currentStatus = syncStatusCell.getValue();
     
-    // Only proceed if the cell is currently marked as Modified
-    if (currentStatus === "Modified") {
-      // If we have oldValue in the event (some edits provide this)
-      if (oldValue !== undefined && newValue !== undefined) {
-        // If new value matches something that suggests an undo
-        if (newValue === "" || newValue === null || newValue === oldValue) {
-          isUndoOperation = true;
-        }
+    // Get the original data from Pipedrive
+    const originalDataKey = `ORIGINAL_DATA_${sheetName}`;
+    let originalData;
+    
+    try {
+      // Try to get original data from document properties
+      const originalDataJson = scriptProperties.getProperty(originalDataKey);
+      originalData = originalDataJson ? JSON.parse(originalDataJson) : {};
+    } catch (parseError) {
+      Logger.log(`Error parsing original data: ${parseError.message}`);
+      originalData = {};
+    }
+    
+    // Check if we have original data for this row
+    const rowKey = id.toString();
+    
+    // Handle first-time edit case
+    if (currentStatus !== "Modified") {
+      // New edit to unmodified row - store the current value before updating status
+      if (!originalData[rowKey]) {
+        originalData[rowKey] = {};
       }
       
-      // Another way to detect undo: Check if cell was recently cleared or set to default value
-      const editedCell = sheet.getRange(row, column);
-      const editedValue = editedCell.getValue();
+      // Get the column header name for the edited column
+      const headerName = headers[column - 1]; // Adjust for 0-based array
       
-      if (editedValue === "" || editedValue === null || editedValue === undefined) {
-        // Empty cell might indicate an undo
-        isUndoOperation = true;
-      }
-      
-      // If it's a checkbox or boolean field that got unchecked
-      if (editedValue === false) {
-        isUndoOperation = true;
-      }
-      
-      // If everything in the row is now Default/Original values, consider it an undo
-      // This would require tracking original row values, which is more complex
-      
-      // If we think this is an undo operation, check the rest of the row
-      if (isUndoOperation) {
-        // For now, we'll simplify and just reset to Not modified
-        // In a future enhancement, we could check all cells in the row
-        syncStatusCell.setValue("Not modified");
+      if (headerName) {
+        // Store the original value before it was changed
+        originalData[rowKey][headerName] = e.oldValue !== undefined ? e.oldValue : null;
         
+        // Save updated original data
+        try {
+          scriptProperties.setProperty(originalDataKey, JSON.stringify(originalData));
+        } catch (saveError) {
+          Logger.log(`Error saving original data: ${saveError.message}`);
+        }
+        
+        // Mark as modified
+        syncStatusCell.setValue("Modified");
+
         // Re-apply data validation to ensure consistent dropdown options
         const rule = SpreadsheetApp.newDataValidation()
           .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
           .build();
         syncStatusCell.setDataValidation(rule);
-        
-        // Reset formatting
-        syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
-        return;
+
+        // Make sure the styling is consistent
+        syncStatusCell.setBackground('#FCE8E6').setFontColor('#D93025');
       }
-    }
-
-    // If not an undo operation, update the tracking column to mark as modified
-    if (currentStatus === "Not modified" || currentStatus === "Synced") {
-      syncStatusCell.setValue("Modified");
-
-      // Re-apply data validation to ensure consistent dropdown options
-      const rule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
-        .build();
-      syncStatusCell.setDataValidation(rule);
-
-      // Make sure the styling is consistent
-      // This will be overridden by conditional formatting but helps with visual feedback
-      syncStatusCell.setBackground('#FCE8E6').setFontColor('#D93025');
+    } else {
+      // Row is already modified - check if this edit reverts to original value
+      
+      // Get the column header name for the edited column
+      const headerName = headers[column - 1]; // Adjust for 0-based array
+      
+      if (headerName && originalData[rowKey] && originalData[rowKey][headerName] !== undefined) {
+        const originalValue = originalData[rowKey][headerName];
+        const currentValue = e.value;
+        
+        // If new value matches original value
+        if (originalValue == currentValue) { // Using non-strict comparison for different types
+          // Check if all edited values in the row now match original values
+          const allMatch = checkAllValuesMatchOriginal(sheet, row, headers, originalData[rowKey]);
+          
+          if (allMatch) {
+            // All values in row match original - reset to Not modified
+            syncStatusCell.setValue("Not modified");
+            
+            // Re-apply data validation
+            const rule = SpreadsheetApp.newDataValidation()
+              .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
+              .build();
+            syncStatusCell.setDataValidation(rule);
+            
+            // Reset formatting
+            syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
+          }
+        }
+      } else if (e.oldValue !== undefined && e.value !== undefined) {
+        // Store the first known value as original if we don't have it yet
+        if (!originalData[rowKey]) {
+          originalData[rowKey] = {};
+        }
+        
+        if (!originalData[rowKey][headerName]) {
+          originalData[rowKey][headerName] = e.oldValue;
+          
+          // Save updated original data
+          try {
+            scriptProperties.setProperty(originalDataKey, JSON.stringify(originalData));
+          } catch (saveError) {
+            Logger.log(`Error saving original data: ${saveError.message}`);
+          }
+        }
+      }
     }
   } catch (error) {
     // Silent fail for onEdit triggers
     Logger.log(`Error in onEdit trigger: ${error.message}`);
+  }
+}
+
+/**
+ * Helper function to check if all edited values in a row match their original values
+ * @param {Sheet} sheet - The sheet containing the row
+ * @param {number} row - The row number to check
+ * @param {Array} headers - The column headers
+ * @param {Object} originalValues - The original values for the row, keyed by header name
+ * @return {boolean} True if all values match original, false otherwise
+ */
+function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
+  try {
+    // If no original values stored, can't verify
+    if (!originalValues || Object.keys(originalValues).length === 0) {
+      return false;
+    }
+    
+    // Get current values for the entire row
+    const rowValues = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
+    
+    // Check each column that has a stored original value
+    for (const headerName in originalValues) {
+      // Find the column index for this header
+      const colIndex = headers.indexOf(headerName);
+      if (colIndex === -1) continue; // Header not found
+      
+      const originalValue = originalValues[headerName];
+      const currentValue = rowValues[colIndex];
+      
+      // If the current value doesn't match the original, return false
+      if (originalValue != currentValue) { // Using non-strict comparison
+        return false;
+      }
+    }
+    
+    // If we reach here, all values with stored originals match
+    return true;
+  } catch (error) {
+    Logger.log(`Error in checkAllValuesMatchOriginal: ${error.message}`);
+    return false;
   }
 }
 
@@ -2939,6 +3014,52 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
   } catch (error) {
     Logger.log(`Error in saveTwoWaySyncSettings: ${error.message}`);
     return false;
+  }
+}
+
+/**
+ * Stores original data from Pipedrive for later comparison
+ * @param {Array} items - The data items from Pipedrive
+ * @param {Object} options - Options including sheet name
+ */
+function storeOriginalData(items, options) {
+  try {
+    if (!items || !options || !options.sheetName) return;
+    
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const originalDataKey = `ORIGINAL_DATA_${options.sheetName}`;
+    
+    // Create a map of original values keyed by record ID
+    const originalData = {};
+    
+    items.forEach(item => {
+      // Get the item ID (should be the first column)
+      const id = item.id;
+      if (!id) return;
+      
+      // Extract values for this item
+      const rowData = {};
+      
+      // Extract values for all configured columns
+      options.columns.forEach((column, index) => {
+        const columnKey = typeof column === 'object' ? column.key : column;
+        const columnName = options.headerRow[index];
+        
+        if (columnName) {
+          const value = getValueByPath(item, columnKey);
+          rowData[columnName] = formatValue(value, columnKey, options.optionMappings);
+        }
+      });
+      
+      // Store this row's data
+      originalData[id.toString()] = rowData;
+    });
+    
+    // Store the original data in script properties
+    scriptProperties.setProperty(originalDataKey, JSON.stringify(originalData));
+    Logger.log(`Stored original data for ${items.length} records in sheet ${options.sheetName}`);
+  } catch (error) {
+    Logger.log(`Error in storeOriginalData: ${error.message}`);
   }
 }
 
