@@ -656,10 +656,13 @@
       }
       
       function removeColumn(column) {
-        selectedColumns = selectedColumns.filter(col => col.key !== column.key);
-        renderAvailableList(searchBox.value);
-        renderSelectedList();
-        showStatus('success', 'Column removed: ' + column.name);
+        const index = selectedColumns.findIndex(col => col.key === column.key);
+        if (index !== -1) {
+          selectedColumns.splice(index, 1);
+          renderAvailableList(searchBox.value);
+          renderSelectedList();
+          showStatus('success', 'Column removed: ' + column.name);
+        }
       }
       
       function renameColumn(columnIndex) {

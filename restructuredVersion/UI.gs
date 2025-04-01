@@ -395,38 +395,17 @@ function evalPropertyPath(obj, path) {
  * Shows the two-way sync settings dialog
  */
 function showTwoWaySyncSettings() {
-  // Get the active sheet name
-  const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  const activeSheetName = activeSheet.getName();
-  
-  // Get current settings
-  const scriptProperties = PropertiesService.getScriptProperties();
-  const settingsKey = `TWOWAY_SYNC_SETTINGS_${activeSheetName}`;
-  const settingsJson = scriptProperties.getProperty(settingsKey) || '{}';
-  const settings = JSON.parse(settingsJson);
-  
-  // Get sheet-specific entity type
-  const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
-  const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
-  
-  // Create the HTML template
-  const template = HtmlService.createTemplateFromFile('TwoWaySyncSettings');
-  
-  // Pass data to template
-  template.sheetName = activeSheetName;
-  template.settings = settings;
-  template.entityType = entityType;
-  
-  // Make include function available to the template
-  template.include = include;
-  
-  // Create and show dialog
-  const html = template.evaluate()
-    .setWidth(600)
-    .setHeight(700)
-    .setTitle('Two-Way Sync Settings');
-      
-  SpreadsheetApp.getUi().showModalDialog(html, 'Two-Way Sync Settings');
+  // Delegate to the TwoWaySyncSettingsUI module
+  if (typeof TwoWaySyncSettingsUI !== 'undefined' && typeof TwoWaySyncSettingsUI.showTwoWaySyncSettings === 'function') {
+    TwoWaySyncSettingsUI.showTwoWaySyncSettings();
+  } else {
+    Logger.log('Error: TwoWaySyncSettingsUI module not found or showTwoWaySyncSettings function not available');
+    SpreadsheetApp.getUi().alert(
+      'Error',
+      'Could not load Two-Way Sync Settings. Please try again or contact support if the issue persists.',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
 }
 
 function showTriggerManager() {

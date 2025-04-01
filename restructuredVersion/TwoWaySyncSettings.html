@@ -3,7 +3,7 @@
   <head>
     <base target="_top">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
-    <?!= include('TwoWaySyncSettingsUI') ?>
+    <?!= include('TwoWaySyncSettingsUI_Styles') ?>
   </head>
   <body>
     <h3>Two-Way Sync Settings</h3>
@@ -13,7 +13,7 @@
         <path d="M0 0h24v24H0z" fill="none"/>
         <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V9h14v10zm0-12H5V5h14v2zM7 11h10v2H7zm0 4h7v2H7z"/>
       </svg>
-      <div>Configuring two-way sync for sheet "<strong><?= sheetName ?></strong>"</div>
+      <div>Configuring two-way sync for sheet "<strong><?!= data.sheetName || 'Untitled' ?></strong>"</div>
     </div>
     
     <div class="info-alert">
@@ -25,7 +25,7 @@
       <div class="form-group">
         <div class="switch-container">
           <label class="switch">
-            <input type="checkbox" id="enableTwoWaySync" <?= settings.enabled ? 'checked' : '' ?>>
+            <input type="checkbox" id="enableTwoWaySync" <?!= data.twoWaySyncEnabled ? 'checked' : '' ?>>
             <span class="slider"></span>
           </label>
           <strong>Enable Two-Way Sync for this sheet</strong>
@@ -37,14 +37,14 @@
         <label for="trackingColumn">
           Tracking Column Letter (Optional)
         </label>
-        <input type="text" id="trackingColumn" value="<?= settings.trackingColumn ?>" placeholder="e.g., Z" />
+        <input type="text" id="trackingColumn" value="<?!= data.trackingColumn || '' ?>" placeholder="e.g., Z" />
         <span class="tooltip">Specify which column to use for tracking changes. Leave empty to use the last column.</span>
-        <div class="last-sync">Last sync: <?= settings.lastSync || 'Never' ?></div>
+        <div class="last-sync">Last sync: <?!= data.lastSync || 'Never' ?></div>
       </div>
       
       <div class="form-group">
         <h4>Supported Fields for Bidirectional Updates</h4>
-        <p>The following fields for <?= entityType ?> can be updated in Pipedrive:</p>
+        <p>The following fields for <?!= data.entityType || 'deals' ?> can be updated in Pipedrive:</p>
         <table class="feature-table">
           <thead>
             <tr>
@@ -88,10 +88,11 @@
       <div class="button-container">
         <button type="button" id="cancelBtn" class="button-secondary">Cancel</button>
         <button type="button" id="saveBtn" class="button-primary">
-          <span id="saveSpinner" class="spinner" style="display:none;"></span>
-          Save Settings
+          <span id="saveSpinner" class="spinner" style="display:none;"></span>Save Settings
         </button>
       </div>
     </div>
+    
+    <?!= include('TwoWaySyncSettingsUI_Scripts') ?>
   </body>
 </html>
