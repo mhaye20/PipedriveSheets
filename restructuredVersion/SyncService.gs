@@ -2893,3 +2893,6 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
     throw error;
   }
 }
+
+// Export the onEdit function to the global scope for the trigger to work correctly
+this.onEdit = onEdit;

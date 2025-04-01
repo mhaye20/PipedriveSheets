@@ -10,6 +10,14 @@
 var TwoWaySyncSettingsUI = TwoWaySyncSettingsUI || {};
 
 /**
+ * Reference to sync trigger functions for two-way sync
+ * These are defined in SyncService.gs
+ */
+// If using setupOnEditTrigger directly doesn't work, uncomment these lines:
+// var setupOnEditTrigger = this.setupOnEditTrigger || SyncService.setupOnEditTrigger;
+// var removeOnEditTrigger = this.removeOnEditTrigger || SyncService.removeOnEditTrigger;
+
+/**
  * Shows the two-way sync settings dialog
  */
 TwoWaySyncSettingsUI.showTwoWaySyncSettings = function() {
@@ -163,6 +171,9 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
 
     // If enabling two-way sync, set up the tracking column
     if (enableTwoWaySync) {
+      // Set up the onEdit trigger to track changes
+      setupOnEditTrigger();
+      
       // If no tracking column specified, use last column
       let columnIndex;
       if (!trackingColumn) {
@@ -269,6 +280,11 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
     // Update last sync time
     const now = new Date().toISOString();
     scriptProperties.setProperty(twoWaySyncLastSyncKey, now);
+
+    // Clean up onEdit trigger if two-way sync is disabled
+    if (!enableTwoWaySync) {
+      removeOnEditTrigger();
+    }
 
     return true;
   } catch (error) {
