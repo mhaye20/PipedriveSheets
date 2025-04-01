@@ -168,8 +168,10 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
       if (response === ui.Button.YES) {
         Logger.log('User chose to push changes before syncing');
         // Push changes to Pipedrive first
-        pushChangesToPipedrive(true); // true means scheduled sync will follow
-        return; // pushChangesToPipedrive will handle the rest
+        pushChangesToPipedrive(true, true); // true for scheduled sync, true for suppress warning
+        
+        // After pushing changes, continue with the sync
+        Logger.log('Changes pushed, continuing with sync');
       }
     }
     
@@ -447,53 +449,64 @@ function writeDataToSheet(items, options) {
     // Create a map to preserve existing status values
     const statusByIdMap = new Map();
     
-    // Handle status columns for two-way sync
+    // If two-way sync is enabled, preserve existing status values
     if (twoWaySyncEnabled) {
-      Logger.log(`Two-way sync is enabled for sheet ${options.sheetName}`);
-      // Track existing status values before clearing the sheet
       try {
-        const existingTrackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey);
-        Logger.log(`Existing tracking column: ${existingTrackingColumn}`);
+        Logger.log('Two-way sync is enabled, preserving status column data');
         
-        if (existingTrackingColumn) {
-          // Find the column index and get the existing status values
-          const statusColumnIdx = columnLetterToIndex(existingTrackingColumn) - 1; // Convert to 0-based
-          Logger.log(`Status column index: ${statusColumnIdx}`);
+        // Get the configured tracking column letter from properties
+        const configuredTrackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey) || '';
+        Logger.log(`Configured tracking column from properties: "${configuredTrackingColumn}"`);
+        
+        // If the sheet has data, extract status values
+        if (sheet.getLastRow() > 0) {
+          // Get all existing data
+          const existingData = sheet.getDataRange().getValues();
+          Logger.log(`Retrieved ${existingData.length} rows of existing data`);
           
-          // Preserve existing status data keyed by the ID column (assumed to be first column)
-          if (sheet.getLastRow() > 1) {
-            const idData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
-            const statusData = sheet.getRange(2, statusColumnIdx + 1, sheet.getLastRow() - 1, 1).getValues();
-            
-            Logger.log(`Found ${idData.length} existing IDs and status values`);
-            
-            // Store status by ID
-            for (let i = 0; i < idData.length; i++) {
-              const id = idData[i][0];
-              const status = statusData[i][0];
-              
-              // Skip empty cells or certain status values
-              if (!id || !status || (status !== 'Modified' && status !== 'Synced' && status !== 'Error')) {
-                continue;
-              }
-              
-              statusByIdMap.set(id.toString(), status);
-              Logger.log(`Preserved status "${status}" for ID ${id}`);
+          // Find headers row
+          const headers = existingData[0];
+          let idColumnIndex = 0; // Assuming ID is in first column
+          let statusColumnIndex = -1;
+          
+          // Find the status column by looking for header that contains "Sync Status"
+          for (let i = 0; i < headers.length; i++) {
+            if (headers[i] && 
+                headers[i].toString().toLowerCase().includes('sync') && 
+                headers[i].toString().toLowerCase().includes('status')) {
+              statusColumnIndex = i;
+              Logger.log(`Found status column at index ${statusColumnIndex} with header "${headers[i]}"`);
+              break;
             }
+          }
+          
+          // If we found the status column, extract values
+          if (statusColumnIndex !== -1) {
+            // Start from row 1 (after header)
+            for (let i = 1; i < existingData.length; i++) {
+              const row = existingData[i];
+              const id = row[idColumnIndex] ? row[idColumnIndex].toString() : '';
+              const status = row[statusColumnIndex];
+              
+              if (id && status) {
+                statusByIdMap.set(id, status);
+              }
+            }
+            Logger.log(`Preserved ${statusByIdMap.size} status values`);
           }
         }
       } catch (e) {
-        Logger.log(`Error preserving status data: ${e.message}`);
+        Logger.log(`Error preserving status values: ${e.message}`);
       }
     }
     
-    // Clear the sheet and set up headers
+    // Clear the sheet but keep formatting
     sheet.clear();
     
     // Get headers from options
     const headers = options.headerRow;
     
-    // Add "Sync Status" column if two-way sync is enabled
+    // If two-way sync is enabled, add Sync Status column
     if (twoWaySyncEnabled) {
       statusColumnIndex = headers.length;
       headers.push('Sync Status');
@@ -514,106 +527,21 @@ function writeDataToSheet(items, options) {
     Logger.log(`Processing ${items.length} items to create data rows`);
     const dataRows = items.map(item => {
       // Create a row with empty values for all columns
-      const row = Array(options.headerRow.length).fill('');
-      
-      // Log the first few items to see their structure
-      if (items.indexOf(item) < 3) {
-        Logger.log(`Processing item ${items.indexOf(item) + 1}:`);
-        // Log if it has email or phone data
-        if (item.email) {
-          Logger.log(`Item ${items.indexOf(item) + 1} email: ${JSON.stringify(item.email)}`);
-        }
-        if (item.phone) {
-          Logger.log(`Item ${items.indexOf(item) + 1} phone: ${JSON.stringify(item.phone)}`);
-        }
-      }
+      const row = Array(headers.length).fill('');
       
       // For each column, extract and format the value from the Pipedrive item
       options.columns.forEach((column, index) => {
         // Skip if index is beyond our header count
-        if (index >= options.headerRow.length) {
+        if (index >= headers.length) {
           return;
         }
-
-        Logger.log(`Processing column ${index + 1}: ${JSON.stringify(column)}`);
         
         const columnKey = typeof column === 'object' ? column.key : column;
-        Logger.log(`Column key: ${columnKey}`);
-      
-        // Special handling for email.work and phone.work fields
-        let processedValue = null;
-        
-        if (typeof columnKey === 'string' && columnKey.includes('.')) {
-          const parts = columnKey.split('.');
-          
-          // If this is an email or phone field with a specific type (e.g., email.work)
-          if ((parts[0] === 'email' || parts[0] === 'phone') && parts.length > 1) {
-            const fieldType = parts[0]; // 'email' or 'phone'
-            const labelType = parts[1].toLowerCase(); // 'work', 'home', etc.
-            
-            Logger.log(`Special handling for ${fieldType}.${labelType}`);
-            
-            // Get the email/phone array from the item
-            let contactArray = item[fieldType];
-            Logger.log(`Contact array: ${JSON.stringify(contactArray)}`);
-            
-            if (Array.isArray(contactArray)) {
-              // Find the entry with the matching label
-              const matchingEntry = contactArray.find(entry => 
-                entry && entry.label && entry.label.toLowerCase() === labelType
-              );
-              
-              if (matchingEntry && matchingEntry.value) {
-                // Found the specific type (e.g., work email)
-                processedValue = matchingEntry.value;
-                Logger.log(`Found matching entry with label "${labelType}": ${processedValue}`);
-              } else {
-                // If specific type not found, use primary or first as fallback
-                const primaryEntry = contactArray.find(entry => entry && entry.primary) || 
-                                    (contactArray.length > 0 ? contactArray[0] : null);
-                
-                if (primaryEntry && primaryEntry.value) {
-                  processedValue = primaryEntry.value;
-                  Logger.log(`Using fallback (primary or first): ${processedValue}`);
-                } else {
-                  processedValue = '';
-                  Logger.log(`No suitable value found for ${fieldType}.${labelType}`);
-                }
-              }
-            } else {
-              Logger.log(`${fieldType} is not an array: ${JSON.stringify(contactArray)}`);
-            }
-          }
-        }
-        
-        // If we already processed the value above, use it
-        if (processedValue !== null) {
-          row[index] = processedValue;
-          Logger.log(`Using processed value: ${processedValue}`);
-        } else {
-          // Standard field processing for non-specialized fields
-          const value = getValueByPath(item, columnKey);
-          Logger.log(`Value from getValueByPath: ${JSON.stringify(value)}`);
-          
-          // For nested fields, we need to handle the specific requested property
-          if (typeof value === 'object' && value !== null && columnKey.includes('.')) {
-            const parts = columnKey.split('.');
-            const lastPart = parts[parts.length - 1];
-            if (value[lastPart] !== undefined) {
-              row[index] = formatValue(value[lastPart], column, options.optionMappings || {});
-              Logger.log(`Using nested value ${lastPart}: ${row[index]}`);
-            } else {
-              row[index] = formatValue(value, column, options.optionMappings || {});
-              Logger.log(`Using formatted object value: ${row[index]}`);
-            }
-          } else {
-            row[index] = formatValue(value, column, options.optionMappings || {});
-            Logger.log(`Using standard formatted value: ${row[index]}`);
-          }
-        }
+        const value = getValueByPath(item, columnKey);
+        row[index] = formatValue(value, columnKey, options.optionMappings);
       });
-
-      // Add Sync Status if two-way sync is enabled
+      
+      // If two-way sync is enabled, add the status column
       if (twoWaySyncEnabled && statusColumnIndex !== -1) {
         // Get the item ID (assuming first column is ID)
         const id = row[0] ? row[0].toString() : '';
@@ -621,30 +549,128 @@ function writeDataToSheet(items, options) {
         // If we have a saved status for this ID, use it, otherwise use "Not modified"
         if (id && statusByIdMap.has(id)) {
           row[statusColumnIndex] = statusByIdMap.get(id);
-          Logger.log(`Using preserved status for ID ${id}: ${row[statusColumnIndex]}`);
         } else {
           row[statusColumnIndex] = 'Not modified';
         }
       }
-
+      
       return row;
     });
-
-    // Write all data at once
-    if (dataRows.length > 0) {
-      Logger.log(`Writing ${dataRows.length} rows to the sheet`);
-      sheet.getRange(2, 1, dataRows.length, options.headerRow.length).setValues(dataRows);
-    }
-  
-    // Set up status column formatting if two-way sync is enabled
-    if (twoWaySyncEnabled && statusColumnIndex !== -1) {
-      // ... code for formatting status column ...
-    }
-  
-    // Auto-resize columns for better readability
-    sheet.autoResizeColumns(1, sheet.getLastColumn());
     
-    Logger.log('Data successfully written to sheet.');
+    // Write all data rows at once
+    if (dataRows.length > 0) {
+      sheet.getRange(2, 1, dataRows.length, headers.length).setValues(dataRows);
+    }
+    
+    // If two-way sync is enabled, set up data validation and formatting for the status column
+    if (twoWaySyncEnabled && statusColumnIndex !== -1 && dataRows.length > 0) {
+      try {
+        // Clear any existing data validation from ALL cells in the sheet first
+        sheet.clearDataValidations();
+        
+        // Convert to 1-based column
+        const statusColumnPos = statusColumnIndex + 1;
+        
+        // Apply validation to each data row
+        for (let i = 0; i < dataRows.length; i++) {
+          const row = i + 2; // Data starts at row 2 (after header)
+          const statusCell = sheet.getRange(row, statusColumnPos);
+          
+          // Create dropdown validation
+          const rule = SpreadsheetApp.newDataValidation()
+            .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
+            .build();
+          statusCell.setDataValidation(rule);
+        }
+        
+        // Style the header
+        sheet.getRange(1, statusColumnPos)
+          .setBackground('#E8F0FE')
+          .setFontWeight('bold')
+          .setNote('This column tracks changes for two-way sync with Pipedrive');
+        
+        // Style the status column
+        const statusRange = sheet.getRange(2, statusColumnPos, dataRows.length, 1);
+        statusRange
+          .setBackground('#F8F9FA')
+          .setBorder(null, true, null, true, false, false, '#DADCE0', SpreadsheetApp.BorderStyle.SOLID);
+        
+        // Set up conditional formatting
+        const rules = sheet.getConditionalFormatRules();
+        
+        // Add rule for "Modified" status - red background
+        const modifiedRule = SpreadsheetApp.newConditionalFormatRule()
+          .whenTextEqualTo('Modified')
+          .setBackground('#FCE8E6')
+          .setFontColor('#D93025')
+          .setRanges([statusRange])
+          .build();
+        rules.push(modifiedRule);
+        
+        // Add rule for "Synced" status - green background
+        const syncedRule = SpreadsheetApp.newConditionalFormatRule()
+          .whenTextEqualTo('Synced')
+          .setBackground('#E6F4EA')
+          .setFontColor('#137333')
+          .setRanges([statusRange])
+          .build();
+        rules.push(syncedRule);
+        
+        // Add rule for "Error" status - yellow background
+        const errorRule = SpreadsheetApp.newConditionalFormatRule()
+          .whenTextEqualTo('Error')
+          .setBackground('#FEF7E0')
+          .setFontColor('#B06000')
+          .setRanges([statusRange])
+          .build();
+        rules.push(errorRule);
+        
+        sheet.setConditionalFormatRules(rules);
+      } catch (e) {
+        Logger.log(`Error setting up status column formatting: ${e.message}`);
+      }
+    }
+    
+    // Clean up any lingering formatting from previous Sync Status columns
+    if (twoWaySyncEnabled && statusColumnIndex !== -1) {
+      try {
+        Logger.log(`Performing aggressive column cleanup after sheet rebuild - current status column: ${statusColumnIndex}`);
+        
+        // The current status column letter
+        const currentStatusColLetter = columnToLetter(statusColumnIndex + 1);
+        
+        // Clean ALL columns in the sheet except the current Sync Status column
+        const lastCol = sheet.getLastColumn() + 5; // Add buffer for hidden columns
+        for (let i = 0; i < lastCol; i++) {
+          if (i !== statusColumnIndex) { // Skip the current status column
+            try {
+              const colLetter = columnToLetter(i + 1);
+              Logger.log(`Checking column ${colLetter} for cleanup`);
+              
+              // Check if this column has a 'Sync Status' header or sync-related note
+              const headerCell = sheet.getRange(1, i + 1);
+              const headerValue = headerCell.getValue();
+              const note = headerCell.getNote();
+              
+              if (headerValue === "Sync Status" || 
+                  (note && (note.includes('sync') || note.includes('track') || note.includes('Pipedrive')))) {
+                Logger.log(`Found Sync Status indicators in column ${colLetter}, cleaning up`);
+                cleanupColumnFormatting(sheet, colLetter);
+              }
+            } catch (e) {
+              Logger.log(`Error cleaning up column ${i}: ${e.message}`);
+            }
+          }
+        }
+      } catch (e) {
+        Logger.log(`Error during column cleanup: ${e.message}`);
+      }
+    }
+    
+    // Auto-resize columns to fit content
+    sheet.autoResizeColumns(1, headers.length);
+    
+    Logger.log('Successfully wrote data to sheet');
   } catch (error) {
     Logger.log(`Error in writeDataToSheet: ${error.message}`);
     Logger.log(`Stack trace: ${error.stack}`);
