@@ -357,15 +357,11 @@ function syncPipedriveDataToSheet(entityType, skipPush = false) {
  */
 function writeDataToSheet(items, options) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  // Get sheet name from options or properties
   const sheetName = options.sheetName ||
     PropertiesService.getScriptProperties().getProperty('SHEET_NAME') ||
     DEFAULT_SHEET_NAME;
 
   let sheet = ss.getSheetByName(sheetName);
-
-  // Create the sheet if it doesn't exist
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
   }
@@ -383,6 +379,9 @@ function writeDataToSheet(items, options) {
   let statusByIdMap = new Map();
   let configuredTrackingColumn = '';
   let statusColumnIndex = -1;
+
+  // Create the header row from options
+  let fullHeaderRow = [...options.headerRow];
 
   // If two-way sync is enabled, handle the Sync Status column
   if (twoWaySyncEnabled) {
@@ -407,16 +406,11 @@ function writeDataToSheet(items, options) {
       }
     } else {
       // Try to find the existing Sync Status column
-      for (let i = 0; i < fullHeaderRow.length; i++) {
-        if (fullHeaderRow[i] === 'Sync Status') {
-          statusColumnIndex = i;
-          break;
-        }
-      }
+      statusColumnIndex = fullHeaderRow.findIndex(header => header === 'Sync Status');
 
       // If we didn't find an existing column, try using the configured index
-      if (statusColumnIndex === -1) {
-        const existingTrackingIndex = columnLetterToIndex(configuredTrackingColumn);
+      if (statusColumnIndex === -1 && configuredTrackingColumn) {
+        const existingTrackingIndex = columnLetterToIndex(configuredTrackingColumn) - 1;
 
         // Always use the configured position, regardless of current headerRow length
         Logger.log(`Using configured tracking column at position ${existingTrackingIndex} (${configuredTrackingColumn})`);
@@ -433,7 +427,7 @@ function writeDataToSheet(items, options) {
     }
 
     if (configuredTrackingColumn && statusColumnIndex !== -1) {
-      const newTrackingColumn = columnToLetter(statusColumnIndex);
+      const newTrackingColumn = columnToLetter(statusColumnIndex + 1);
       if (newTrackingColumn !== configuredTrackingColumn) {
         scriptProperties.setProperty(`PREVIOUS_TRACKING_COLUMN_${sheetName}`, configuredTrackingColumn);
         Logger.log(`Stored previous tracking column ${configuredTrackingColumn} before moving to ${newTrackingColumn}`);
@@ -441,12 +435,38 @@ function writeDataToSheet(items, options) {
     }
 
     // Save the status column position to properties for future use
-    const statusColumnLetter = columnToLetter(statusColumnIndex);
+    const statusColumnLetter = columnToLetter(statusColumnIndex + 1);
     scriptProperties.setProperty(twoWaySyncTrackingColumnKey, statusColumnLetter);
     Logger.log(`Setting status column at index ${statusColumnIndex} (column ${statusColumnLetter})`);
   }
 
-  // ... rest of existing writeDataToSheet code ...
+  // Write the header row
+  sheet.getRange(1, 1, 1, fullHeaderRow.length).setValues([fullHeaderRow]);
+
+  // Format data rows
+  const dataRows = items.map(item => {
+    const row = options.columns.map(column => {
+      const key = typeof column === 'object' ? column.key : column;
+      const value = getValueByPath(item, key);
+      return formatValue(value, key, options.optionMappings);
+    });
+
+    // Add Sync Status column if two-way sync is enabled
+    if (twoWaySyncEnabled && statusColumnIndex !== -1) {
+      // Ensure row has enough elements
+      while (row.length <= statusColumnIndex) {
+        row.push('');
+      }
+      row[statusColumnIndex] = 'Not modified';
+    }
+
+    return row;
+  });
+
+  // Write data rows if we have any
+  if (dataRows.length > 0) {
+    sheet.getRange(2, 1, dataRows.length, fullHeaderRow.length).setValues(dataRows);
+  }
 
   // CRITICAL: Clean up any lingering formatting from previous Sync Status columns
   // This needs to happen AFTER the sheet is rebuilt
@@ -455,14 +475,14 @@ function writeDataToSheet(items, options) {
       Logger.log(`Performing aggressive column cleanup after sheet rebuild - current status column: ${statusColumnIndex}`);
 
       // The current status column letter
-      const currentStatusColLetter = columnToLetter(statusColumnIndex);
+      const currentStatusColLetter = columnToLetter(statusColumnIndex + 1);
 
       // Clean ALL columns in the sheet except the current Sync Status column
       const lastCol = sheet.getLastColumn() + 5; // Add buffer for hidden columns
       for (let i = 0; i < lastCol; i++) {
         if (i !== statusColumnIndex) { // Skip the current status column
           try {
-            const colLetter = columnToLetter(i);
+            const colLetter = columnToLetter(i + 1);
             Logger.log(`Checking column ${colLetter} for cleanup`);
 
             // Check if this column has a 'Sync Status' header or sync-related note
@@ -474,27 +494,6 @@ function writeDataToSheet(items, options) {
               (note && (note.includes('sync') || note.includes('track') || note.includes('Pipedrive')))) {
               Logger.log(`Found Sync Status indicators in column ${colLetter}, cleaning up`);
               cleanupColumnFormatting(sheet, colLetter);
-            }
-
-            // Also check for data validation in this column
-            if (i < sheet.getLastColumn()) {
-              try {
-                // Check a sample cell for validation
-                const sampleCell = sheet.getRange(2, i + 1);
-                const validation = sampleCell.getDataValidation();
-
-                if (validation) {
-                  try {
-                    const values = validation.getCriteriaValues();
-                    if (values && values.length > 0 &&
-                      (values[0].join(',').includes('Modified') ||
-                        values[0].join(',').includes('Synced'))) {
-                      Logger.log(`Found validation in column ${colLetter}, cleaning up`);
-                      cleanupColumnFormatting(sheet, colLetter);
-                    }
-                  } catch (e) { }
-                }
-              } catch (e) { }
             }
           } catch (e) {
             // Ignore errors for individual columns
@@ -1735,34 +1734,32 @@ function logDebugInfo() {
 }
 
 /**
- * Gets team-aware column preferences - wrapper for UI.gs function
+ * Gets team-aware column preferences
  * @param {string} entityType - Entity type
  * @param {string} sheetName - Sheet name
  * @return {Array} Array of column keys
  */
 SyncService.getTeamAwareColumnPreferences = function(entityType, sheetName) {
   try {
-    // Call the function in UI.gs that handles retrieving from both storage locations
-    return UI.getTeamAwareColumnPreferences(entityType, sheetName);
-  } catch (e) {
-    Logger.log(`Error in SyncService.getTeamAwareColumnPreferences: ${e.message}`);
-    
-    // Fallback to local implementation if UI.getTeamAwareColumnPreferences fails
+    // Get from script properties directly since UI module might not be available
     const scriptProperties = PropertiesService.getScriptProperties();
-    const oldFormatKey = `COLUMNS_${sheetName}_${entityType}`;
-    const oldFormatJson = scriptProperties.getProperty(oldFormatKey);
+    const columnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
+    const savedColumnsJson = scriptProperties.getProperty(columnSettingsKey);
     
-    if (oldFormatJson) {
+    if (savedColumnsJson) {
       try {
-        return JSON.parse(oldFormatJson);
+        return JSON.parse(savedColumnsJson);
       } catch (parseError) {
         Logger.log(`Error parsing column preferences: ${parseError.message}`);
       }
     }
     
     return [];
+  } catch (e) {
+    Logger.log(`Error in SyncService.getTeamAwareColumnPreferences: ${e.message}`);
+    return [];
   }
-}
+};
 
 /**
  * Saves team-aware column preferences - wrapper for UI.gs function
