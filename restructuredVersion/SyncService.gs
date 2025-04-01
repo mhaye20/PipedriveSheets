@@ -327,26 +327,25 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
           
           // Format email.work as "Email Work" and phone.mobile as "Phone Mobile"
           if ((parts[0] === 'email' || parts[0] === 'phone') && parts.length > 1) {
-            // Get the specific label type (work, home, mobile, etc.)
             const fieldType = formatColumnName(parts[0]);  // "Email" or "Phone"
-            let labelType;
             
-            if (parts[1].toLowerCase() === 'primary') {
-              labelType = '(Primary)';
-            } else {
-              labelType = formatColumnName(parts[1]);   // "Work", "Home", etc.
+            // Handle array index notation (e.g., email.0.value)
+            if (parts[1] === '0' && parts.length > 2 && parts[2] === 'value') {
+              return `${fieldType} Other`;
             }
             
-            return `${fieldType} ${labelType}`;
+            // Handle specific types (work, home, etc.)
+            if (parts[1].toLowerCase() !== 'primary') {
+              const labelType = formatColumnName(parts[1]);   // "Work", "Home", etc.
+              return `${fieldType} ${labelType}`;
+            }
           }
         }
         
-        // For email and phone columns without dot notation, use capitalized name with "(Primary)"
-        if (column.key === 'email') {
-          return 'Email (Primary)';
-        }
-        if (column.key === 'phone') {
-          return 'Phone (Primary)';
+        // For base email/phone fields, use capitalized name with "(Primary)"
+        if (column.key === 'email' || column.key === 'phone') {
+          const fieldType = formatColumnName(column.key);
+          return `${fieldType} (Primary)`;
         }
         
         // Use the name if provided for other fields
@@ -362,54 +361,36 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
       return typeof column === 'string' ? formatColumnName(column) : String(column);
     });
     
-    // Ensure header names are unique using a mapping approach
-    // This is similar to how the original script handles it
-    const headerMap = {};
+    // Ensure header names are unique
     const uniqueHeaders = [];
+    const seenHeaders = new Map(); // Use Map to track count of each header
     
-    for (let i = 0; i < headers.length; i++) {
-      const originalHeader = headers[i];
-      
-      // If this header name has been used before
-      if (headerMap[originalHeader]) {
-        // For email and phone fields that should have specific types
-        if (originalHeader.startsWith('Email') || originalHeader.startsWith('Phone')) {
-          // Check if this is coming from a path with a type
-          const column = columns[i];
-          if (column && column.key && column.key.includes('.')) {
-            // Just use the original header, which should already have the type
-            uniqueHeaders.push(originalHeader);
-          } else {
-            // This is a duplicate, add a number
-            headerMap[originalHeader]++;
-            uniqueHeaders.push(`${originalHeader} (${headerMap[originalHeader]})`);
-          }
-        } else {
-          // For all other duplicates, add a number
-          headerMap[originalHeader]++;
-          uniqueHeaders.push(`${originalHeader} ${headerMap[originalHeader]}`);
+    headers.forEach(header => {
+      if (seenHeaders.has(header)) {
+        // Skip duplicate primary email/phone headers
+        if (header.includes('(Primary)')) {
+          return;
         }
+        
+        const count = seenHeaders.get(header);
+        seenHeaders.set(header, count + 1);
+        uniqueHeaders.push(`${header} (${count + 1})`);
       } else {
-        // First time seeing this header, add to the map
-        headerMap[originalHeader] = 1;
-        uniqueHeaders.push(originalHeader);
+        seenHeaders.set(header, 1);
+        uniqueHeaders.push(header);
       }
-    }
+    });
     
-    // Final cleanup - convert any remaining "Email 0" or "Phone 0" to a better format
-    for (let i = 0; i < uniqueHeaders.length; i++) {
-      if (uniqueHeaders[i].match(/Email \d+$/) || uniqueHeaders[i].match(/Phone \d+$/)) {
-        uniqueHeaders[i] = uniqueHeaders[i].replace(/(\w+) (\d+)$/, '$1 Other');
-      }
-    }
+    // Filter out any empty or undefined headers
+    const finalHeaders = uniqueHeaders.filter(header => header && header.trim());
     
-    Logger.log(`Created ${uniqueHeaders.length} unique headers: ${uniqueHeaders.join(', ')}`);
+    Logger.log(`Created ${finalHeaders.length} unique headers: ${finalHeaders.join(', ')}`);
     
     // Options for writing data
     const options = {
       sheetName: sheetName,
       columns: columns,
-      headerRow: uniqueHeaders,
+      headerRow: finalHeaders,
       entityType: entityType,
       optionMappings: optionMappings,
       twoWaySyncEnabled: twoWaySyncEnabled
@@ -533,7 +514,7 @@ function writeDataToSheet(items, options) {
     Logger.log(`Processing ${items.length} items to create data rows`);
     const dataRows = items.map(item => {
       // Create a row with empty values for all columns
-      const row = Array(headers.length).fill('');
+      const row = Array(options.headerRow.length).fill('');
       
       // Log the first few items to see their structure
       if (items.indexOf(item) < 3) {
@@ -549,11 +530,16 @@ function writeDataToSheet(items, options) {
       
       // For each column, extract and format the value from the Pipedrive item
       options.columns.forEach((column, index) => {
+        // Skip if index is beyond our header count
+        if (index >= options.headerRow.length) {
+          return;
+        }
+
         Logger.log(`Processing column ${index + 1}: ${JSON.stringify(column)}`);
         
         const columnKey = typeof column === 'object' ? column.key : column;
         Logger.log(`Column key: ${columnKey}`);
-        
+      
         // Special handling for email.work and phone.work fields
         let processedValue = null;
         
@@ -626,14 +612,9 @@ function writeDataToSheet(items, options) {
           }
         }
       });
-      
+
       // Add Sync Status if two-way sync is enabled
       if (twoWaySyncEnabled && statusColumnIndex !== -1) {
-        // Ensure row array is long enough
-        while (row.length <= statusColumnIndex) {
-          row.push('');
-        }
-        
         // Get the item ID (assuming first column is ID)
         const id = row[0] ? row[0].toString() : '';
         
@@ -645,14 +626,14 @@ function writeDataToSheet(items, options) {
           row[statusColumnIndex] = 'Not modified';
         }
       }
-      
+
       return row;
     });
-    
+
     // Write all data at once
     if (dataRows.length > 0) {
       Logger.log(`Writing ${dataRows.length} rows to the sheet`);
-      sheet.getRange(2, 1, dataRows.length, headers.length).setValues(dataRows);
+      sheet.getRange(2, 1, dataRows.length, options.headerRow.length).setValues(dataRows);
     }
   
     // Set up status column formatting if two-way sync is enabled
