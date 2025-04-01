@@ -309,7 +309,17 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
           
           // Format email.work as "Email Work" and phone.mobile as "Phone Mobile"
           if ((parts[0] === 'email' || parts[0] === 'phone') && parts.length > 1) {
-            return `${formatColumnName(parts[0])} ${formatColumnName(parts[1])}`;
+            // Get the specific label type (work, home, mobile, etc.)
+            const fieldType = formatColumnName(parts[0]);  // "Email" or "Phone"
+            let labelType;
+            
+            if (parts[1].toLowerCase() === 'primary') {
+              labelType = '(Primary)';
+            } else {
+              labelType = formatColumnName(parts[1]);   // "Work", "Home", etc.
+            }
+            
+            return `${fieldType} ${labelType}`;
           }
         }
         
@@ -334,25 +344,44 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
       return typeof column === 'string' ? formatColumnName(column) : String(column);
     });
     
-    // Ensure header names are unique by adding indices to duplicates
+    // Ensure header names are unique using a mapping approach
+    // This is similar to how the original script handles it
+    const headerMap = {};
     const uniqueHeaders = [];
-    const headerCounts = {};
     
     for (let i = 0; i < headers.length; i++) {
-      const header = headers[i];
+      const originalHeader = headers[i];
       
-      if (!headerCounts[header]) {
-        headerCounts[header] = 1;
-        uniqueHeaders.push(header);
-      } else {
-        headerCounts[header]++;
-        
-        // For email and phone, use more descriptive naming
-        if (header === 'Email' || header === 'Phone' || header.startsWith('Email ') || header.startsWith('Phone ')) {
-          uniqueHeaders.push(`${header} (${headerCounts[header]})`);
+      // If this header name has been used before
+      if (headerMap[originalHeader]) {
+        // For email and phone fields that should have specific types
+        if (originalHeader.startsWith('Email') || originalHeader.startsWith('Phone')) {
+          // Check if this is coming from a path with a type
+          const column = columns[i];
+          if (column && column.key && column.key.includes('.')) {
+            // Just use the original header, which should already have the type
+            uniqueHeaders.push(originalHeader);
+          } else {
+            // This is a duplicate, add a number
+            headerMap[originalHeader]++;
+            uniqueHeaders.push(`${originalHeader} (${headerMap[originalHeader]})`);
+          }
         } else {
-          uniqueHeaders.push(`${header} ${headerCounts[header]}`);
+          // For all other duplicates, add a number
+          headerMap[originalHeader]++;
+          uniqueHeaders.push(`${originalHeader} ${headerMap[originalHeader]}`);
         }
+      } else {
+        // First time seeing this header, add to the map
+        headerMap[originalHeader] = 1;
+        uniqueHeaders.push(originalHeader);
+      }
+    }
+    
+    // Final cleanup - convert any remaining "Email 0" or "Phone 0" to a better format
+    for (let i = 0; i < uniqueHeaders.length; i++) {
+      if (uniqueHeaders[i].match(/Email \d+$/) || uniqueHeaders[i].match(/Phone \d+$/)) {
+        uniqueHeaders[i] = uniqueHeaders[i].replace(/(\w+) (\d+)$/, '$1 Other');
       }
     }
     

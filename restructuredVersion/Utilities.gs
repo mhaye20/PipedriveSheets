@@ -57,6 +57,15 @@ function getValueByPath(obj, path) {
         return match.value;
       }
       
+      // If no match found for the specific type (like 'work'), and the type is 'primary',
+      // try to find an item marked as primary
+      if (labelType === 'primary') {
+        const primary = fieldArray.find(item => item && item.primary);
+        if (primary && primary.value) {
+          return primary.value;
+        }
+      }
+      
       // If no match found, return primary or first
       const primary = fieldArray.find(item => item && item.primary);
       if (primary && primary.value) {
@@ -142,31 +151,57 @@ function formatValue(value, columnPath, optionMappings = {}) {
   }
 
   // Special handling for email and phone arrays
-  if (typeof columnPath === 'string' && (columnPath === 'email' || columnPath === 'phone')) {
-    // If the value is an array of contact objects
-    if (Array.isArray(value)) {
-      if (value.length === 0) {
+  if (typeof columnPath === 'string') {
+    // Handle specific email/phone fields with labels like email.work, phone.mobile
+    if (columnPath.startsWith('email.') || columnPath.startsWith('phone.')) {
+      const parts = columnPath.split('.');
+      const fieldType = parts[0]; // 'email' or 'phone'
+      const labelType = parts[1].toLowerCase(); // 'work', 'home', etc.
+      
+      // Get the array of email/phone objects
+      const fieldArray = value;
+      
+      // If it's an array, try to find the specific type
+      if (Array.isArray(fieldArray)) {
+        // Try to find object with matching label
+        const match = fieldArray.find(item => 
+          item && item.label && item.label.toLowerCase() === labelType
+        );
+        
+        if (match && match.value) {
+          return match.value;
+        }
+      }
+      
+      // Not found or not an array - use general handling below
+    }
+    // Handle base email/phone fields (get primary)
+    else if (columnPath === 'email' || columnPath === 'phone') {
+      // If the value is an array of contact objects
+      if (Array.isArray(value)) {
+        if (value.length === 0) {
+          return '';
+        }
+        
+        // First try to find primary value
+        const primary = value.find(item => item && item.primary);
+        if (primary && primary.value) {
+          return primary.value;
+        }
+        
+        // If no primary, return first value if it exists
+        if (value[0] && value[0].value) {
+          return value[0].value;
+        }
+        
+        // Otherwise return empty string
         return '';
       }
       
-      // First try to find primary value
-      const primary = value.find(item => item && item.primary);
-      if (primary && primary.value) {
-        return primary.value;
+      // If it's a simple value already
+      if (typeof value === 'string') {
+        return value;
       }
-      
-      // If no primary, return first value if it exists
-      if (value[0] && value[0].value) {
-        return value[0].value;
-      }
-      
-      // Otherwise return empty string
-      return '';
-    }
-    
-    // If it's a simple value already
-    if (typeof value === 'string') {
-      return value;
     }
   }
 
