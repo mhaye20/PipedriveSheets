@@ -20,33 +20,22 @@ function syncFromPipedrive() {
   const activeSheet = spreadsheet.getActiveSheet();
   const activeSheetName = activeSheet.getName();
 
-  // IMPORTANT: Clean up previous sync status column BEFORE any other operations
-  cleanupPreviousSyncStatusColumn(activeSheet, activeSheetName);
+  // First check for column shifts
   detectColumnShifts();
 
-  // Ensure we have OAuth authentication
-  if (!refreshAccessTokenIfNeeded()) {
-    ui.alert(
-      'Authentication Failed',
-      'Could not authenticate with Pipedrive. Please reconnect your account first.',
-      ui.ButtonSet.OK
-    );
-    return;
-  }
-
   // Get the script properties
-  const docProps = PropertiesService.getDocumentProperties();
+  const scriptProperties = PropertiesService.getScriptProperties();
 
   // Check if two-way sync is enabled for this sheet
   const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
   const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
-  const twoWaySyncEnabled = docProps.getProperty(twoWaySyncEnabledKey) === 'true';
+  const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
 
   // Get the current entity type for this specific sheet
   const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
-  const currentEntityType = docProps.getProperty(sheetEntityTypeKey);
+  const currentEntityType = scriptProperties.getProperty(sheetEntityTypeKey);
   const lastEntityTypeKey = `LAST_ENTITY_TYPE_${activeSheetName}`;
-  const lastEntityType = docProps.getProperty(lastEntityTypeKey);
+  const lastEntityType = scriptProperties.getProperty(lastEntityTypeKey);
 
   // Debug log to help troubleshoot
   Logger.log(`Syncing sheet ${activeSheetName}, entity type: ${currentEntityType}, sheet key: ${sheetEntityTypeKey}`);
@@ -55,14 +44,14 @@ function syncFromPipedrive() {
   if (currentEntityType !== lastEntityType && currentEntityType && twoWaySyncEnabled) {
     // Entity type has changed - clear the Sync Status column letter
     Logger.log(`Entity type changed from ${lastEntityType || 'none'} to ${currentEntityType}. Clearing tracking column.`);
-    docProps.deleteProperty(twoWaySyncTrackingColumnKey);
+    scriptProperties.deleteProperty(twoWaySyncTrackingColumnKey);
 
     // Add a flag to indicate that the Sync Status column should be repositioned
     const twoWaySyncColumnAtEndKey = `TWOWAY_SYNC_COLUMN_AT_END_${activeSheetName}`;
-    docProps.setProperty(twoWaySyncColumnAtEndKey, 'true');
+    scriptProperties.setProperty(twoWaySyncColumnAtEndKey, 'true');
 
     // Store the new entity type as the last synced entity type
-    docProps.setProperty(lastEntityTypeKey, currentEntityType);
+    scriptProperties.setProperty(lastEntityTypeKey, currentEntityType);
   }
 
   // First show a confirmation dialog, including info about pushing changes if two-way sync is enabled
@@ -103,7 +92,7 @@ function syncFromPipedrive() {
   showSyncStatus(activeSheetName);
 
   // Set the active sheet as the current sheet for this operation
-  docProps.setProperty('SHEET_NAME', activeSheetName);
+  scriptProperties.setProperty('SHEET_NAME', activeSheetName);
 
   try {
     if (!currentEntityType) {
@@ -141,7 +130,7 @@ function syncFromPipedrive() {
     }
 
     // After successful sync, update the last entity type
-    docProps.setProperty(lastEntityTypeKey, currentEntityType);
+    scriptProperties.setProperty(lastEntityTypeKey, currentEntityType);
 
     // IMPORTANT: Clean up any lingering formatting from previous Sync Status columns
     cleanupPreviousSyncStatusColumn(activeSheet, activeSheetName);
@@ -162,23 +151,22 @@ function syncFromPipedrive() {
  */
 function syncPipedriveDataToSheet(entityType, skipPush = false) {
   try {
-    const docProps = PropertiesService.getDocumentProperties();
-    const filterId = docProps.getProperty('PIPEDRIVE_FILTER_ID');
-    
-    // Get the active sheet instead of using a property
-    const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    const sheetName = activeSheet.getName();
-    
+    // Get the script properties
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const filterId = scriptProperties.getProperty('PIPEDRIVE_FILTER_ID');
+    const sheetName = scriptProperties.getProperty('SHEET_NAME') || DEFAULT_SHEET_NAME;
+
     // Update phase 1: Connecting and initializing
-    updateSyncStatus('1', 'active', 'Connecting to Pipedrive...', 50);
-    
+    updateSyncStatus(1, 'active', 'Connecting to Pipedrive...', 50);
+
     // Get filtered data based on entity type
     let items = [];
     let fields = [];
-    
+
     // Update phase 2: Retrieving data from Pipedrive
-    updateSyncStatus('2', 'active', `Retrieving ${entityType} from Pipedrive...`, 10);
-    
+    updateSyncStatus(2, 'active', `Retrieving ${entityType} from Pipedrive...`, 10);
+
+    // Get the data based on entity type
     switch (entityType) {
       case ENTITY_TYPES.DEALS:
         items = getDealsWithFilter(filterId);
@@ -207,23 +195,24 @@ function syncPipedriveDataToSheet(entityType, skipPush = false) {
       default:
         throw new Error(`Unsupported entity type: ${entityType}`);
     }
-    
+
     if (!items || items.length === 0) {
-      updateSyncStatus('2', 'warning', `No ${entityType} found with the selected filter.`, 100);
+      updateSyncStatus(2, 'warning', `No ${entityType} found with the specified filter.`, 100);
+      SpreadsheetApp.getActiveSpreadsheet().toast(`No ${entityType} found with the specified filter ID: ${filterId}. The filter might be empty or not accessible.`);
       return;
     }
-    
-    // Update phase 2 completion
-    updateSyncStatus('2', 'completed', `Retrieved ${items.length} ${entityType} from Pipedrive`, 100);
-    
-    // Update phase 3: Processing and writing data
-    updateSyncStatus('3', 'active', `Processing ${items.length} ${entityType}...`, 30);
-    
+
+    // Complete phase 2
+    updateSyncStatus(2, 'completed', `Retrieved ${items.length} ${entityType} from Pipedrive`, 100);
+
+    // Start phase 3 (writing to sheet)
+    updateSyncStatus(3, 'active', `Writing ${items.length} ${entityType} to spreadsheet...`, 20);
+
     // Get team-aware column preferences
-    let selectedColumns = SyncService.getTeamAwareColumnPreferences(entityType, sheetName);
-    
+    let columnsToUse = SyncService.getTeamAwareColumnPreferences(entityType, sheetName);
+
     // If no columns are selected, create default column objects
-    if (!selectedColumns || selectedColumns.length === 0) {
+    if (!columnsToUse || columnsToUse.length === 0) {
       Logger.log(`No columns selected for ${entityType}, using defaults`);
       
       // Set default column keys based on entity type
@@ -251,102 +240,45 @@ function syncPipedriveDataToSheet(entityType, skipPush = false) {
       }
       
       // Create column objects from default keys
-      selectedColumns = defaultColumnKeys.map(key => ({ key: key }));
-      updateSyncStatus('3', 'active', `No columns selected, using defaults`, 40);
+      columnsToUse = defaultColumnKeys.map(key => ({ key: key }));
     }
-    
-    // Format the data for the spreadsheet
-    updateSyncStatus('3', 'active', `Formatting data for spreadsheet...`, 50);
-    
-    // Create header row from selected columns
-    const headerRow = [];
-    
-    // Loop through selected columns to create header names
-    selectedColumns.forEach(column => {
-      // Column can be an object with key/customName or just a string
-      let columnName = '';
-      
-      if (typeof column === 'object' && column.key) {
-        // If column has a custom name defined, use that
-        if (column.customName) {
-          columnName = column.customName;
-        } else {
-          // Look for a friendly name in fields
-          const matchingField = fields.find(f => f.key === column.key);
-          if (matchingField) {
-            columnName = formatColumnName(matchingField.name);
-          } else {
-            // Use the key as a fallback
-            columnName = formatColumnName(column.key);
-          }
-        }
-      } else if (typeof column === 'string') {
-        // If column is just a string key, look up its name in fields
-        const matchingField = fields.find(f => f.key === column);
-        if (matchingField) {
-          columnName = formatColumnName(matchingField.name);
-        } else {
-          columnName = formatColumnName(column);
-        }
+
+    // Create header row from column names
+    const headerRow = columnsToUse.map(column => {
+      if (typeof column === 'object' && column.customName) {
+        return column.customName;
       }
-      
-      headerRow.push(columnName);
+      const matchingField = fields.find(f => f.key === (typeof column === 'object' ? column.key : column));
+      return matchingField ? formatColumnName(matchingField.name) : formatColumnName(typeof column === 'object' ? column.key : column);
     });
-    
+
     // Get field option mappings for dropdown/option fields
     let optionMappings = {};
     try {
-      // Check if the function exists in the PipedriveAPI namespace
-      if (typeof getFieldOptionMappingsForEntity === 'function') {
-        optionMappings = getFieldOptionMappingsForEntity(entityType);
-        Logger.log(`Retrieved option mappings for ${entityType}`);
-      } else if (typeof PipedriveAPI !== 'undefined' && typeof PipedriveAPI.getFieldOptionMappingsForEntity === 'function') {
-        optionMappings = PipedriveAPI.getFieldOptionMappingsForEntity(entityType);
-        Logger.log(`Retrieved option mappings for ${entityType} from PipedriveAPI namespace`);
-      } else {
-        Logger.log('getFieldOptionMappingsForEntity function not found. Option values may not display correctly.');
-      }
+      optionMappings = getFieldOptionMappingsForEntity(entityType);
     } catch (e) {
       Logger.log(`Error getting field option mappings: ${e.message}`);
     }
-    
-    // Prepare data for writing to the sheet following the original structure
-    const options = {
-      entityType: entityType,
-      sheetName: sheetName,
-      headerRow: headerRow,    // Pass the prepared header row
-      columns: selectedColumns, // Pass column objects/keys
-      fields: fields,
-      optionMappings: optionMappings, // Include option mappings for dropdown fields
-      showTimestamp: docProps.getProperty('SHOW_TIMESTAMP') === 'true',
-      enableTwoWaySync: docProps.getProperty(`TWOWAY_SYNC_ENABLED_${sheetName}`) === 'true',
-      trackingColumn: docProps.getProperty(`TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`) || ''
-    };
-    
-    // Write data to the spreadsheet
-    updateSyncStatus('3', 'active', `Writing data to sheet...`, 70);
-    writeDataToSheet(items, options);
-    
-    // Mark as completed
-    updateSyncStatus('3', 'completed', `Successfully synced ${items.length} ${entityType} to sheet.`, 100);
-    
-    // Update the last sync time
-    if (options.enableTwoWaySync) {
-      const now = new Date().toISOString();
-      docProps.setProperty(`TWOWAY_SYNC_LAST_SYNC_${sheetName}`, now);
-    }
 
-    // Refresh the sync status column styling - just like in the original implementation
-    refreshSyncStatusStyling();
-    
+    // Prepare and write data to sheet with the selected columns
+    writeDataToSheet(items, {
+      columns: columnsToUse,
+      headerRow: headerRow,
+      optionMappings: optionMappings,
+      entityType: entityType,
+      sheetName: sheetName
+    });
+
+    // Complete phase 3
+    updateSyncStatus(3, 'completed', `Data successfully synced to "${sheetName}"!`, 100);
+
     // Show success toast
-    SpreadsheetApp.getActiveSpreadsheet().toast(
-      `${entityType} successfully synced from Pipedrive to "${sheetName}"! (${items.length} items total)`
-    );
-  } catch (e) {
-    Logger.log(`Error in syncPipedriveDataToSheet: ${e.message}`);
-    updateSyncStatus('3', 'error', e.message, 100);
-    throw e;  // Re-throw to allow caller to handle
+    SpreadsheetApp.getActiveSpreadsheet().toast(`${entityType} successfully synced from Pipedrive to "${sheetName}"! (${items.length} items total)`);
+    refreshSyncStatusStyling();
+  } catch (error) {
+    Logger.log('Error: ' + error.message);
+    updateSyncStatus(0, 'error', error.message, 0);
+    SpreadsheetApp.getActiveSpreadsheet().toast('Error: ' + error.message);
   }
 }
 
@@ -369,8 +301,10 @@ function writeDataToSheet(items, options) {
   // IMPORTANT: Clean up previous sync status column before writing new data
   cleanupPreviousSyncStatusColumn(sheet, sheetName);
 
-  // Check if two-way sync is enabled for this sheet
+  // Get script properties
   const scriptProperties = PropertiesService.getScriptProperties();
+
+  // Check if two-way sync is enabled for this sheet
   const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
   const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
   const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
@@ -443,73 +377,143 @@ function writeDataToSheet(items, options) {
   // Write the header row
   sheet.getRange(1, 1, 1, fullHeaderRow.length).setValues([fullHeaderRow]);
 
-  // Format data rows
-  const dataRows = items.map(item => {
-    const row = options.columns.map(column => {
+  // Create data rows array
+  const dataRows = [];
+
+  // Process each item from Pipedrive
+  items.forEach(item => {
+    // Create a row array with the right number of columns
+    const row = new Array(fullHeaderRow.length).fill('');
+
+    // Extract values for each column from the Pipedrive item
+    options.columns.forEach((column, index) => {
+      // Get the value using path notation
       const key = typeof column === 'object' ? column.key : column;
       const value = getValueByPath(item, key);
-      return formatValue(value, key, options.optionMappings);
+
+      // Format the value and add it to the row
+      row[index] = formatValue(value, key, options.optionMappings);
     });
 
-    // Add Sync Status column if two-way sync is enabled
+    // If two-way sync is enabled, add the status column
     if (twoWaySyncEnabled && statusColumnIndex !== -1) {
-      // Ensure row has enough elements
-      while (row.length <= statusColumnIndex) {
-        row.push('');
+      // Get the item ID (assuming first column is ID)
+      const id = row[0] ? row[0].toString() : '';
+
+      // If we have a saved status for this ID, use it, otherwise use "Not modified"
+      if (id && statusByIdMap.has(id)) {
+        row[statusColumnIndex] = statusByIdMap.get(id);
+      } else {
+        row[statusColumnIndex] = 'Not modified';
       }
-      row[statusColumnIndex] = 'Not modified';
     }
 
-    return row;
+    // Add the row to our data array
+    dataRows.push(row);
   });
 
-  // Write data rows if we have any
+  // Write all data rows at once
   if (dataRows.length > 0) {
     sheet.getRange(2, 1, dataRows.length, fullHeaderRow.length).setValues(dataRows);
   }
 
-  // CRITICAL: Clean up any lingering formatting from previous Sync Status columns
-  // This needs to happen AFTER the sheet is rebuilt
-  if (twoWaySyncEnabled && statusColumnIndex !== -1) {
+  // If two-way sync is enabled, set up data validation and formatting for the status column
+  if (twoWaySyncEnabled && statusColumnIndex !== -1 && dataRows.length > 0) {
     try {
-      Logger.log(`Performing aggressive column cleanup after sheet rebuild - current status column: ${statusColumnIndex}`);
+      // Clear any existing data validation from ALL cells in the sheet first
+      sheet.clearDataValidations();
 
-      // The current status column letter
-      const currentStatusColLetter = columnToLetter(statusColumnIndex + 1);
+      // Convert to 1-based column
+      const statusColumnPos = statusColumnIndex + 1;
 
-      // Clean ALL columns in the sheet except the current Sync Status column
-      const lastCol = sheet.getLastColumn() + 5; // Add buffer for hidden columns
-      for (let i = 0; i < lastCol; i++) {
-        if (i !== statusColumnIndex) { // Skip the current status column
-          try {
-            const colLetter = columnToLetter(i + 1);
-            Logger.log(`Checking column ${colLetter} for cleanup`);
+      // IMPORTANT: Apply validation EXPLICITLY to EACH data row instead of the entire range
+      // This gives us precise control over which cells get validation
+      for (let i = 0; i < dataRows.length; i++) {
+        const row = i + 2; // Data starts at row 2 (after header)
+        const statusCell = sheet.getRange(row, statusColumnPos);
 
-            // Check if this column has a 'Sync Status' header or sync-related note
-            const headerCell = sheet.getRange(1, i + 1);
-            const headerValue = headerCell.getValue();
-            const note = headerCell.getNote();
-
-            if (headerValue === "Sync Status" ||
-              (note && (note.includes('sync') || note.includes('track') || note.includes('Pipedrive')))) {
-              Logger.log(`Found Sync Status indicators in column ${colLetter}, cleaning up`);
-              cleanupColumnFormatting(sheet, colLetter);
-            }
-          } catch (e) {
-            // Ignore errors for individual columns
-          }
-        }
+        // Use the same dropdown for all cells
+        const rule = SpreadsheetApp.newDataValidation()
+          .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
+          .build();
+        statusCell.setDataValidation(rule);
       }
 
-      // Update tracking
-      scriptProperties.setProperty(`CURRENT_SYNCSTATUS_POS_${sheetName}`, statusColumnIndex.toString());
+      // Style the header to make it clear it's for sync status
+      sheet.getRange(1, statusColumnPos).setBackground('#E8F0FE')
+        .setFontWeight('bold')
+        .setNote('This column tracks changes for two-way sync with Pipedrive');
 
+      // Style the status column
+      const statusRange = sheet.getRange(2, statusColumnPos, dataRows.length, 1);
+      statusRange.setBackground('#F8F9FA')  // Light gray
+        .setBorder(null, true, null, true, false, false, '#DADCE0', SpreadsheetApp.BorderStyle.SOLID);
+
+      // Set up conditional formatting for the status values
+      const rules = [];
+
+      // Add rule for "Modified" status - red background
+      let modifiedRule = SpreadsheetApp.newConditionalFormatRule()
+        .whenTextEqualTo('Modified')
+        .setBackground('#FCE8E6')  // Light red background
+        .setFontColor('#D93025')   // Red text
+        .setRanges([statusRange])
+        .build();
+      rules.push(modifiedRule);
+
+      // Add rule for "Synced" status - green background
+      let syncedRule = SpreadsheetApp.newConditionalFormatRule()
+        .whenTextEqualTo('Synced')
+        .setBackground('#E6F4EA')  // Light green background
+        .setFontColor('#137333')   // Green text
+        .setRanges([statusRange])
+        .build();
+      rules.push(syncedRule);
+
+      // Add rule for "Error" status - red background with bold text
+      let errorRule = SpreadsheetApp.newConditionalFormatRule()
+        .whenTextEqualTo('Error')
+        .setBackground('#FCE8E6')  // Light red background
+        .setFontColor('#D93025')   // Red text
+        .setBold(true)             // Bold text for errors
+        .setRanges([statusRange])
+        .build();
+      rules.push(errorRule);
+
+      sheet.setConditionalFormatRules(rules);
+
+      Logger.log('Applied data validation and conditional formatting to status column');
     } catch (e) {
-      Logger.log(`Error during aggressive post-rebuild cleanup: ${e.message}`);
+      Logger.log(`Error setting up status column formatting: ${e.message}`);
     }
   }
 
-  return true;
+  // Check if timestamp is enabled (moved outside the else block to work for all sheets)
+  const timestampEnabledKey = `TIMESTAMP_ENABLED_${sheetName}`;
+  const timestampEnabled = scriptProperties.getProperty(timestampEnabledKey) === 'true';
+
+  // Add timestamp of last sync if enabled
+  if (timestampEnabled) {
+    const timestampRow = sheet.getLastRow() + 2;
+    sheet.getRange(timestampRow, 1).setValue('Last synced:');
+    sheet.getRange(timestampRow, 2).setValue(new Date()).setNumberFormat('yyyy-MM-dd HH:mm:ss');
+
+    // Format the timestamp for better visibility
+    sheet.getRange(timestampRow, 1, 1, 2).setFontWeight('bold');
+    sheet.getRange(timestampRow, 1, 1, 2).setBackground('#f1f3f4');  // Light gray background
+
+    // Clear any data validation from the timestamp row and spacer row
+    if (twoWaySyncEnabled && statusColumnIndex !== -1) {
+      // Clear the entire spacer row and timestamp row from any data validation
+      const spacerRow = timestampRow - 1;
+      if (spacerRow > dataRows.length + 1) { // Make sure we don't clear data rows
+        sheet.getRange(spacerRow, 1, 2, sheet.getLastColumn()).setDataValidation(null);
+      }
+    }
+  }
+
+  // Auto-resize columns for better readability
+  sheet.autoResizeColumns(1, sheet.getLastColumn());
 }
 
 /**
@@ -1856,7 +1860,7 @@ function getFieldMappingsForEntity(entityType) {
 /**
  * Detects if columns in the sheet have shifted and updates tracking accordingly
  */
-SyncService.detectColumnShifts = function() {
+function detectColumnShifts() {
   try {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     const sheetName = sheet.getName();
@@ -1888,23 +1892,23 @@ SyncService.detectColumnShifts = function() {
       // Clean up all other columns
       for (const colIndex of syncStatusColumns) {
         if (colIndex !== rightmostIndex) {
-          const colLetter = SyncService.columnToLetter(colIndex + 1);
+          const colLetter = columnToLetter(colIndex);
           Logger.log(`Cleaning up duplicate Sync Status column at ${colLetter}`);
-          SyncService.cleanupColumnFormatting(sheet, colLetter);
+          cleanupColumnFormatting(sheet, colLetter);
         }
       }
 
       // Update the tracking to the rightmost column
-      const rightmostColLetter = SyncService.columnToLetter(rightmostIndex + 1);
+      const rightmostColLetter = columnToLetter(rightmostIndex);
       scriptProperties.setProperty(trackingColumnKey, rightmostColLetter);
       scriptProperties.setProperty(`CURRENT_SYNCSTATUS_POS_${sheetName}`, rightmostIndex.toString());
-      return;
+      return; // Exit after handling duplicates
     }
 
     let actualSyncStatusIndex = syncStatusColumns.length > 0 ? syncStatusColumns[0] : -1;
 
     if (actualSyncStatusIndex >= 0) {
-      const actualColLetter = SyncService.columnToLetter(actualSyncStatusIndex + 1);
+      const actualColLetter = columnToLetter(actualSyncStatusIndex);
 
       // If there's a mismatch, columns might have shifted
       if (currentColLetter && actualColLetter !== currentColLetter) {
@@ -1917,13 +1921,13 @@ SyncService.detectColumnShifts = function() {
           // Clean ALL columns to be safe
           for (let i = 0; i < sheet.getLastColumn(); i++) {
             if (i !== actualSyncStatusIndex) { // Skip current Sync Status column
-              SyncService.cleanupColumnFormatting(sheet, SyncService.columnToLetter(i + 1));
+              cleanupColumnFormatting(sheet, columnToLetter(i));
             }
           }
         }
 
         // Clean up all potential previous locations
-        SyncService.scanAndCleanupAllSyncColumns(sheet, actualColLetter);
+        scanAndCleanupAllSyncColumns(sheet, actualColLetter);
 
         // Update the tracking column property
         scriptProperties.setProperty(trackingColumnKey, actualColLetter);
@@ -1933,34 +1937,37 @@ SyncService.detectColumnShifts = function() {
   } catch (error) {
     Logger.log(`Error in detectColumnShifts: ${error.message}`);
   }
-};
+}
 
 /**
  * Cleans up formatting in a column
  * @param {Sheet} sheet - The sheet containing the column
  * @param {string} columnLetter - The letter of the column to clean up
  */
-SyncService.cleanupColumnFormatting = function(sheet, columnLetter) {
+function cleanupColumnFormatting(sheet, columnLetter) {
   try {
     Logger.log(`Cleaning up formatting in column ${columnLetter}`);
-    const columnIndex = SyncService.columnLetterToIndex(columnLetter);
+    const columnIndex = columnLetterToIndex(columnLetter);
     
-    // Clear the column header formatting if it's "Sync Status"
-    const header = sheet.getRange(`${columnLetter}1`).getValue();
+    // Clear the column header formatting and note if it's "Sync Status"
+    const headerCell = sheet.getRange(`${columnLetter}1`);
+    const header = headerCell.getValue();
     if (header === "Sync Status") {
-      sheet.getRange(`${columnLetter}1`).setValue(""); // Clear the header
+      headerCell.setValue(""); // Clear the header
+      headerCell.clearNote(); // Clear any notes
     }
     
     // Clear cell formatting in this column
     const lastRow = Math.max(sheet.getLastRow(), 2);
     if (lastRow > 1) {
-      const range = sheet.getRange(2, columnIndex, lastRow - 1, 1);
+      const range = sheet.getRange(2, columnIndex + 1, lastRow - 1, 1);
       range.clearContent();
       range.clearFormat();
+      range.clearNote();
     }
     
     // Clear validation rules in the column
-    const dataValidations = sheet.getRange(1, columnIndex, lastRow, 1).getDataValidations();
+    const dataValidations = sheet.getRange(1, columnIndex + 1, lastRow, 1).getDataValidations();
     const newValidations = [];
     
     for (let i = 0; i < dataValidations.length; i++) {
@@ -1968,15 +1975,15 @@ SyncService.cleanupColumnFormatting = function(sheet, columnLetter) {
     }
     
     if (newValidations.length > 0) {
-      sheet.getRange(1, columnIndex, newValidations.length, 1).setDataValidations(newValidations);
+      sheet.getRange(1, columnIndex + 1, newValidations.length, 1).setDataValidations(newValidations);
     }
     
     // Clean up any conditional formatting rules for this column
-    SyncService.cleanupOrphanedConditionalFormatting(sheet, -1); // Pass -1 to clean up all
+    cleanupOrphanedConditionalFormatting(sheet, -1); // Pass -1 to clean up all
   } catch (error) {
     Logger.log(`Error cleaning up column formatting: ${error.message}`);
   }
-};
+}
 
 /**
  * Scans and cleans up all sync status columns except the current one
@@ -2033,28 +2040,6 @@ function scanAndCleanupAllSyncColumns(sheet, currentColumnLetter) {
       Logger.log(`Error checking for validations: ${error.message}`);
     }
 
-    // Check for columns with header notes that might be Sync Status columns
-    for (let i = 0; i < headers.length; i++) {
-      // Skip the current tracking column
-      if (i === currentColumnIndex) {
-        continue;
-      }
-
-      try {
-        const columnPos = i + 1; // 1-based for getRange
-        const headerCell = sheet.getRange(1, columnPos);
-        const note = headerCell.getNote();
-
-        if (note && (note.includes('sync') || note.includes('track') || note.includes('Pipedrive'))) {
-          Logger.log(`Found column with sync-related note at ${columnToLetter(i + 1)}: "${note}"`);
-          const columnToClean = columnToLetter(i + 1);
-          cleanupColumnFormatting(sheet, columnToClean);
-        }
-      } catch (error) {
-        Logger.log(`Error checking column ${i} header note: ${error.message}`);
-      }
-    }
-
     // Look for columns with "Sync Status" header
     for (let i = 0; i < headers.length; i++) {
       const headerValue = headers[i];
@@ -2107,7 +2092,7 @@ function scanAndCleanupAllSyncColumns(sheet, currentColumnLetter) {
         }
 
         if (foundSyncStatusFormatting) {
-          const colLetter = columnToLetter(col - 1); // col is 1-based, columnToLetter expects 0-based
+          const colLetter = columnToLetter(col);
           Logger.log(`Found column with Sync Status formatting at ${colLetter}, cleaning up`);
           cleanupColumnFormatting(sheet, colLetter);
         }
@@ -2124,57 +2109,11 @@ function scanAndCleanupAllSyncColumns(sheet, currentColumnLetter) {
 }
 
 /**
- * Cleans up formatting in a column
- * @param {Sheet} sheet - The sheet containing the column
- * @param {string} columnLetter - The letter of the column to clean up
- */
-function cleanupColumnFormatting(sheet, columnLetter) {
-  try {
-    Logger.log(`Cleaning up formatting in column ${columnLetter}`);
-    const columnIndex = columnLetterToIndex(columnLetter);
-    
-    // Clear the column header formatting and note if it's "Sync Status"
-    const headerCell = sheet.getRange(`${columnLetter}1`);
-    const header = headerCell.getValue();
-    if (header === "Sync Status") {
-      headerCell.setValue(""); // Clear the header
-      headerCell.clearNote(); // Clear any notes
-    }
-    
-    // Clear cell formatting in this column
-    const lastRow = Math.max(sheet.getLastRow(), 2);
-    if (lastRow > 1) {
-      const range = sheet.getRange(2, columnIndex, lastRow - 1, 1);
-      range.clearContent();
-      range.clearFormat();
-      range.clearNote();
-    }
-    
-    // Clear validation rules in the column
-    const dataValidations = sheet.getRange(1, columnIndex, lastRow, 1).getDataValidations();
-    const newValidations = [];
-    
-    for (let i = 0; i < dataValidations.length; i++) {
-      newValidations.push([null]);
-    }
-    
-    if (newValidations.length > 0) {
-      sheet.getRange(1, columnIndex, newValidations.length, 1).setDataValidations(newValidations);
-    }
-    
-    // Clean up any conditional formatting rules for this column
-    cleanupOrphanedConditionalFormatting(sheet, -1); // Pass -1 to clean up all
-  } catch (error) {
-    Logger.log(`Error cleaning up column formatting: ${error.message}`);
-  }
-}
-
-/**
  * Cleans up orphaned conditional formatting rules
  * @param {Sheet} sheet - The sheet to clean up
  * @param {number} currentColumnIndex - The index of the current Sync Status column
  */
-SyncService.cleanupOrphanedConditionalFormatting = function(sheet, currentColumnIndex) {
+function cleanupOrphanedConditionalFormatting(sheet, currentColumnIndex) {
   try {
     const rules = sheet.getConditionalFormatRules();
     const newRules = [];
@@ -2201,7 +2140,7 @@ SyncService.cleanupOrphanedConditionalFormatting = function(sheet, currentColumn
           // If background matches our Sync Status colors, this is likely an orphaned rule
           if (background === '#FCE8E6' || background === '#E6F4EA' || background === '#F8F9FA') {
             keepRule = false;
-            Logger.log(`Found orphaned conditional formatting at column ${SyncService.columnToLetter(column)}`);
+            Logger.log(`Found orphaned conditional formatting at column ${columnToLetter(column)}`);
             break;
           }
         }
@@ -2221,14 +2160,14 @@ SyncService.cleanupOrphanedConditionalFormatting = function(sheet, currentColumn
   } catch (error) {
     Logger.log(`Error cleaning up orphaned conditional formatting: ${error.message}`);
   }
-};
+}
 
 /**
  * Converts a column index to letter (e.g., 1 -> A, 27 -> AA)
  * @param {number} columnIndex - The 1-based column index
  * @return {string} The column letter
  */
-SyncService.columnToLetter = function(columnIndex) {
+function columnToLetter(columnIndex) {
   let temp;
   let letter = '';
   let col = columnIndex;
@@ -2240,14 +2179,14 @@ SyncService.columnToLetter = function(columnIndex) {
   }
   
   return letter;
-};
+}
 
 /**
  * Converts a column letter to index (e.g., A -> 1, AA -> 27)
  * @param {string} columnLetter - The column letter
  * @return {number} The 1-based column index
  */
-SyncService.columnLetterToIndex = function(columnLetter) {
+function columnLetterToIndex(columnLetter) {
   let column = 0;
   const length = columnLetter.length;
   
@@ -2256,7 +2195,7 @@ SyncService.columnLetterToIndex = function(columnLetter) {
   }
   
   return column;
-};
+}
 
 /**
  * Writes data to the Google Sheet with columns matching the filter

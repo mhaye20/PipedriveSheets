@@ -69,6 +69,36 @@ TwoWaySyncSettingsUI.showTwoWaySyncSettings = function() {
 };
 
 /**
+ * Handles two-way sync settings when column preferences are saved
+ * @param {string} sheetName - The name of the sheet
+ */
+TwoWaySyncSettingsUI.handleColumnPreferencesChange = function(sheetName) {
+  try {
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
+    const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
+    
+    // When columns are changed and two-way sync is enabled, handle tracking column
+    if (twoWaySyncEnabled) {
+      Logger.log(`Two-way sync is enabled for sheet "${sheetName}". Adjusting sync column.`);
+      
+      // When columns are changed, delete the tracking column property to force repositioning
+      const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
+      scriptProperties.deleteProperty(twoWaySyncTrackingColumnKey);
+      
+      // Add a flag to indicate that the Sync Status column should be repositioned at the end
+      const twoWaySyncColumnAtEndKey = `TWOWAY_SYNC_COLUMN_AT_END_${sheetName}`;
+      scriptProperties.setProperty(twoWaySyncColumnAtEndKey, 'true');
+      
+      Logger.log(`Removed tracking column property for sheet "${sheetName}" to ensure correct positioning on next sync.`);
+    }
+  } catch (e) {
+    Logger.log(`Error in handleColumnPreferencesChange: ${e.message}`);
+    throw e;
+  }
+};
+
+/**
  * Saves the two-way sync settings for a sheet and sets up the tracking column
  * @param {boolean} enableTwoWaySync Whether to enable two-way sync
  * @param {string} trackingColumn The column letter to use for tracking changes
@@ -85,11 +115,7 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
     const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
     const twoWaySyncLastSyncKey = `TWOWAY_SYNC_LAST_SYNC_${activeSheetName}`;
 
-    // Save settings to properties
-    scriptProperties.setProperty(twoWaySyncEnabledKey, enableTwoWaySync.toString());
-    scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
-
-    // Store the previous tracking column if it exists
+    // Get the previous tracking column and position
     const previousTrackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey) || '';
     const previousPosStr = scriptProperties.getProperty(`CURRENT_SYNCSTATUS_POS_${activeSheetName}`) || '-1';
     const previousPos = parseInt(previousPosStr, 10);
@@ -98,7 +124,42 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
     // If the position has changed, store the previous column for cleanup
     if (previousTrackingColumn && previousTrackingColumn !== trackingColumn) {
       scriptProperties.setProperty(`PREVIOUS_TRACKING_COLUMN_${activeSheetName}`, previousTrackingColumn);
+
+      // NEW: Also track when columns have been removed (causing a left shift)
+      if (previousPos >= 0 && currentPos >= 0 && currentPos < previousPos) {
+        Logger.log(`Detected column removal: Sync Status moved left from ${previousPos} to ${currentPos}`);
+
+        // Check all columns between previous and current positions (inclusive)
+        // Important: Don't just check columns in between, check ALL columns from 0 to max(previousPos)
+        const maxPos = Math.max(previousPos + 3, activeSheet.getLastColumn()); // Add buffer
+        for (let i = 0; i <= maxPos; i++) {
+          const colLetter = columnToLetter(i);
+          if (colLetter !== trackingColumn) {
+            // Look for sync status indicators in this column
+            try {
+              const headerCell = activeSheet.getRange(1, i + 1);  // i is 0-based, getRange is 1-based
+              const headerValue = headerCell.getValue();
+              const note = headerCell.getNote();
+
+              // Extra check for Sync Status indicators
+              if (headerValue === "Sync Status" ||
+                (note && (note.includes('sync') || note.includes('track')))) {
+                cleanupColumnFormatting(activeSheet, colLetter);
+              }
+            } catch (e) {
+              Logger.log(`Error checking column ${colLetter}: ${e.message}`);
+            }
+          }
+        }
+      }
     }
+
+    // Save settings to properties
+    scriptProperties.setProperty(twoWaySyncEnabledKey, enableTwoWaySync.toString());
+    scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
+
+    // Clean up previous Sync Status column formatting
+    cleanupPreviousSyncStatusColumn(activeSheet, activeSheetName);
 
     // If enabling two-way sync, set up the tracking column
     if (enableTwoWaySync) {
@@ -119,41 +180,79 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
         .setFontWeight('bold')
         .setNote('This column tracks changes for two-way sync with Pipedrive');
 
-      // Add data validation for status values
-      const lastRow = Math.max(activeSheet.getLastRow(), 2);
-      if (lastRow > 1) {
-        const statusRange = activeSheet.getRange(2, columnIndex, lastRow - 1, 1);
+      // Style the entire status column with a light background and border
+      const fullStatusColumn = activeSheet.getRange(1, columnIndex, Math.max(activeSheet.getLastRow(), 2), 1);
+      fullStatusColumn.setBackground('#F8F9FA') // Light gray background
+        .setBorder(null, true, null, true, false, false, '#DADCE0', SpreadsheetApp.BorderStyle.SOLID);
+
+      // Initialize all rows with "Not modified" status
+      if (activeSheet.getLastRow() > 1) {
+        // Get all data to identify which rows should have status
+        const allData = activeSheet.getDataRange().getValues();
+        const statusValues = activeSheet.getRange(2, columnIndex, activeSheet.getLastRow() - 1, 1).getValues();
+        const newStatusValues = [];
+
+        // Process each row (starting from row 2)
+        for (let i = 1; i < allData.length; i++) {
+          const row = allData[i];
+          const firstCell = row[0] ? row[0].toString().toLowerCase() : '';
+          const isEmpty = row.every(cell => cell === '' || cell === null || cell === undefined);
+
+          // Skip setting status for:
+          // 1. Rows where first cell contains "last" or "sync" (metadata rows)
+          // 2. Empty rows
+          if (firstCell.includes('last') ||
+            firstCell.includes('sync') ||
+            firstCell.includes('update') ||
+            isEmpty) {
+            newStatusValues.push(['']); // Keep empty
+          } else {
+            // Only set "Not modified" for actual data rows that are empty
+            const currentStatus = statusValues[i - 1][0];
+            newStatusValues.push([
+              currentStatus === '' || currentStatus === null || currentStatus === undefined
+                ? 'Not modified'
+                : currentStatus
+            ]);
+          }
+        }
+
+        // Set all values at once
+        if (newStatusValues.length > 0) {
+          activeSheet.getRange(2, columnIndex, newStatusValues.length, 1).setValues(newStatusValues);
+        }
+
+        // Add data validation for status values
         const rule = SpreadsheetApp.newDataValidation()
           .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
           .build();
-        statusRange.setDataValidation(rule);
-        
-        // Set default value and light gray background
-        statusRange.setValue('Not modified')
-          .setBackground('#F8F9FA');
 
-        // Add conditional formatting
+        // Apply validation to each data row
+        for (let i = 0; i < newStatusValues.length; i++) {
+          if (newStatusValues[i][0] !== '') { // Only add validation to rows with status
+            activeSheet.getRange(i + 2, columnIndex).setDataValidation(rule);
+          }
+        }
+
+        // Set up conditional formatting
         const rules = activeSheet.getConditionalFormatRules();
-        
-        // Create rule for "Modified" status
+        const statusRange = activeSheet.getRange(2, columnIndex, activeSheet.getLastRow() - 1, 1);
+
+        // Create rules for each status
         const modifiedRule = SpreadsheetApp.newConditionalFormatRule()
           .whenTextEqualTo('Modified')
           .setBackground('#FCE8E6')
           .setFontColor('#D93025')
           .setRanges([statusRange])
           .build();
-        rules.push(modifiedRule);
 
-        // Create rule for "Synced" status
         const syncedRule = SpreadsheetApp.newConditionalFormatRule()
           .whenTextEqualTo('Synced')
           .setBackground('#E6F4EA')
           .setFontColor('#137333')
           .setRanges([statusRange])
           .build();
-        rules.push(syncedRule);
 
-        // Create rule for "Error" status
         const errorRule = SpreadsheetApp.newConditionalFormatRule()
           .whenTextEqualTo('Error')
           .setBackground('#FCE8E6')
@@ -161,9 +260,8 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
           .setBold(true)
           .setRanges([statusRange])
           .build();
-        rules.push(errorRule);
 
-        // Apply all rules
+        rules.push(modifiedRule, syncedRule, errorRule);
         activeSheet.setConditionalFormatRules(rules);
       }
     }
