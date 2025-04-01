@@ -1081,8 +1081,6 @@ function onEdit(e) {
     // Check if two-way sync is enabled for this sheet
     const scriptProperties = PropertiesService.getScriptProperties();
     const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
-    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
-
     const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
 
     // If two-way sync is not enabled, exit
@@ -1090,31 +1088,40 @@ function onEdit(e) {
       return;
     }
 
-    // Get the tracking column
-    let trackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey) || '';
-    let trackingColumnIndex;
-
-    if (trackingColumn) {
-      // Convert column letter to index (0-based)
-      trackingColumnIndex = columnLetterToIndex(trackingColumn) - 1;
-    } else {
-      // Use the last column
-      trackingColumnIndex = sheet.getLastColumn() - 1;
-    }
-
     // Get the edited range
     const range = e.range;
     const row = range.getRow();
     const column = range.getColumn();
-
-    // Check if the edit is in the tracking column itself (to avoid loops)
-    if (column === trackingColumnIndex + 1) {
+    
+    // Check if the edit is in the header row - if it is, we might need to update tracking
+    const headerRow = 1;
+    if (row === headerRow) {
+      // If someone renamed the Sync Status column, we'd handle that here
+      // For now, just exit as we don't need special handling
       return;
     }
 
-    // Check if the edit is in the header row
-    const headerRow = 1;
-    if (row === headerRow) {
+    // Find the "Sync Status" column by header name
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    let syncStatusColIndex = -1;
+    
+    for (let i = 0; i < headers.length; i++) {
+      if (headers[i] === "Sync Status") {
+        syncStatusColIndex = i;
+        break;
+      }
+    }
+    
+    // Exit if no Sync Status column found
+    if (syncStatusColIndex === -1) {
+      return;
+    }
+    
+    // Convert to 1-based for sheet functions
+    const syncStatusColPos = syncStatusColIndex + 1;
+    
+    // Check if the edit is in the Sync Status column itself (to avoid loops)
+    if (column === syncStatusColPos) {
       return;
     }
 
@@ -1145,23 +1152,82 @@ function onEdit(e) {
       return;
     }
 
-    // Update the tracking column to mark as modified
-    const trackingRange = sheet.getRange(row, trackingColumnIndex + 1);
-    const currentStatus = trackingRange.getValue();
+    // For undo detection, check if the edited cell was changed back to its original value
+    // We'll need to store the original values somewhere or check if the current edit reverts to a previously known value
+    // For now, we can implement a simple version that checks if the cell is empty or matches default values
+    
+    // Get the current value and old value if available in the edit event
+    const newValue = e.value;
+    const oldValue = e.oldValue;
+    
+    // Track the cell that was edited
+    const editedCellKey = `${sheetName}_${row}_${column}_original`;
+    
+    // Check if this is an undo operation
+    let isUndoOperation = false;
+    
+    // Get the sync status cell
+    const syncStatusCell = sheet.getRange(row, syncStatusColPos);
+    const currentStatus = syncStatusCell.getValue();
+    
+    // Only proceed if the cell is currently marked as Modified
+    if (currentStatus === "Modified") {
+      // If we have oldValue in the event (some edits provide this)
+      if (oldValue !== undefined && newValue !== undefined) {
+        // If new value matches something that suggests an undo
+        if (newValue === "" || newValue === null || newValue === oldValue) {
+          isUndoOperation = true;
+        }
+      }
+      
+      // Another way to detect undo: Check if cell was recently cleared or set to default value
+      const editedCell = sheet.getRange(row, column);
+      const editedValue = editedCell.getValue();
+      
+      if (editedValue === "" || editedValue === null || editedValue === undefined) {
+        // Empty cell might indicate an undo
+        isUndoOperation = true;
+      }
+      
+      // If it's a checkbox or boolean field that got unchecked
+      if (editedValue === false) {
+        isUndoOperation = true;
+      }
+      
+      // If everything in the row is now Default/Original values, consider it an undo
+      // This would require tracking original row values, which is more complex
+      
+      // If we think this is an undo operation, check the rest of the row
+      if (isUndoOperation) {
+        // For now, we'll simplify and just reset to Not modified
+        // In a future enhancement, we could check all cells in the row
+        syncStatusCell.setValue("Not modified");
+        
+        // Re-apply data validation to ensure consistent dropdown options
+        const rule = SpreadsheetApp.newDataValidation()
+          .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
+          .build();
+        syncStatusCell.setDataValidation(rule);
+        
+        // Reset formatting
+        syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
+        return;
+      }
+    }
 
-    // Only mark as modified if it's not already marked or if it was previously synced
+    // If not an undo operation, update the tracking column to mark as modified
     if (currentStatus === "Not modified" || currentStatus === "Synced") {
-      trackingRange.setValue("Modified");
+      syncStatusCell.setValue("Modified");
 
       // Re-apply data validation to ensure consistent dropdown options
       const rule = SpreadsheetApp.newDataValidation()
         .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
         .build();
-      trackingRange.setDataValidation(rule);
+      syncStatusCell.setDataValidation(rule);
 
       // Make sure the styling is consistent
       // This will be overridden by conditional formatting but helps with visual feedback
-      trackingRange.setBackground('#FCE8E6').setFontColor('#D93025');
+      syncStatusCell.setBackground('#FCE8E6').setFontColor('#D93025');
     }
   } catch (error) {
     // Silent fail for onEdit triggers
@@ -1245,8 +1311,7 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
     const scriptProperties = PropertiesService.getScriptProperties();
     const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
     const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
-    const twoWaySyncLastSyncKey = `TWOWAY_SYNC_LAST_SYNC_${activeSheetName}`;
-
+    
     const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
 
     if (!twoWaySyncEnabled) {
@@ -1303,63 +1368,36 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
       headerToFieldKeyMap[displayName] = col.key;
     });
 
-    // Get the tracking column
-    let trackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey) || '';
-    let trackingColumnIndex;
-
-    Logger.log(`Retrieved tracking column from properties: "${trackingColumn}"`);
-
-    // Look for a column named "Sync Status"
+    // Find the "Sync Status" column by header name
     const headerRow = activeSheet.getRange(1, 1, 1, activeSheet.getLastColumn()).getValues()[0];
     let syncStatusColumnIndex = -1;
 
-    // First, try to use the stored tracking column if available
-    if (trackingColumn && trackingColumn.trim() !== '') {
-      trackingColumnIndex = columnLetterToIndex(trackingColumn);
-      // Verify the header matches "Sync Status"
-      if (trackingColumnIndex >= 0 && trackingColumnIndex < headerRow.length) {
-        if (headerRow[trackingColumnIndex] === "Sync Status") {
-          Logger.log(`Using configured tracking column ${trackingColumn} (index: ${trackingColumnIndex})`);
-          syncStatusColumnIndex = trackingColumnIndex;
-        }
+    // Search for "Sync Status" header
+    for (let i = 0; i < headerRow.length; i++) {
+      if (headerRow[i] === "Sync Status") {
+        syncStatusColumnIndex = i;
+        Logger.log(`Found Sync Status column at index ${syncStatusColumnIndex}`);
+        
+        // Update the stored tracking column letter
+        const trackingColumn = columnToLetter(syncStatusColumnIndex + 1);
+        scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
+        break;
       }
     }
-
-    // If not found by letter or the header doesn't match, search for "Sync Status" header
-    if (syncStatusColumnIndex === -1) {
-      for (let i = 0; i < headerRow.length; i++) {
-        if (headerRow[i] === "Sync Status") {
-          syncStatusColumnIndex = i;
-          Logger.log(`Found Sync Status column at index ${syncStatusColumnIndex}`);
-
-          // Update the stored tracking column letter
-          trackingColumn = columnToLetter(syncStatusColumnIndex);
-          scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
-          break;
-        }
-      }
-    }
-
-    // Use the found column index
-    trackingColumnIndex = syncStatusColumnIndex;
 
     // Validate tracking column index
-    if (trackingColumnIndex < 0 || trackingColumnIndex >= activeSheet.getLastColumn()) {
-      Logger.log(`Invalid tracking column index ${trackingColumnIndex}, cannot proceed with sync`);
+    if (syncStatusColumnIndex === -1) {
+      Logger.log(`Sync Status column not found, cannot proceed with sync`);
       if (!isScheduledSync) {
         const ui = SpreadsheetApp.getUi();
         ui.alert(
           'Sync Status Column Not Found',
-          'The Sync Status column could not be found. Please check your two-way sync settings.',
+          'The Sync Status column could not be found. Please enable two-way sync in the settings first.',
           ui.ButtonSet.OK
         );
       }
       return;
     }
-
-    // Double check the header of the tracking column
-    const trackingHeader = activeSheet.getRange(1, trackingColumnIndex + 1).getValue();
-    Logger.log(`Tracking column header: "${trackingHeader}" at column index ${trackingColumnIndex} (column ${trackingColumnIndex + 1})`);
 
     // Get the data range
     const dataRange = activeSheet.getDataRange();
@@ -1380,7 +1418,7 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
     // Collect modified rows
     for (let i = 1; i < values.length; i++) {
       const row = values[i];
-      const syncStatus = row[trackingColumnIndex];
+      const syncStatus = row[syncStatusColumnIndex];
 
       // Only process rows marked as "Modified"
       if (syncStatus === 'Modified') {
@@ -1417,7 +1455,7 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
         // Map column values to API fields
         for (let j = 0; j < headers.length; j++) {
           // Skip the tracking column
-          if (j === trackingColumnIndex) {
+          if (j === syncStatusColumnIndex) {
             continue;
           }
 
@@ -1600,20 +1638,20 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
           successCount++;
           
           // Update the tracking column to "Synced"
-          activeSheet.getRange(rowData.rowIndex + 1, trackingColumnIndex + 1).setValue('Synced');
+          activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setValue('Synced');
           
           // Add a timestamp if desired
           if (scriptProperties.getProperty('ENABLE_TIMESTAMP') === 'true') {
             const timestamp = new Date().toLocaleString();
-            activeSheet.getRange(rowData.rowIndex + 1, trackingColumnIndex + 1).setNote(`Last sync: ${timestamp}`);
+            activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setNote(`Last sync: ${timestamp}`);
           }
         } else {
           // Update failed
           failureCount++;
           
           // Set the sync status to "Error" with a note about the error
-          activeSheet.getRange(rowData.rowIndex + 1, trackingColumnIndex + 1).setValue('Error');
-          activeSheet.getRange(rowData.rowIndex + 1, trackingColumnIndex + 1).setNote(
+          activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setValue('Error');
+          activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setNote(
             `API Error: ${statusCode} - ${responseJson.error || 'Unknown error'}`
           );
           
@@ -1629,8 +1667,8 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
         Logger.log(`Error updating row ${rowData.rowIndex + 1}: ${error.message}`);
         
         // Update the cell to show the error
-        activeSheet.getRange(rowData.rowIndex + 1, trackingColumnIndex + 1).setValue('Error');
-        activeSheet.getRange(rowData.rowIndex + 1, trackingColumnIndex + 1).setNote(`Error: ${error.message}`);
+        activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setValue('Error');
+        activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setNote(`Error: ${error.message}`);
         
         failures.push({
           id: rowData.id,
@@ -1644,7 +1682,7 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
 
     // Update the last sync time
     const now = new Date().toISOString();
-    scriptProperties.setProperty(twoWaySyncLastSyncKey, now);
+    scriptProperties.setProperty(`TWOWAY_SYNC_LAST_SYNC_${activeSheetName}`, now);
 
     // Show a summary message
     if (!isScheduledSync) {
@@ -1825,8 +1863,8 @@ function refreshSyncStatusStyling() {
 }
 
 /**
- * Cleans up previous Sync Status column formatting
- * @param {Sheet} sheet - The sheet containing the column
+ * Cleans up formatting from previous sync status columns
+ * @param {Sheet} sheet - The sheet to clean up
  * @param {string} sheetName - The name of the sheet
  */
 function cleanupPreviousSyncStatusColumn(sheet, sheetName) {
@@ -1843,11 +1881,11 @@ function cleanupPreviousSyncStatusColumn(sheet, sheetName) {
       scriptProperties.deleteProperty(previousColumnKey);
     }
 
-    // NEW: Store current column positions for future comparison
+    // Store current column positions for future comparison
     // This helps when columns are deleted and the position shifts
     const currentColumnIndex = currentColumn ? columnLetterToIndex(currentColumn) : -1;
-    if (currentColumnIndex >= 0) {
-      scriptProperties.setProperty(`CURRENT_SYNCSTATUS_POS_${sheetName}`, currentColumnIndex.toString());
+    if (currentColumnIndex > 0) {
+      scriptProperties.setProperty(`CURRENT_SYNCSTATUS_POS_${sheetName}`, (currentColumnIndex - 1).toString());
     }
 
     // IMPORTANT: Scan ALL columns for "Sync Status" headers and validation patterns
@@ -2282,11 +2320,11 @@ function detectColumnShifts() {
  */
 function cleanupColumnFormatting(sheet, columnLetter) {
   try {
+    // Convert column letter to index (1-based for getRange)
     const columnIndex = columnLetterToIndex(columnLetter);
-    const columnPos = columnIndex; // 1-based for getRange
-
+    
     // ALWAYS clean columns, even if they're beyond the current last column
-    Logger.log(`Cleaning up formatting for column ${columnLetter} (position ${columnPos})`);
+    Logger.log(`Cleaning up formatting for column ${columnLetter} (position ${columnIndex})`);
 
     try {
       // Clean up data validations for the ENTIRE column
@@ -2294,26 +2332,26 @@ function cleanupColumnFormatting(sheet, columnLetter) {
 
       // Try to clear data validations - may fail for columns beyond the edge
       try {
-        sheet.getRange(1, columnPos, numRows, 1).clearDataValidations();
+        sheet.getRange(1, columnIndex, numRows, 1).clearDataValidations();
       } catch (e) {
         Logger.log(`Could not clear validations for column ${columnLetter}: ${e.message}`);
       }
 
       // Clear header note - this should work even for "out of bounds" columns
       try {
-        sheet.getRange(1, columnPos).clearNote();
-        sheet.getRange(1, columnPos).setNote(''); // Force clear
+        sheet.getRange(1, columnIndex).clearNote();
+        sheet.getRange(1, columnIndex).setNote(''); // Force clear
       } catch (e) {
         Logger.log(`Could not clear note for column ${columnLetter}: ${e.message}`);
       }
 
       // For columns within the sheet, we can do more thorough cleaning
-      if (columnPos <= sheet.getLastColumn()) {
+      if (columnIndex <= sheet.getLastColumn()) {
         // Clear all formatting for the entire column (data rows only, not header)
         if (sheet.getLastRow() > 1) {
           try {
             // Clear formatting for data rows (row 2 and below), preserving header
-            sheet.getRange(2, columnPos, numRows - 1, 1).clear({
+            sheet.getRange(2, columnIndex, numRows - 1, 1).clear({
               formatOnly: true,
               contentsOnly: false,
               validationsOnly: true
@@ -2325,7 +2363,7 @@ function cleanupColumnFormatting(sheet, columnLetter) {
 
         // Clear formatting for header separately, preserving bold
         try {
-          const headerCell = sheet.getRange(1, columnPos);
+          const headerCell = sheet.getRange(1, columnIndex);
           const headerValue = headerCell.getValue();
 
           // Reset all formatting except bold
@@ -2343,7 +2381,7 @@ function cleanupColumnFormatting(sheet, columnLetter) {
         // Additionally clear specific formatting for data rows
         try {
           if (sheet.getLastRow() > 1) {
-            const dataRows = sheet.getRange(2, columnPos, Math.max(sheet.getLastRow() - 1, 1), 1);
+            const dataRows = sheet.getRange(2, columnIndex, Math.max(sheet.getLastRow() - 1, 1), 1);
             dataRows.setBackground(null);
             dataRows.setBorder(null, null, null, null, null, null);
             dataRows.setFontColor(null);
@@ -2364,7 +2402,7 @@ function cleanupColumnFormatting(sheet, columnLetter) {
 
           // Check if any range in this rule applies to our column
           for (const range of ranges) {
-            if (range.getColumn() === columnPos) {
+            if (range.getColumn() === columnIndex) {
               shouldRemove = true;
               break;
             }
@@ -2402,7 +2440,7 @@ function cleanupColumnFormatting(sheet, columnLetter) {
 function scanAndCleanupAllSyncColumns(sheet, currentColumnLetter) {
   try {
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const currentColumnIndex = currentColumnLetter ? columnLetterToIndex(currentColumnLetter) : -1;
+    const currentColumnIndex = currentColumnLetter ? columnLetterToIndex(currentColumnLetter) - 1 : -1; // Convert to 0-based
     const columnsWithValidation = [];
 
     // First check for data validation rules that match our Sync Status patterns
@@ -2501,7 +2539,7 @@ function scanAndCleanupAllSyncColumns(sheet, currentColumnLetter) {
 
     // Look at ALL columns for specific background colors
     for (let col = 1; col <= numCols; col++) {
-      // Skip current column 
+      // Skip current column (1-based)
       if (col === currentColumnIndex + 1) continue;
 
       let foundSyncStatusFormatting = false;
@@ -2541,7 +2579,7 @@ function scanAndCleanupAllSyncColumns(sheet, currentColumnLetter) {
 /**
  * Cleans up orphaned conditional formatting rules
  * @param {Sheet} sheet - The sheet to clean up
- * @param {number} currentColumnIndex - The index of the current Sync Status column
+ * @param {number} currentColumnIndex - The index of the current Sync Status column (0-based)
  */
 function cleanupOrphanedConditionalFormatting(sheet, currentColumnIndex) {
   try {
@@ -2558,7 +2596,7 @@ function cleanupOrphanedConditionalFormatting(sheet, currentColumnIndex) {
       for (const range of ranges) {
         const column = range.getColumn();
 
-        // Skip our current column
+        // Skip our current column (currentColumnIndex is 0-based, column is 1-based)
         if (column === (currentColumnIndex + 1)) {
           continue;
         }
@@ -2761,18 +2799,13 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
     const scriptProperties = PropertiesService.getScriptProperties();
     const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
     const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
-    const twoWaySyncLastSyncKey = `TWOWAY_SYNC_LAST_SYNC_${activeSheetName}`;
-
-    // Store the previous tracking column if it exists
+    
+    // Store the previous tracking column if it exists (for cleanup purposes)
     const previousTrackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey) || '';
-    const previousPosStr = scriptProperties.getProperty(`CURRENT_SYNCSTATUS_POS_${activeSheetName}`) || '-1';
-    const previousPos = parseInt(previousPosStr, 10);
-    const currentPos = trackingColumn ? columnLetterToIndex(trackingColumn) : -1;
 
-    // Save settings to properties
+    // Save the enabled setting
     scriptProperties.setProperty(twoWaySyncEnabledKey, enableTwoWaySync.toString());
-    scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
-
+    
     // If enabling two-way sync
     if (enableTwoWaySync) {
       // Set up the onEdit trigger
@@ -2781,36 +2814,46 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
       // Determine which column to use for tracking
       let trackingColumnIndex;
       if (trackingColumn) {
-        // Convert column letter to index (0-based)
+        // Convert column letter to index (1-based)
         trackingColumnIndex = columnLetterToIndex(trackingColumn);
       } else {
-        // Use the last column
-        trackingColumnIndex = activeSheet.getLastColumn();
+        // Use the last column + 1 (to add a new column at the end)
+        trackingColumnIndex = activeSheet.getLastColumn() + 1;
       }
 
       // Set up the tracking column header
       const headerRow = 1; // Assuming first row is header
       const trackingHeader = "Sync Status";
 
-      // Create the tracking column if it doesn't exist
-      if (trackingColumnIndex >= activeSheet.getLastColumn()) {
-        // Column doesn't exist yet, add it
-        activeSheet.getRange(headerRow, trackingColumnIndex).setValue(trackingHeader);
-
-        // Update the tracking column letter based on the actual position
-        const actualColumnIndex = trackingColumnIndex;
-        trackingColumn = columnToLetter(actualColumnIndex);
+      // Check if there's already a Sync Status column
+      const headers = activeSheet.getRange(1, 1, 1, activeSheet.getLastColumn()).getValues()[0];
+      let existingSyncStatusCol = -1;
+      
+      for (let i = 0; i < headers.length; i++) {
+        if (headers[i] === trackingHeader) {
+          existingSyncStatusCol = i + 1; // Convert to 1-based
+          break;
+        }
+      }
+      
+      // If a Sync Status column already exists, use that instead
+      if (existingSyncStatusCol !== -1) {
+        trackingColumnIndex = existingSyncStatusCol;
+        
+        // Update the tracking column property
+        trackingColumn = columnToLetter(trackingColumnIndex);
         scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
-        Logger.log(`Created tracking column at position ${trackingColumnIndex} (${trackingColumn})`);
+        
+        Logger.log(`Found existing Sync Status column at ${trackingColumn} (${trackingColumnIndex})`);
       } else {
-        // Column exists, update header
+        // No existing column, create a new one
         activeSheet.getRange(headerRow, trackingColumnIndex).setValue(trackingHeader);
-
-        // Verify the tracking column letter is correct
-        const actualColumnIndex = trackingColumnIndex;
-        trackingColumn = columnToLetter(actualColumnIndex);
+        
+        // Update the tracking column property
+        trackingColumn = columnToLetter(trackingColumnIndex);
         scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
-        Logger.log(`Updated tracking column at position ${trackingColumnIndex} (${trackingColumn})`);
+        
+        Logger.log(`Created new Sync Status column at ${trackingColumn} (${trackingColumnIndex})`);
       }
 
       // Style the header cell
@@ -2873,6 +2916,14 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
 
         activeSheet.setConditionalFormatRules(rules);
       }
+      
+      // Store the current column position for comparison during cleanup
+      scriptProperties.setProperty(`CURRENT_SYNCSTATUS_POS_${activeSheetName}`, (trackingColumnIndex - 1).toString());
+      
+      // If this is a different column than before, store the previous one for cleanup
+      if (previousTrackingColumn && previousTrackingColumn !== trackingColumn) {
+        scriptProperties.setProperty(`PREVIOUS_TRACKING_COLUMN_${activeSheetName}`, previousTrackingColumn);
+      }
     } else {
       // If disabling two-way sync, remove the trigger
       removeOnEditTrigger();
@@ -2883,14 +2934,11 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
       }
     }
 
-    // Update last sync time
-    const now = new Date().toISOString();
-    scriptProperties.setProperty(twoWaySyncLastSyncKey, now);
-
+    // Return success
     return true;
   } catch (error) {
     Logger.log(`Error in saveTwoWaySyncSettings: ${error.message}`);
-    throw error;
+    return false;
   }
 }
 
