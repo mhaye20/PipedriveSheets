@@ -39,6 +39,9 @@ function syncFromPipedrive() {
     const sheetName = sheet.getName();
     Logger.log(`Active sheet: ${sheetName}`);
     
+    // IMPORTANT: Detect any column shifts that may have occurred since last sync
+    detectColumnShifts();
+    
     // Get script properties
     const scriptProperties = PropertiesService.getScriptProperties();
     

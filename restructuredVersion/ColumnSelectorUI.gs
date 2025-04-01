@@ -1268,6 +1268,15 @@ function saveColumnPreferences(entityType, sheetName, columns) {
       Logger.log(`Error verifying saved data: ${verifyError.message}`);
     }
     
+    // IMPORTANT: Notify TwoWaySyncSettingsUI about column changes
+    // This ensures the Sync Status column gets properly repositioned on next sync
+    if (typeof handleColumnPreferencesChange === 'function') {
+      Logger.log(`Notifying TwoWaySyncSettingsUI about column changes for sheet: ${sheetName}`);
+      handleColumnPreferencesChange(sheetName);
+    } else {
+      Logger.log(`handleColumnPreferencesChange function not found, skipping notification`);
+    }
+    
     return true;
   } catch (error) {
     Logger.log(`Error saving column preferences: ${error.message}`);
