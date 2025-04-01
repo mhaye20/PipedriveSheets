@@ -7,6 +7,8 @@
  * - Field definitions and metadata
  */
 
+var PipedriveAPI = PipedriveAPI || {};
+
 /**
  * Gets the Pipedrive API URL
  * @return {string} The complete API URL with subdomain
@@ -21,25 +23,107 @@ function getPipedriveApiUrl() {
  * Generic function to make authenticated API requests to Pipedrive
  */
 function makeAuthenticatedRequest(url, options = {}) {
-  // Ensure we have a valid token
-  if (!refreshAccessTokenIfNeeded()) {
-    throw new Error('Not authenticated with Pipedrive. Please connect your account first.');
-  }
-  
   const scriptProperties = PropertiesService.getScriptProperties();
   const accessToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
   
-  // Add authorization header
-  if (!options.headers) {
-    options.headers = {};
+  if (!accessToken) {
+    throw new Error('Not authenticated with Pipedrive. Please connect your account first.');
   }
-  options.headers['Authorization'] = 'Bearer ' + accessToken;
+  
+  // Set up request options with proper headers
+  const requestOptions = {
+    method: options.method || 'get',
+    headers: {
+      'Authorization': 'Bearer ' + accessToken,
+      'Accept': 'application/json',
+      ...(options.headers || {})
+    },
+    muteHttpExceptions: true,
+    ...options
+  };
   
   try {
-    const response = UrlFetchApp.fetch(url, options);
-    return JSON.parse(response.getContentText());
+    Logger.log(`Making authenticated request to: ${url}`);
+    const response = UrlFetchApp.fetch(url, requestOptions);
+    const statusCode = response.getResponseCode();
+    const responseText = response.getContentText();
+    
+    // Log response details for debugging
+    Logger.log(`Response status code: ${statusCode}`);
+    
+    // Handle different status codes
+    if (statusCode === 401) {
+      Logger.log('Received 401 Unauthorized, attempting to refresh token...');
+      // Try to refresh the token
+      if (refreshAccessTokenIfNeeded()) {
+        // Get the new token
+        const newToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
+        if (!newToken) {
+          throw new Error('Failed to refresh access token.');
+        }
+        
+        // Update the authorization header with the new token
+        requestOptions.headers['Authorization'] = 'Bearer ' + newToken;
+        
+        // Retry the request with the new token
+        const retryResponse = UrlFetchApp.fetch(url, requestOptions);
+        const retryStatusCode = retryResponse.getResponseCode();
+        const retryResponseText = retryResponse.getContentText();
+        
+        if (retryStatusCode === 401) {
+          // If we still get 401 after refresh, clear tokens and force re-auth
+          scriptProperties.deleteProperty('PIPEDRIVE_ACCESS_TOKEN');
+          scriptProperties.deleteProperty('PIPEDRIVE_REFRESH_TOKEN');
+          scriptProperties.deleteProperty('PIPEDRIVE_TOKEN_EXPIRES');
+          throw new Error('Authentication failed. Please reconnect to Pipedrive.');
+        }
+        
+        // Try to parse the retry response
+        try {
+          const retryData = JSON.parse(retryResponseText);
+          if (retryStatusCode >= 200 && retryStatusCode < 300 && retryData.success) {
+            return retryData;
+          } else {
+            throw new Error(retryData.error || `API request failed with status ${retryStatusCode}`);
+          }
+        } catch (parseError) {
+          throw new Error(`Invalid response from Pipedrive API: ${retryResponseText.substring(0, 100)}...`);
+        }
+      } else {
+        // Token refresh failed, clear tokens and force re-auth
+        scriptProperties.deleteProperty('PIPEDRIVE_ACCESS_TOKEN');
+        scriptProperties.deleteProperty('PIPEDRIVE_REFRESH_TOKEN');
+        scriptProperties.deleteProperty('PIPEDRIVE_TOKEN_EXPIRES');
+        throw new Error('Authentication failed. Please reconnect to Pipedrive.');
+      }
+    }
+    
+    // Try to parse the response as JSON
+    try {
+      const responseData = JSON.parse(responseText);
+      
+      // Check if the request was successful
+      if (statusCode >= 200 && statusCode < 300 && responseData.success) {
+        return responseData;
+      } else {
+        // Handle error response
+        const errorMessage = responseData.error || `API request failed with status ${statusCode}`;
+        Logger.log(`Pipedrive API error: ${errorMessage}`);
+        throw new Error(errorMessage);
+      }
+    } catch (parseError) {
+      Logger.log(`Error parsing response as JSON: ${parseError.message}`);
+      Logger.log(`Response text: ${responseText}`);
+      
+      // If we got HTML instead of JSON, it's likely an authentication issue
+      if (responseText.includes('<!DOCTYPE html>')) {
+        throw new Error('Authentication error. Please reconnect to Pipedrive.');
+      }
+      
+      throw new Error(`Invalid response from Pipedrive API: ${responseText.substring(0, 100)}...`);
+    }
   } catch (error) {
-    Logger.log('API request error: ' + error.message);
+    Logger.log(`Error in makeAuthenticatedRequest: ${error.message}`);
     throw error;
   }
 }
@@ -77,6 +161,13 @@ function getActivitiesWithFilter(filterId, limit = 100) {
  */
 function getLeadsWithFilter(filterId, limit = 100) {
   return getFilteredDataFromPipedrive(ENTITY_TYPES.LEADS, filterId, limit);
+}
+
+/**
+ * Gets products using a specific filter
+ */
+function getProductsWithFilter(filterId, limit = 100) {
+  return getFilteredDataFromPipedrive(ENTITY_TYPES.PRODUCTS, filterId, limit);
 }
 
 /**
@@ -153,13 +244,57 @@ function getFilteredDataFromPipedrive(entityType, filterId, limit = 100) {
 }
 
 /**
- * Gets products with a specific filter
- * @param {string} filterId - Filter ID (optional)
- * @param {number} limit - Maximum number of items to retrieve (0 for all)
- * @return {Array} Array of product objects
+ * Gets field definitions for deals
+ * @param {boolean} forceRefresh - Whether to force a refresh from the API
+ * @return {Array} Array of field definition objects
  */
-function getProductsWithFilter(filterId, limit = 0) {
-  return getFilteredEntityData('products', filterId, limit);
+function getDealFields(forceRefresh = false) {
+  return getEntityFields('dealFields', forceRefresh);
+}
+
+/**
+ * Gets field definitions for persons
+ * @param {boolean} forceRefresh - Whether to force a refresh from the API
+ * @return {Array} Array of field definition objects
+ */
+function getPersonFields(forceRefresh = false) {
+  return getEntityFields('personFields', forceRefresh);
+}
+
+/**
+ * Gets field definitions for organizations
+ * @param {boolean} forceRefresh - Whether to force a refresh from the API
+ * @return {Array} Array of field definition objects
+ */
+function getOrganizationFields(forceRefresh = false) {
+  return getEntityFields('organizationFields', forceRefresh);
+}
+
+/**
+ * Gets field definitions for activities
+ * @param {boolean} forceRefresh - Whether to force a refresh from the API
+ * @return {Array} Array of field definition objects
+ */
+function getActivityFields(forceRefresh = false) {
+  return getEntityFields('activityFields', forceRefresh);
+}
+
+/**
+ * Gets field definitions for leads
+ * @param {boolean} forceRefresh - Whether to force a refresh from the API
+ * @return {Array} Array of field definition objects
+ */
+function getLeadFields(forceRefresh = false) {
+  return getEntityFields('leadFields', forceRefresh);
+}
+
+/**
+ * Gets field definitions for products
+ * @param {boolean} forceRefresh - Whether to force a refresh from the API
+ * @return {Array} Array of field definition objects
+ */
+function getProductFields(forceRefresh = false) {
+  return getEntityFields('productFields', forceRefresh);
 }
 
 /**
@@ -248,60 +383,6 @@ function getAllItemsWithPagination(endpoint, limit = 0) {
     Logger.log(`Error in getAllItemsWithPagination: ${e.message}`);
     throw e;
   }
-}
-
-/**
- * Gets field definitions for deals
- * @param {boolean} forceRefresh - Whether to force a refresh from the API
- * @return {Array} Array of field definition objects
- */
-function getDealFields(forceRefresh = false) {
-  return getEntityFields('dealFields', forceRefresh);
-}
-
-/**
- * Gets field definitions for persons
- * @param {boolean} forceRefresh - Whether to force a refresh from the API
- * @return {Array} Array of field definition objects
- */
-function getPersonFields(forceRefresh = false) {
-  return getEntityFields('personFields', forceRefresh);
-}
-
-/**
- * Gets field definitions for organizations
- * @param {boolean} forceRefresh - Whether to force a refresh from the API
- * @return {Array} Array of field definition objects
- */
-function getOrganizationFields(forceRefresh = false) {
-  return getEntityFields('organizationFields', forceRefresh);
-}
-
-/**
- * Gets field definitions for activities
- * @param {boolean} forceRefresh - Whether to force a refresh from the API
- * @return {Array} Array of field definition objects
- */
-function getActivityFields(forceRefresh = false) {
-  return getEntityFields('activityFields', forceRefresh);
-}
-
-/**
- * Gets field definitions for leads
- * @param {boolean} forceRefresh - Whether to force a refresh from the API
- * @return {Array} Array of field definition objects
- */
-function getLeadFields(forceRefresh = false) {
-  return getEntityFields('leadFields', forceRefresh);
-}
-
-/**
- * Gets field definitions for products
- * @param {boolean} forceRefresh - Whether to force a refresh from the API
- * @return {Array} Array of field definition objects
- */
-function getProductFields(forceRefresh = false) {
-  return getEntityFields('productFields', forceRefresh);
 }
 
 /**
@@ -402,47 +483,109 @@ function getEntityFields(fieldEndpoint, forceRefresh = false) {
  */
 function getPipedriveFilters() {
   try {
-    // Ensure we have a valid token
-    if (!refreshAccessTokenIfNeeded()) {
-      throw new Error('Not authenticated with Pipedrive. Please connect your account first.');
-    }
+    Logger.log('Getting filters from Pipedrive');
     
+    // Get script properties
     const scriptProperties = PropertiesService.getScriptProperties();
+    const subdomain = scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') || DEFAULT_PIPEDRIVE_SUBDOMAIN;
     const accessToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
     
     if (!accessToken) {
-      throw new Error('Pipedrive authentication not configured. Please connect to Pipedrive first.');
+      throw new Error('Not authenticated with Pipedrive. Please connect your account first.');
     }
     
-    const baseUrl = getPipedriveApiUrl();
-    const url = `${baseUrl}/filters`;
+    // Use v1 API endpoint for filters
+    const url = `https://${subdomain}.pipedrive.com/v1/filters`;
     
+    // Make authenticated request
     const response = UrlFetchApp.fetch(url, {
-      method: 'get',
       headers: {
-        'Authorization': 'Bearer ' + accessToken
+        'Authorization': 'Bearer ' + accessToken,
+        'Accept': 'application/json'
       },
       muteHttpExceptions: true
     });
     
-    const responseData = JSON.parse(response.getContentText());
+    const statusCode = response.getResponseCode();
+    const responseText = response.getContentText();
     
-    if (responseData.success) {
+    Logger.log(`Filter API response code: ${statusCode}`);
+    
+    // Handle different status codes
+    if (statusCode === 401) {
+      Logger.log('Received 401 Unauthorized, attempting to refresh token...');
+      // Try to refresh the token
+      if (refreshAccessTokenIfNeeded()) {
+        // Get the new token
+        const newToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
+        if (!newToken) {
+          throw new Error('Failed to refresh access token.');
+        }
+        
+        // Retry the request with the new token
+        const retryResponse = UrlFetchApp.fetch(url, {
+          headers: {
+            'Authorization': 'Bearer ' + newToken,
+            'Accept': 'application/json'
+          },
+          muteHttpExceptions: true
+        });
+        
+        const retryStatusCode = retryResponse.getResponseCode();
+        const retryResponseText = retryResponse.getContentText();
+        
+        if (retryStatusCode === 401) {
+          throw new Error('Authentication failed. Please reconnect to Pipedrive.');
+        }
+        
+        // Parse retry response
+        const retryData = JSON.parse(retryResponseText);
+        if (retryStatusCode >= 200 && retryStatusCode < 300 && retryData.success) {
+          // Enhance filters with their type in human-readable form
+          const filters = retryData.data || [];
+          Logger.log(`Retrieved ${filters.length} filters from Pipedrive`);
+          
+          filters.forEach(filter => {
+            filter.typeFormatted = formatFilterType(filter.type);
+            filter.normalizedType = normalizeFilterType(filter.type);
+            Logger.log(`Filter: ${filter.name}, Type: ${filter.type}, Normalized: ${filter.normalizedType}`);
+          });
+          
+          return filters;
+        }
+      }
+      
+      throw new Error('Authentication failed. Please reconnect to Pipedrive.');
+    }
+    
+    // Parse the response
+    try {
+      const responseData = JSON.parse(responseText);
+      
+      if (!responseData.success) {
+        throw new Error(responseData.error || 'Unknown error');
+      }
+      
       // Enhance filters with their type in human-readable form
       const filters = responseData.data || [];
+      Logger.log(`Retrieved ${filters.length} filters from Pipedrive`);
+      
       filters.forEach(filter => {
         filter.typeFormatted = formatFilterType(filter.type);
-        
-        // Add a normalized type property to handle inconsistencies
         filter.normalizedType = normalizeFilterType(filter.type);
-        
-        // Log filter details for debugging
         Logger.log(`Filter: ${filter.name}, Type: ${filter.type}, Normalized: ${filter.normalizedType}`);
       });
       
       return filters;
-    } else {
-      throw new Error(`Failed to get filters: ${responseData.error || 'Unknown error'}`);
+    } catch (parseError) {
+      Logger.log(`Error parsing response as JSON: ${parseError.message}`);
+      Logger.log(`Response text: ${responseText}`);
+      
+      if (responseText.includes('<!DOCTYPE html>')) {
+        throw new Error('Authentication error. Please reconnect to Pipedrive.');
+      }
+      
+      throw new Error(`Invalid response from Pipedrive API: ${responseText.substring(0, 100)}...`);
     }
   } catch (e) {
     Logger.log(`Error in getPipedriveFilters: ${e.message}`);
@@ -486,23 +629,34 @@ function formatFilterType(type) {
  * @return {string} Normalized filter type matching ENTITY_TYPES
  */
 function normalizeFilterType(type) {
-  switch (type) {
+  if (!type) return '';
+  
+  // Convert to lowercase for consistent comparison
+  const lowerType = type.toLowerCase();
+  
+  switch (lowerType) {
     case 'deals':
-      return 'deals';
-    case 'person': 
+      return ENTITY_TYPES.DEALS;
+    case 'person':
     case 'people':
-      return 'persons';
+    case 'persons':
+      return ENTITY_TYPES.PERSONS;
     case 'org':
     case 'organization':
-      return 'organizations';
+    case 'organizations':
+      return ENTITY_TYPES.ORGANIZATIONS;
     case 'product':
-      return 'products';
+    case 'products':
+      return ENTITY_TYPES.PRODUCTS;
     case 'activity':
-      return 'activities';
+    case 'activities':
+      return ENTITY_TYPES.ACTIVITIES;
     case 'lead':
-      return 'leads';
+    case 'leads':
+      return ENTITY_TYPES.LEADS;
     default:
-      return type;
+      Logger.log(`Unknown filter type: ${type}`);
+      return lowerType;
   }
 }
 
@@ -513,17 +667,117 @@ function normalizeFilterType(type) {
  */
 function getFiltersForEntityType(entityType) {
   try {
-    // Get all filters
-    const filters = getPipedriveFilters();
+    Logger.log(`Getting filters for entity type: ${entityType}`);
     
-    // Filter based on normalized type matching the requested entity type
-    return filters.filter(filter => {
-      // Use the normalized type for comparison to handle inconsistencies in Pipedrive's API
-      return filter.normalizedType === entityType;
+    // Get script properties
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const subdomain = scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') || DEFAULT_PIPEDRIVE_SUBDOMAIN;
+    const accessToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
+    
+    if (!accessToken) {
+      throw new Error('Not authenticated with Pipedrive. Please connect your account first.');
+    }
+    
+    // Use v1 API endpoint for filters
+    const url = `https://${subdomain}.pipedrive.com/v1/filters`;
+    
+    // Make authenticated request
+    const response = UrlFetchApp.fetch(url, {
+      headers: {
+        'Authorization': 'Bearer ' + accessToken,
+        'Accept': 'application/json'
+      },
+      muteHttpExceptions: true
     });
+    
+    const statusCode = response.getResponseCode();
+    const responseText = response.getContentText();
+    
+    Logger.log(`Filter API response code: ${statusCode}`);
+    
+    // Handle different status codes
+    if (statusCode === 401) {
+      Logger.log('Received 401 Unauthorized, attempting to refresh token...');
+      // Try to refresh the token
+      if (refreshAccessTokenIfNeeded()) {
+        // Get the new token
+        const newToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
+        if (!newToken) {
+          throw new Error('Failed to refresh access token.');
+        }
+        
+        // Retry the request with the new token
+        const retryResponse = UrlFetchApp.fetch(url, {
+          headers: {
+            'Authorization': 'Bearer ' + newToken,
+            'Accept': 'application/json'
+          },
+          muteHttpExceptions: true
+        });
+        
+        const retryStatusCode = retryResponse.getResponseCode();
+        const retryResponseText = retryResponse.getContentText();
+        
+        if (retryStatusCode === 401) {
+          throw new Error('Authentication failed. Please reconnect to Pipedrive.');
+        }
+        
+        // Parse retry response
+        const retryData = JSON.parse(retryResponseText);
+        if (retryStatusCode >= 200 && retryStatusCode < 300 && retryData.success) {
+          const filters = retryData.data || [];
+          Logger.log(`Retrieved ${filters.length} total filters`);
+          
+          // Filter based on normalized type matching the requested entity type
+          const matchingFilters = filters.filter(filter => {
+            const normalizedType = normalizeFilterType(filter.type);
+            const isMatch = normalizedType === entityType;
+            Logger.log(`Filter: ${filter.name}, Type: ${filter.type}, Normalized: ${normalizedType}, Matches ${entityType}: ${isMatch}`);
+            return isMatch;
+          });
+          
+          Logger.log(`Found ${matchingFilters.length} matching filters for ${entityType}`);
+          return matchingFilters;
+        }
+      }
+      
+      throw new Error('Authentication failed. Please reconnect to Pipedrive.');
+    }
+    
+    // Parse the response
+    try {
+      const responseData = JSON.parse(responseText);
+      
+      if (!responseData.success) {
+        throw new Error(responseData.error || 'Unknown error');
+      }
+      
+      const filters = responseData.data || [];
+      Logger.log(`Retrieved ${filters.length} total filters`);
+      
+      // Filter based on normalized type matching the requested entity type
+      const matchingFilters = filters.filter(filter => {
+        const normalizedType = normalizeFilterType(filter.type);
+        const isMatch = normalizedType === entityType;
+        Logger.log(`Filter: ${filter.name}, Type: ${filter.type}, Normalized: ${normalizedType}, Matches ${entityType}: ${isMatch}`);
+        return isMatch;
+      });
+      
+      Logger.log(`Found ${matchingFilters.length} matching filters for ${entityType}`);
+      return matchingFilters;
+    } catch (parseError) {
+      Logger.log(`Error parsing response as JSON: ${parseError.message}`);
+      Logger.log(`Response text: ${responseText}`);
+      
+      if (responseText.includes('<!DOCTYPE html>')) {
+        throw new Error('Authentication error. Please reconnect to Pipedrive.');
+      }
+      
+      throw new Error(`Invalid response from Pipedrive API: ${responseText.substring(0, 100)}...`);
+    }
   } catch (e) {
     Logger.log(`Error in getFiltersForEntityType: ${e.message}`);
-    return [];
+    throw new Error(`Failed to get filters for ${entityType}: ${e.message}`);
   }
 }
 
@@ -611,14 +865,6 @@ function makePipedriveRequest(endpoint, options = {}) {
     },
     muteHttpExceptions: true
   }, options);
-  
-  // Add authorization header if not already present
-  if (!requestOptions.headers) {
-    requestOptions.headers = {};
-  }
-  if (!requestOptions.headers['Authorization']) {
-    requestOptions.headers['Authorization'] = 'Bearer ' + accessToken;
-  }
   
   // Make the request
   try {
@@ -763,8 +1009,21 @@ function getCustomFieldsForEntity(entityType) {
 }
 
 // Export API functions to be available through the PipedriveAPI namespace
-const PipedriveAPI = {
-  getFiltersForEntityType: getFiltersForEntityType,
-  getCustomFieldMappings: getCustomFieldMappings,
-  getCustomFieldsForEntity: getCustomFieldsForEntity
-};
+Object.assign(PipedriveAPI, {
+  getDealsWithFilter,
+  getPersonsWithFilter,
+  getOrganizationsWithFilter,
+  getActivitiesWithFilter,
+  getLeadsWithFilter,
+  getProductsWithFilter,
+  getDealFields,
+  getPersonFields,
+  getOrganizationFields,
+  getActivityFields,
+  getLeadFields,
+  getProductFields,
+  getFieldOptionMappingsForEntity,
+  getFiltersForEntityType,
+  getCustomFieldMappings,
+  getCustomFieldsForEntity
+});

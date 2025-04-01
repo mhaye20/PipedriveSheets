@@ -22,54 +22,67 @@ function showAuthorizationDialog() {
   if (accessToken) {
     // Check if token is still valid by making a test request
     try {
-      // Use proper OAuth authentication with Bearer token instead of api_token parameter
       const testUrl = `${getPipedriveApiUrl()}/users/me`;
-      const response = UrlFetchApp.fetch(testUrl, {
-        headers: {
-          'Authorization': 'Bearer ' + accessToken
-        },
-        muteHttpExceptions: true
-      });
+      const response = makeAuthenticatedRequest(testUrl);
       
-      const statusCode = response.getResponseCode();
-      const data = JSON.parse(response.getContentText());
-      
-      if (statusCode === 200 && data.success) {
+      if (response && response.success) {
         const ui = SpreadsheetApp.getUi();
         const result = ui.alert(
           'Already Connected',
-          'You are already connected to Pipedrive as ' + data.data.name + '. Do you want to reconnect?',
+          'You are already connected to Pipedrive as ' + response.data.name + '. Do you want to reconnect?',
           ui.ButtonSet.YES_NO
         );
         
         if (result === ui.Button.NO) {
           return;
         }
-      } else {
-        // Token is invalid, continue with auth
-        Logger.log('Token validation failed: ' + data.error + ' (status code: ' + statusCode + ')');
+        
+        // User wants to reconnect, clear existing tokens
+        scriptProperties.deleteProperty('PIPEDRIVE_ACCESS_TOKEN');
+        scriptProperties.deleteProperty('PIPEDRIVE_REFRESH_TOKEN');
+        scriptProperties.deleteProperty('PIPEDRIVE_TOKEN_EXPIRES');
       }
     } catch (e) {
-      // Token is probably invalid, continue with auth
+      // Token is invalid, continue with auth
       Logger.log('Error checking token: ' + e.message);
+      // Clear any existing tokens
+      scriptProperties.deleteProperty('PIPEDRIVE_ACCESS_TOKEN');
+      scriptProperties.deleteProperty('PIPEDRIVE_REFRESH_TOKEN');
+      scriptProperties.deleteProperty('PIPEDRIVE_TOKEN_EXPIRES');
     }
   }
   
   // Create the OAuth2 authorization URL
-  const authUrl = `https://oauth.pipedrive.com/oauth/authorize?client_id=${PIPEDRIVE_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&state=${generateRandomState()}&scope=base deals:read deals:write persons:read persons:write organizations:read organizations:write activities:read activities:write leads:read leads:write products:read products:write`;
+  const state = generateRandomState();
+  const scopes = [
+    'base',
+    'deals:read', 'deals:write',
+    'persons:read', 'persons:write',
+    'organizations:read', 'organizations:write',
+    'activities:read', 'activities:write',
+    'leads:read', 'leads:write',
+    'products:read', 'products:write'
+  ].join(' ');
+  
+  const authUrl = `https://oauth.pipedrive.com/oauth/authorize?client_id=${PIPEDRIVE_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&state=${state}&scope=${encodeURIComponent(scopes)}`;
   
   Logger.log(`Generated authorization URL with redirect URI: ${REDIRECT_URI}`);
   Logger.log(`Authorization URL: ${authUrl}`);
+  
+  // Save state for validation in callback
+  scriptProperties.setProperty('OAUTH_STATE', state);
   
   // Display the authorization dialog
   const template = HtmlService.createTemplate(
     '<html>'
     + '<head>'
     + '<style>'
-    + 'button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }'
+    + 'body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }'
+    + 'button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }'
     + 'button:hover { background-color: #45a049; }'
     + '.container { text-align: center; padding: 20px; }'
-    + 'h2 { color: #333; }'
+    + 'h2 { color: #333; margin-bottom: 16px; }'
+    + 'p { color: #666; margin-bottom: 24px; }'
     + '</style>'
     + '</head>'
     + '<body>'
@@ -112,7 +125,33 @@ function doGet(e) {
   if (e.parameter.page === 'oauthCallback') {
     // This function is called when Pipedrive redirects back to the app
     const code = e.parameter.code;
-    Logger.log(`OAuth callback received with code: ${code ? 'present' : 'missing'}`);
+    const state = e.parameter.state;
+    Logger.log(`OAuth callback received with code: ${code ? 'present' : 'missing'} and state: ${state}`);
+    
+    // Validate state to prevent CSRF attacks
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const savedState = scriptProperties.getProperty('OAUTH_STATE');
+    scriptProperties.deleteProperty('OAUTH_STATE'); // Clear state after use
+    
+    if (!state || state !== savedState) {
+      Logger.log('State validation failed');
+      return HtmlService.createHtmlOutput(
+        '<html>'
+        + '<head>'
+        + '<style>'
+        + 'body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }'
+        + '.error { color: #f44336; font-size: 24px; }'
+        + '</style>'
+        + '</head>'
+        + '<body>'
+        + '<h1 class="error">Security Error</h1>'
+        + '<p>Invalid state parameter. This could be a security issue or the authorization process was interrupted.</p>'
+        + '<p>Please try again.</p>'
+        + '</body>'
+        + '</html>'
+      )
+      .setTitle('Security Error');
+    }
     
     if (code) {
       try {
@@ -125,7 +164,8 @@ function doGet(e) {
           method: 'post',
           headers: {
             'Authorization': authHeader,
-            'Content-Type': 'application/x-www-form-urlencoded'
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json'
           },
           payload: {
             grant_type: 'authorization_code',
@@ -144,14 +184,25 @@ function doGet(e) {
           throw new Error(`Token exchange failed with status ${responseCode}: ${responseText}`);
         }
         
-        const tokenData = JSON.parse(responseText);
+        let tokenData;
+        try {
+          tokenData = JSON.parse(responseText);
+        } catch (parseError) {
+          Logger.log(`Error parsing token response: ${parseError.message}`);
+          throw new Error('Invalid response from Pipedrive OAuth server');
+        }
         
         if (!tokenData.access_token) {
           throw new Error(`No access token returned: ${responseText}`);
         }
         
-        // Save the tokens in script properties
-        const scriptProperties = PropertiesService.getScriptProperties();
+        // Clear any existing tokens first
+        scriptProperties.deleteProperty('PIPEDRIVE_ACCESS_TOKEN');
+        scriptProperties.deleteProperty('PIPEDRIVE_REFRESH_TOKEN');
+        scriptProperties.deleteProperty('PIPEDRIVE_TOKEN_EXPIRES');
+        scriptProperties.deleteProperty('PIPEDRIVE_SUBDOMAIN');
+        
+        // Save the new tokens
         scriptProperties.setProperty('PIPEDRIVE_ACCESS_TOKEN', tokenData.access_token);
         scriptProperties.setProperty('PIPEDRIVE_REFRESH_TOKEN', tokenData.refresh_token);
         scriptProperties.setProperty('PIPEDRIVE_TOKEN_EXPIRES', new Date().getTime() + (tokenData.expires_in * 1000));
@@ -166,34 +217,21 @@ function doGet(e) {
             Logger.log(`Setting subdomain to: ${subdomain}`);
             scriptProperties.setProperty('PIPEDRIVE_SUBDOMAIN', subdomain);
           }
-        } else {
-          Logger.log(`No API domain in token response, querying user info`);
-          // Get user info to determine the subdomain if not provided in token response
-          const userResponse = UrlFetchApp.fetch('https://api.pipedrive.com/v1/users/me', {
-            headers: {
-              'Authorization': 'Bearer ' + tokenData.access_token
-            },
-            muteHttpExceptions: true
-          });
-          
-          const userStatusCode = userResponse.getResponseCode();
-          const userResponseText = userResponse.getContentText();
-          Logger.log(`User info response code: ${userStatusCode}`);
-          
-          if (userStatusCode === 200) {
-            const userData = JSON.parse(userResponseText);
-            
-            if (userData.success) {
-              // Extract the company domain from the user data
-              const companyDomain = userData.data.company_domain;
-              Logger.log(`Setting subdomain to: ${companyDomain}`);
-              scriptProperties.setProperty('PIPEDRIVE_SUBDOMAIN', companyDomain);
-            } else {
-              Logger.log(`User info request wasn't successful: ${userResponseText}`);
+        }
+        
+        // Get user info to verify connection and get company domain if needed
+        try {
+          const userResponse = makeAuthenticatedRequest(`${getPipedriveApiUrl()}/users/me`);
+          if (userResponse && userResponse.success && userResponse.data) {
+            const userData = userResponse.data;
+            if (!scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') && userData.company_domain) {
+              Logger.log(`Setting subdomain from user info: ${userData.company_domain}`);
+              scriptProperties.setProperty('PIPEDRIVE_SUBDOMAIN', userData.company_domain);
             }
-          } else {
-            Logger.log(`Failed to get user info: ${userResponseText}`);
           }
+        } catch (userError) {
+          Logger.log(`Error getting user info: ${userError.message}`);
+          // Non-fatal error, continue with success page
         }
         
         // Display success page
@@ -203,11 +241,14 @@ function doGet(e) {
           + '<style>'
           + 'body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }'
           + '.success { color: #4CAF50; font-size: 24px; }'
+          + 'button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 20px; }'
+          + 'button:hover { background-color: #45a049; }'
           + '</style>'
           + '</head>'
           + '<body>'
           + '<h1 class="success">✓ Successfully Connected!</h1>'
           + '<p>You have successfully connected your Pipedrive account. You can close this window and return to Google Sheets.</p>'
+          + '<button onclick="window.close()">Close Window</button>'
           + '</body>'
           + '</html>'
         )
@@ -221,11 +262,13 @@ function doGet(e) {
           + '<style>'
           + 'body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }'
           + '.error { color: #f44336; font-size: 24px; }'
+          + 'pre { background: #f5f5f5; padding: 10px; border-radius: 4px; text-align: left; overflow-x: auto; }'
           + '</style>'
           + '</head>'
           + '<body>'
           + '<h1 class="error">Error Connecting</h1>'
-          + '<p>There was an error connecting to Pipedrive: ' + error.message + '</p>'
+          + '<p>There was an error connecting to Pipedrive:</p>'
+          + '<pre>' + error.message + '</pre>'
           + '<p>Please try again or contact support.</p>'
           + '</body>'
           + '</html>'
@@ -245,6 +288,7 @@ function doGet(e) {
         + '<body>'
         + '<h1 class="error">Authorization Failed</h1>'
         + '<p>The authorization process was cancelled or failed.</p>'
+        + '<p>Error details: ' + (e.parameter.error || 'No error details provided') + '</p>'
         + '</body>'
         + '</html>'
       )
@@ -258,6 +302,7 @@ function doGet(e) {
 
 /**
  * Refreshes the access token if needed
+ * @return {boolean} True if token is valid or was refreshed successfully, false otherwise
  */
 function refreshAccessTokenIfNeeded() {
   const scriptProperties = PropertiesService.getScriptProperties();
@@ -268,6 +313,10 @@ function refreshAccessTokenIfNeeded() {
   // If no token or refresh token, we can't refresh
   if (!accessToken || !refreshToken) {
     Logger.log('Cannot refresh token: missing access token or refresh token');
+    // Clear any existing tokens to force re-authentication
+    scriptProperties.deleteProperty('PIPEDRIVE_ACCESS_TOKEN');
+    scriptProperties.deleteProperty('PIPEDRIVE_REFRESH_TOKEN');
+    scriptProperties.deleteProperty('PIPEDRIVE_TOKEN_EXPIRES');
     return false;
   }
   
@@ -300,6 +349,10 @@ function refreshAccessTokenIfNeeded() {
       
       if (responseCode !== 200) {
         Logger.log(`Token refresh failed: ${responseText}`);
+        // Clear tokens to force re-authentication
+        scriptProperties.deleteProperty('PIPEDRIVE_ACCESS_TOKEN');
+        scriptProperties.deleteProperty('PIPEDRIVE_REFRESH_TOKEN');
+        scriptProperties.deleteProperty('PIPEDRIVE_TOKEN_EXPIRES');
         return false;
       }
       
@@ -307,6 +360,10 @@ function refreshAccessTokenIfNeeded() {
       
       if (!tokenData.access_token) {
         Logger.log(`No access token in refresh response: ${responseText}`);
+        // Clear tokens to force re-authentication
+        scriptProperties.deleteProperty('PIPEDRIVE_ACCESS_TOKEN');
+        scriptProperties.deleteProperty('PIPEDRIVE_REFRESH_TOKEN');
+        scriptProperties.deleteProperty('PIPEDRIVE_TOKEN_EXPIRES');
         return false;
       }
       
@@ -331,6 +388,10 @@ function refreshAccessTokenIfNeeded() {
       return true;
     } catch (error) {
       Logger.log('Token refresh error: ' + error.message);
+      // Clear tokens to force re-authentication
+      scriptProperties.deleteProperty('PIPEDRIVE_ACCESS_TOKEN');
+      scriptProperties.deleteProperty('PIPEDRIVE_REFRESH_TOKEN');
+      scriptProperties.deleteProperty('PIPEDRIVE_TOKEN_EXPIRES');
       return false;
     }
   }

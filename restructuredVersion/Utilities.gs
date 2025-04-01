@@ -15,8 +15,11 @@
 function formatColumnName(name) {
   if (!name) return '';
   
+  // Convert to string if not already a string
+  let formatted = String(name);
+  
   // Replace underscores with spaces
-  let formatted = name.replace(/_/g, ' ');
+  formatted = formatted.replace(/_/g, ' ');
   
   // Capitalize first letter of each word
   formatted = formatted.replace(/\b\w/g, l => l.toUpperCase());
@@ -25,166 +28,258 @@ function formatColumnName(name) {
 }
 
 /**
- * Gets a value from an object by path notation (e.g., "person.email.value")
- * @param {Object} obj - The object to extract value from
- * @param {string} path - The path to the value
- * @return {*} The value at the path or empty string if not found
+ * Gets a value from an object using a dot-notation path
  */
 function getValueByPath(obj, path) {
-  try {
-    if (!obj || !path) return '';
-    
-    // Handle simple properties directly
-    if (obj[path] !== undefined) {
-      return obj[path];
-    }
-    
-    // Split path into parts and traverse the object
-    const parts = path.split('.');
-    let current = obj;
-    
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      
-      if (current[part] === undefined) {
-        // Special case for nested objects in Pipedrive API
-        if (part === 'value' && current.value !== undefined) {
-          return current.value;
-        }
-        
-        // Special case for owner_id which is actually an object in Pipedrive
-        if (part === 'owner_id' && current.owner && current.owner.id !== undefined) {
-          return current.owner.id;
-        }
-        
-        // For arrays, try to extract the first element
-        if (Array.isArray(current) && current.length > 0) {
-          if (i === 0) {
-            // Start from the first array element
-            current = current[0];
-            i--; // Re-process the current part
-            continue;
-          }
-        }
-        
-        return '';
-      }
-      
-      current = current[part];
-      
-      // If we've reached a null or undefined value, return empty string
-      if (current === null || current === undefined) {
-        return '';
-      }
-    }
-    
-    // Special handling for Pipedrive API objects
-    if (typeof current === 'object' && current !== null) {
-      if (current.value !== undefined) {
-        return current.value;
-      }
-      
-      if (current.name !== undefined) {
-        return current.name;
-      }
-    }
-    
-    return current;
-  } catch (e) {
-    Logger.log(`Error in getValueByPath for path ${path}: ${e.message}`);
-    return '';
+  // If path is already an object with a key property, use that
+  if (typeof path === 'object' && path.key) {
+    path = path.key;
   }
+
+  // Special handling for email and phone fields 
+  // These are arrays with label and value properties in Pipedrive
+  if (typeof path === 'string' && (path.startsWith('email.') || path.startsWith('phone.'))) {
+    const parts = path.split('.');
+    const fieldType = parts[0]; // 'email' or 'phone'
+    const labelType = parts[1].toLowerCase(); // 'work', 'home', etc.
+    
+    // Get the array of email/phone objects
+    const fieldArray = obj[fieldType];
+    
+    // If it's an array, try to find the specific type
+    if (Array.isArray(fieldArray)) {
+      // Try to find object with matching label
+      const match = fieldArray.find(item => 
+        item && item.label && item.label.toLowerCase() === labelType
+      );
+      
+      if (match && match.value) {
+        return match.value;
+      }
+      
+      // If no match found, return primary or first
+      const primary = fieldArray.find(item => item && item.primary);
+      if (primary && primary.value) {
+        return primary.value;
+      }
+      
+      // If no primary, return first value if available
+      if (fieldArray.length > 0 && fieldArray[0] && fieldArray[0].value) {
+        return fieldArray[0].value;
+      }
+      
+      // No suitable value found
+      return '';
+    }
+    
+    // Not an array - just return the property if it exists
+    return obj[fieldType] || '';
+  }
+
+  // Special handling for custom_fields in API v2
+  if (path.startsWith('custom_fields.') && obj.custom_fields) {
+    const parts = path.split('.');
+    const fieldKey = parts[1];
+    const nestedField = parts.length > 2 ? parts.slice(2).join('.') : null;
+
+    // If the custom field exists
+    if (obj.custom_fields[fieldKey] !== undefined) {
+      const fieldValue = obj.custom_fields[fieldKey];
+
+      // If we need to extract a nested property from the custom field
+      if (nestedField) {
+        return getValueByPath(fieldValue, nestedField);
+      }
+
+      // Otherwise return the field value itself
+      return fieldValue;
+    }
+
+    return undefined;
+  }
+
+  // Handle simple non-nested case
+  if (!path.includes('.')) {
+    return obj[path];
+  }
+
+  // Handle nested paths
+  const parts = path.split('.');
+  let current = obj;
+
+  for (const part of parts) {
+    if (current === null || current === undefined) {
+      return undefined;
+    }
+
+    // Handle array indexing
+    if (!isNaN(part) && Array.isArray(current)) {
+      const index = parseInt(part);
+      current = current[index];
+    } else {
+      current = current[part];
+    }
+  }
+
+  return current;
 }
 
 /**
- * Formats a value based on its column and field type
+ * Formats a value based on its type and column configuration
  * @param {*} value - The value to format
- * @param {string} columnPath - The column path
+ * @param {Object|string} column - The column object or path
  * @param {Object} optionMappings - Option mappings for enum/select fields
  * @return {string} Formatted value
  */
 function formatValue(value, columnPath, optionMappings = {}) {
-  try {
-    // Handle null/undefined values
-    if (value === null || value === undefined) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  // If columnPath is an object with a key property, use that key
+  if (typeof columnPath === 'object' && columnPath.key) {
+    columnPath = columnPath.key;
+  }
+
+  // Special handling for email and phone arrays
+  if (typeof columnPath === 'string' && (columnPath === 'email' || columnPath === 'phone')) {
+    // If the value is an array of contact objects
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        return '';
+      }
+      
+      // First try to find primary value
+      const primary = value.find(item => item && item.primary);
+      if (primary && primary.value) {
+        return primary.value;
+      }
+      
+      // If no primary, return first value if it exists
+      if (value[0] && value[0].value) {
+        return value[0].value;
+      }
+      
+      // Otherwise return empty string
       return '';
     }
     
-    // Handle arrays
-    if (Array.isArray(value)) {
-      if (value.length === 0) return '';
-      
-      // Try to extract meaningful data from array items
-      return value.map(item => {
-        if (item === null || item === undefined) return '';
-        
-        if (typeof item === 'object') {
-          // If object has name property, use it
-          if (item.name !== undefined) return item.name;
-          
-          // If object has value property, use it
-          if (item.value !== undefined) return item.value;
-          
-          // Fall back to stringification for other objects
-          return JSON.stringify(item);
-        }
-        
-        return item.toString();
-      }).join(', ');
+    // If it's a simple value already
+    if (typeof value === 'string') {
+      return value;
     }
-    
-    // Handle objects
-    if (typeof value === 'object') {
-      // If object has name property, use it
-      if (value.name !== undefined) return value.name;
-      
-      // If object has value property, use it
-      if (value.value !== undefined) return value.value;
-      
-      // If object has id property, try to find a label in option mappings
-      if (value.id !== undefined && optionMappings[columnPath]) {
-        const mapping = optionMappings[columnPath];
-        const option = mapping[value.id.toString()];
-        if (option) return option;
+  }
+
+  // Handle custom fields from API v2
+  // In API v2, custom fields are in a nested object
+  if (columnPath.startsWith('custom_fields.')) {
+    // The field key is the part after "custom_fields."
+    const fieldKey = columnPath.split('.')[1];
+
+    // If it's a multiple option field in new format (array of numbers)
+    if (Array.isArray(value)) {
+      // Check if we have option mappings for this field
+      if (optionMappings[fieldKey]) {
+        const labels = value.map(id => {
+          // Return the label if we have it, otherwise just return the ID
+          return optionMappings[fieldKey][id] || id;
+        });
+        return labels.join(', ');
       }
-      
-      // Fall back to stringification for other objects
+      return value.join(', ');
+    }
+
+    // Handle currency fields and other object-based custom fields
+    if (typeof value === 'object' && value !== null) {
+      if (value.value !== undefined && value.currency !== undefined) {
+        return `${value.value} ${value.currency}`;
+      }
+      if (value.value !== undefined && value.until !== undefined) {
+        return `${value.value} - ${value.until}`;
+      }
+      // For address fields
+      if (value.value !== undefined && value.formatted_address !== undefined) {
+        return value.formatted_address;
+      }
       return JSON.stringify(value);
     }
-    
-    // Handle boolean values
-    if (typeof value === 'boolean') {
-      return value ? 'Yes' : 'No';
+
+    // For single option fields (now just a number)
+    if (typeof value === 'number' && optionMappings[fieldKey]) {
+      return optionMappings[fieldKey][value] || value;
     }
-    
-    // Handle date fields
-    if (columnPath.includes('date') || columnPath.includes('_at') || columnPath.includes('_time')) {
-      // Try to parse as date if string
-      if (typeof value === 'string') {
-        try {
-          const date = new Date(value);
-          if (!isNaN(date)) {
-            return date.toLocaleString();
-          }
-        } catch (e) {
-          // If parsing fails, use the original value
+  }
+
+  // Handle comma-separated IDs for multiple options fields (API v1 format - for backward compatibility)
+  if (typeof value === 'string' && /^[0-9]+(,[0-9]+)*$/.test(value)) {
+    // This looks like a comma-separated list of IDs, likely a multiple option field
+
+    // Extract the field key from the column path (remove any array or nested indices)
+    let fieldKey;
+
+    // Special handling for custom_fields paths
+    if (columnPath.startsWith('custom_fields.')) {
+      // For custom fields, the field key is after "custom_fields."
+      fieldKey = columnPath.split('.')[1];
+    } else {
+      // For regular fields, use the first part of the path
+      fieldKey = columnPath.split('.')[0];
+    }
+
+    // Check if we have option mappings for this field
+    if (optionMappings[fieldKey]) {
+      const ids = value.split(',');
+      const labels = ids.map(id => {
+        // Return the label if we have it, otherwise just return the ID
+        return optionMappings[fieldKey][id] || id;
+      });
+      return labels.join(', ');
+    }
+  }
+
+  // Regular object handling
+  if (typeof value === 'object') {
+    // Check if it's an array of email/phone objects
+    if (Array.isArray(value) && value.length > 0 && 
+        value[0] && typeof value[0] === 'object' && 
+        value[0].value !== undefined) {
+      
+      // If the objects have label and value properties (email/phone array)
+      if (value[0].hasOwnProperty('value') && value[0].hasOwnProperty('label')) {
+        // First try to find primary contact
+        const primary = value.find(item => item && item.primary);
+        if (primary && primary.value) {
+          return primary.value;
         }
+        
+        // Otherwise return first value
+        return value[0].value;
+      }
+      
+      // For other arrays of objects with label property, extract and join labels
+      if (value[0].label !== undefined) {
+        return value.map(option => option.label).join(', ');
       }
     }
-    
-    // Handle enum/select fields
-    if (optionMappings[columnPath]) {
-      const mapping = optionMappings[columnPath];
-      const option = mapping[value.toString()];
-      if (option) return option;
+    // Check if it's a single option object
+    else if (value.label !== undefined) {
+      return value.label;
     }
-    
-    // Default to string representation
-    return value.toString();
-  } catch (e) {
-    Logger.log(`Error in formatValue for column ${columnPath}: ${e.message}`);
-    return value ? value.toString() : '';
+    // Handle person/org objects
+    else if (value.name !== undefined) {
+      return value.name;
+    }
+    // Handle currency objects
+    else if (value.currency !== undefined && value.value !== undefined) {
+      return `${value.value} ${value.currency}`;
+    }
+    // For other objects, convert to JSON string
+    return JSON.stringify(value);
+  } else if (typeof value === 'boolean') {
+    return value ? 'Yes' : 'No';
   }
+
+  return value.toString();
 }
 
 /**

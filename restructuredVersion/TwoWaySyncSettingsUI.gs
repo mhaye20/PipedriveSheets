@@ -638,4 +638,8 @@ TwoWaySyncSettingsUI.getScripts = function() {
         .saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn);
     }
   </script>`;
-}; 
+};
+
+// Export functions to be globally accessible
+this.showTwoWaySyncSettings = TwoWaySyncSettingsUI.showTwoWaySyncSettings;
+this.handleColumnPreferencesChange = TwoWaySyncSettingsUI.handleColumnPreferencesChange; 

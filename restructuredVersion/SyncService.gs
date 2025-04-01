@@ -11,136 +11,87 @@
 var SyncService = SyncService || {};
 
 /**
+ * Checks if a sync operation is currently running
+ * @return {boolean} True if a sync is running, false otherwise
+ */
+function isSyncRunning() {
+  const scriptProperties = PropertiesService.getScriptProperties();
+  return scriptProperties.getProperty('SYNC_RUNNING') === 'true';
+}
+
+/**
+ * Sets the sync running status
+ * @param {boolean} isRunning - Whether the sync is running
+ */
+function setSyncRunning(isRunning) {
+  const scriptProperties = PropertiesService.getScriptProperties();
+  scriptProperties.setProperty('SYNC_RUNNING', isRunning ? 'true' : 'false');
+}
+
+/**
  * Main synchronization function that syncs data from Pipedrive to the sheet
  */
 function syncFromPipedrive() {
-  // Show a loading message
-  const ui = SpreadsheetApp.getUi();
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const activeSheet = spreadsheet.getActiveSheet();
-  const activeSheetName = activeSheet.getName();
-
-  // First check for column shifts
-  detectColumnShifts();
-
-  // Get the script properties
-  const scriptProperties = PropertiesService.getScriptProperties();
-
-  // Check if two-way sync is enabled for this sheet
-  const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
-  const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
-  const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
-
-  // Get the current entity type for this specific sheet
-  const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
-  const currentEntityType = scriptProperties.getProperty(sheetEntityTypeKey);
-  const lastEntityTypeKey = `LAST_ENTITY_TYPE_${activeSheetName}`;
-  const lastEntityType = scriptProperties.getProperty(lastEntityTypeKey);
-
-  // Debug log to help troubleshoot
-  Logger.log(`Syncing sheet ${activeSheetName}, entity type: ${currentEntityType}, sheet key: ${sheetEntityTypeKey}`);
-
-  // Check if entity type has changed
-  if (currentEntityType !== lastEntityType && currentEntityType && twoWaySyncEnabled) {
-    // Entity type has changed - clear the Sync Status column letter
-    Logger.log(`Entity type changed from ${lastEntityType || 'none'} to ${currentEntityType}. Clearing tracking column.`);
-    scriptProperties.deleteProperty(twoWaySyncTrackingColumnKey);
-
-    // Add a flag to indicate that the Sync Status column should be repositioned
-    const twoWaySyncColumnAtEndKey = `TWOWAY_SYNC_COLUMN_AT_END_${activeSheetName}`;
-    scriptProperties.setProperty(twoWaySyncColumnAtEndKey, 'true');
-
-    // Store the new entity type as the last synced entity type
-    scriptProperties.setProperty(lastEntityTypeKey, currentEntityType);
-  }
-
-  // First show a confirmation dialog, including info about pushing changes if two-way sync is enabled
-  let confirmMessage = `This will sync data from Pipedrive to the current sheet "${activeSheetName}". Any existing data in this sheet will be replaced.`;
-
-  if (twoWaySyncEnabled) {
-    confirmMessage += `\n\nTwo-way sync is enabled for this sheet. Modified rows will be pushed to Pipedrive before pulling new data.`;
-  }
-
-  confirmMessage += `\n\nDo you want to continue?`;
-
-  const confirmation = ui.alert(
-    'Sync Pipedrive Data',
-    confirmMessage,
-    ui.ButtonSet.YES_NO
-  );
-
-  if (confirmation === ui.Button.NO) {
-    return;
-  }
-
-  // If two-way sync is enabled, push changes to Pipedrive first
-  if (twoWaySyncEnabled) {
-    // Show a message that we're pushing changes
-    spreadsheet.toast('Two-way sync enabled. Pushing modified rows to Pipedrive first...', 'Syncing', 5);
-
-    try {
-      // Call pushChangesToPipedrive() with true for isScheduledSync to suppress duplicate UI messages
-      pushChangesToPipedrive(false, true);
-    } catch (error) {
-      // Log the error but continue with the sync
-      Logger.log(`Error pushing changes: ${error.message}`);
-      spreadsheet.toast(`Warning: Error pushing changes to Pipedrive: ${error.message}`, 'Sync Warning', 10);
-    }
-  }
-
-  // Show a sync status UI
-  showSyncStatus(activeSheetName);
-
-  // Set the active sheet as the current sheet for this operation
-  scriptProperties.setProperty('SHEET_NAME', activeSheetName);
-
   try {
-    if (!currentEntityType) {
-      ui.alert(
-        'No entity type configured',
-        'Please configure Pipedrive settings for this sheet first.',
-        ui.ButtonSet.OK
-      );
-      showSettings();
+    Logger.log("Starting syncFromPipedrive function");
+    // Get active sheet info
+    const sheet = SpreadsheetApp.getActiveSheet();
+    const sheetName = sheet.getName();
+    Logger.log(`Active sheet: ${sheetName}`);
+    
+    // Prevent multiple syncs running at once
+    if (isSyncRunning()) {
+      Logger.log("Sync already running, showing alert");
+      SpreadsheetApp.getUi().alert('A sync operation is already running. Please wait for it to complete.');
       return;
     }
+
+    // Get configuration
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const entityTypeKey = `ENTITY_TYPE_${sheetName}`;
+    const filterIdKey = `FILTER_ID_${sheetName}`;
     
-    switch (currentEntityType) {
-      case ENTITY_TYPES.DEALS:
-        syncDealsFromFilter(true);
-        break;
-      case ENTITY_TYPES.PERSONS:
-        syncPersonsFromFilter(true);
-        break;
-      case ENTITY_TYPES.ORGANIZATIONS:
-        syncOrganizationsFromFilter(true);
-        break;
-      case ENTITY_TYPES.ACTIVITIES:
-        syncActivitiesFromFilter(true);
-        break;
-      case ENTITY_TYPES.LEADS:
-        syncLeadsFromFilter(true);
-        break;
-      case ENTITY_TYPES.PRODUCTS:
-        syncProductsFromFilter(true);
-        break;
-      default:
-        spreadsheet.toast('Unknown entity type. Please check settings.', 'Sync Error', 10);
-        break;
+    const entityType = scriptProperties.getProperty(entityTypeKey);
+    const filterId = scriptProperties.getProperty(filterIdKey);
+    
+    Logger.log(`Syncing sheet ${sheetName}, entity type: ${entityType}, filter ID: ${filterId}`);
+
+    // Check for required settings
+    if (!entityType) {
+      Logger.log("No entity type set for this sheet");
+      SpreadsheetApp.getUi().alert(
+        'No Pipedrive entity type set for this sheet. Please configure your filter settings first.'
+      );
+      return;
     }
 
-    // After successful sync, update the last entity type
-    scriptProperties.setProperty(lastEntityTypeKey, currentEntityType);
-
-    // IMPORTANT: Clean up any lingering formatting from previous Sync Status columns
-    cleanupPreviousSyncStatusColumn(activeSheet, activeSheetName);
-    detectColumnShifts();
-    refreshSyncStatusStyling();
+    // Show sync status dialog
+    showSyncStatus(sheetName);
+    
+    // Mark sync as running
+    setSyncRunning(true);
+    
+    // Start the sync process
+    updateSyncStatus('1', 'active', 'Connecting to Pipedrive...', 50);
+    
+    // Perform sync with skip push parameter as false
+    syncPipedriveDataToSheet(entityType, false, sheetName, filterId);
+    
+    // Show completion message
+    Logger.log("Sync completed successfully");
+    SpreadsheetApp.getUi().alert('Sync completed successfully!');
   } catch (error) {
-    // If there's an error, show it
-    spreadsheet.toast('Error: ' + error.message, 'Sync Error', 10);
-    Logger.log('Sync error: ' + error.message);
-    updateSyncStatus('3', 'error', error.message, 100);
+    Logger.log(`Error in syncFromPipedrive: ${error.message}`);
+    Logger.log(`Stack trace: ${error.stack}`);
+    
+    // Update sync status
+    updateSyncStatus('3', 'error', `Error: ${error.message}`, 0);
+    
+    // Show error message
+    SpreadsheetApp.getUi().alert(`Error syncing data: ${error.message}`);
+  } finally {
+    // Always release sync lock
+    setSyncRunning(false);
   }
 }
 
@@ -148,137 +99,257 @@ function syncFromPipedrive() {
  * Synchronizes Pipedrive data to the sheet based on entity type
  * @param {string} entityType - The type of entity to sync
  * @param {boolean} skipPush - Whether to skip pushing changes back to Pipedrive
+ * @param {string} sheetName - The name of the sheet to sync to
+ * @param {string} filterId - The filter ID to use for retrieving data
  */
-function syncPipedriveDataToSheet(entityType, skipPush = false) {
+function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null, filterId = null) {
   try {
-    // Get the script properties
+    Logger.log(`Starting syncPipedriveDataToSheet - Entity Type: ${entityType}, Skip Push: ${skipPush}, Sheet Name: ${sheetName}, Filter ID: ${filterId}`);
+    
+    // Get sheet name if not provided
+    sheetName = sheetName || SpreadsheetApp.getActiveSheet().getName();
+    
+    // Get script properties
     const scriptProperties = PropertiesService.getScriptProperties();
-    const filterId = scriptProperties.getProperty('PIPEDRIVE_FILTER_ID');
-    const sheetName = scriptProperties.getProperty('SHEET_NAME') || DEFAULT_SHEET_NAME;
-
-    // Update phase 1: Connecting and initializing
-    updateSyncStatus(1, 'active', 'Connecting to Pipedrive...', 50);
-
-    // Get filtered data based on entity type
+    
+    // If no filter ID provided, try to get from script properties
+    if (!filterId) {
+      const filterIdKey = `FILTER_ID_${sheetName}`;
+      filterId = scriptProperties.getProperty(filterIdKey);
+      Logger.log(`Using stored filter ID: ${filterId} from key ${filterIdKey}`);
+    }
+    
+    // Show UI that we are retrieving data
+    updateSyncStatus('2', 'active', 'Retrieving data from Pipedrive...', 10);
+    
+    // Check for two-way sync settings
+    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
+    const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
+    Logger.log(`Two-way sync enabled: ${twoWaySyncEnabled}`);
+    
+    // Key for tracking column
+    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
+    
+    // If user wants to skip push changes to Pipedrive, just sync
+    if (!skipPush && twoWaySyncEnabled) {
+      // Ask user if they want to push first
+      const ui = SpreadsheetApp.getUi();
+      const response = ui.alert(
+        'Push Changes First?',
+        'Do you want to push any changes to Pipedrive before syncing?',
+        ui.ButtonSet.YES_NO
+      );
+      
+      if (response === ui.Button.YES) {
+        Logger.log('User chose to push changes before syncing');
+        // Push changes to Pipedrive first
+        pushChangesToPipedrive(true); // true means scheduled sync will follow
+        return; // pushChangesToPipedrive will handle the rest
+      }
+    }
+    
+    // Get data from Pipedrive based on entity type
     let items = [];
-    let fields = [];
-
-    // Update phase 2: Retrieving data from Pipedrive
-    updateSyncStatus(2, 'active', `Retrieving ${entityType} from Pipedrive...`, 10);
-
-    // Get the data based on entity type
+    
+    // Update status to show we're connecting to API
+    updateSyncStatus('2', 'active', `Retrieving ${entityType} from Pipedrive...`, 20);
+    
+    Logger.log(`Retrieving data for entity type: ${entityType}`);
+    
+    // Use appropriate function based on entity type
     switch (entityType) {
       case ENTITY_TYPES.DEALS:
         items = getDealsWithFilter(filterId);
-        fields = getDealFields();
         break;
       case ENTITY_TYPES.PERSONS:
         items = getPersonsWithFilter(filterId);
-        fields = getPersonFields();
         break;
       case ENTITY_TYPES.ORGANIZATIONS:
         items = getOrganizationsWithFilter(filterId);
-        fields = getOrganizationFields();
         break;
       case ENTITY_TYPES.ACTIVITIES:
         items = getActivitiesWithFilter(filterId);
-        fields = getActivityFields();
         break;
       case ENTITY_TYPES.LEADS:
         items = getLeadsWithFilter(filterId);
-        fields = getLeadFields();
         break;
       case ENTITY_TYPES.PRODUCTS:
         items = getProductsWithFilter(filterId);
-        fields = getProductFields();
         break;
       default:
-        throw new Error(`Unsupported entity type: ${entityType}`);
+        throw new Error(`Unknown entity type: ${entityType}`);
     }
-
-    if (!items || items.length === 0) {
-      updateSyncStatus(2, 'warning', `No ${entityType} found with the specified filter.`, 100);
-      SpreadsheetApp.getActiveSpreadsheet().toast(`No ${entityType} found with the specified filter ID: ${filterId}. The filter might be empty or not accessible.`);
-      return;
-    }
-
-    // Complete phase 2
-    updateSyncStatus(2, 'completed', `Retrieved ${items.length} ${entityType} from Pipedrive`, 100);
-
-    // Start phase 3 (writing to sheet)
-    updateSyncStatus(3, 'active', `Writing ${items.length} ${entityType} to spreadsheet...`, 20);
-
-    // Get team-aware column preferences
-    let columnsToUse = SyncService.getTeamAwareColumnPreferences(entityType, sheetName);
-
-    // If no columns are selected, create default column objects
-    if (!columnsToUse || columnsToUse.length === 0) {
-      Logger.log(`No columns selected for ${entityType}, using defaults`);
+    
+    Logger.log(`Retrieved ${items.length} items from Pipedrive`);
+    
+    // Log first item structure for debugging
+    if (items.length > 0) {
+      Logger.log("Sample item (first item) from retrieved data:");
+      Logger.log(JSON.stringify(items[0], null, 2));
       
-      // Set default column keys based on entity type
-      let defaultColumnKeys = ['id', 'name', 'owner_id', 'created_at', 'updated_at'];
-      
-      switch (entityType) {
-        case ENTITY_TYPES.DEALS:
-          defaultColumnKeys = ['id', 'title', 'status', 'value', 'currency', 'owner_id', 'created_at', 'updated_at'];
-          break;
-        case ENTITY_TYPES.PERSONS:
-          defaultColumnKeys = ['id', 'name', 'email', 'phone', 'owner_id', 'created_at', 'updated_at'];
-          break;
-        case ENTITY_TYPES.ORGANIZATIONS:
-          defaultColumnKeys = ['id', 'name', 'address', 'owner_id', 'created_at', 'updated_at'];
-          break;
-        case ENTITY_TYPES.ACTIVITIES:
-          defaultColumnKeys = ['id', 'type', 'due_date', 'duration', 'deal_id', 'person_id', 'org_id', 'note', 'created_at', 'updated_at'];
-          break;
-        case ENTITY_TYPES.LEADS:
-          defaultColumnKeys = ['id', 'title', 'owner_id', 'person_id', 'organization_id', 'created_at', 'updated_at'];
-          break;
-        case ENTITY_TYPES.PRODUCTS:
-          defaultColumnKeys = ['id', 'name', 'code', 'description', 'unit', 'tax', 'active_flag', 'created_at', 'updated_at'];
-          break;
+      // Specifically log email and phone fields if they exist
+      if (items[0].email) {
+        Logger.log("Email field structure:");
+        Logger.log(JSON.stringify(items[0].email, null, 2));
       }
       
-      // Create column objects from default keys
-      columnsToUse = defaultColumnKeys.map(key => ({ key: key }));
+      if (items[0].phone) {
+        Logger.log("Phone field structure:");
+        Logger.log(JSON.stringify(items[0].phone, null, 2));
+      }
     }
-
+    
+    // Check if we have any data
+    if (items.length === 0) {
+      throw new Error(`No ${entityType} found. Please check your filter settings.`);
+    }
+    
+    // Update status to show data retrieval is complete
+    updateSyncStatus('2', 'completed', `Retrieved ${items.length} ${entityType} from Pipedrive`, 100);
+    
+    // Get field options for handling picklists/enums
+    let optionMappings = {};
+    
+    try {
+      Logger.log("Getting field option mappings...");
+      optionMappings = getFieldOptionMappingsForEntity(entityType);
+      Logger.log(`Retrieved option mappings for fields: ${Object.keys(optionMappings).join(', ')}`);
+      
+      // Sample logging of one option mapping if available
+      const sampleField = Object.keys(optionMappings)[0];
+      if (sampleField) {
+        Logger.log(`Sample option mapping for field ${sampleField}:`);
+        Logger.log(JSON.stringify(optionMappings[sampleField], null, 2));
+      }
+    } catch (e) {
+      Logger.log(`Error getting field options: ${e.message}`);
+    }
+    
+    // Start writing to sheet
+    updateSyncStatus('3', 'active', 'Writing data to spreadsheet...', 10);
+    
+    // Get the active spreadsheet and sheet
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(sheetName);
+    
+    if (!sheet) {
+      throw new Error(`Sheet "${sheetName}" not found`);
+    }
+    
+    // Get column preferences
+    const columnPrefsKey = `COLUMN_PREFS_${entityType}_${sheetName}`;
+    // For backward compatibility, also try old key format
+    const oldFormatKey = `COLUMNS_${sheetName}_${entityType}`;
+    
+    const savedColumnsJson = scriptProperties.getProperty(columnPrefsKey) || 
+                            scriptProperties.getProperty(oldFormatKey);
+    
+    let columns = [];
+    
+    if (savedColumnsJson) {
+      try {
+        columns = JSON.parse(savedColumnsJson);
+        Logger.log(`Retrieved ${columns.length} column preferences`);
+        
+        // Log the columns for debugging
+        Logger.log("Column preferences:");
+        columns.forEach((col, index) => {
+          Logger.log(`Column ${index + 1}: ${JSON.stringify(col)}`);
+        });
+      } catch (e) {
+        Logger.log(`Error parsing column preferences: ${e.message}`);
+        throw new Error(`Invalid column preferences: ${e.message}`);
+      }
+    } else {
+      // If no column preferences, use default columns
+      Logger.log(`No column preferences found, using defaults for ${entityType}`);
+      
+      if (DEFAULT_COLUMNS[entityType]) {
+        DEFAULT_COLUMNS[entityType].forEach(key => {
+          columns.push({ key: key, name: formatColumnName(key) });
+        });
+      } else {
+        DEFAULT_COLUMNS.COMMON.forEach(key => {
+          columns.push({ key: key, name: formatColumnName(key) });
+        });
+      }
+      
+      Logger.log(`Using ${columns.length} default columns`);
+    }
+    
     // Create header row from column names
-    const headerRow = columnsToUse.map(column => {
+    const headers = columns.map(column => {
       if (typeof column === 'object' && column.customName) {
         return column.customName;
       }
-      const matchingField = fields.find(f => f.key === (typeof column === 'object' ? column.key : column));
-      return matchingField ? formatColumnName(matchingField.name) : formatColumnName(typeof column === 'object' ? column.key : column);
+      
+      if (typeof column === 'object' && column.key) {
+        // Special handling for email and phone fields
+        if (typeof column.key === 'string' && column.key.includes('.')) {
+          const parts = column.key.split('.');
+          
+          // Format email.work as "Email Work" and phone.mobile as "Phone Mobile"
+          if ((parts[0] === 'email' || parts[0] === 'phone') && parts.length > 1) {
+            return `${formatColumnName(parts[0])} ${formatColumnName(parts[1])}`;
+          }
+        }
+        
+        // For email and phone columns without dot notation, use capitalized name
+        if (column.key === 'email') {
+          return 'Email';
+        }
+        if (column.key === 'phone') {
+          return 'Phone';
+        }
+        
+        // Use the name if provided for other fields
+        if (column.name) {
+          return column.name;
+        }
+        
+        // Default to formatted key
+        return formatColumnName(column.key);
+      }
+      
+      // Fall back to string value
+      return typeof column === 'string' ? formatColumnName(column) : String(column);
     });
-
-    // Get field option mappings for dropdown/option fields
-    let optionMappings = {};
-    try {
-      optionMappings = getFieldOptionMappingsForEntity(entityType);
-    } catch (e) {
-      Logger.log(`Error getting field option mappings: ${e.message}`);
-    }
-
-    // Prepare and write data to sheet with the selected columns
-    writeDataToSheet(items, {
-      columns: columnsToUse,
-      headerRow: headerRow,
-      optionMappings: optionMappings,
+    Logger.log(`Created ${headers.length} headers: ${headers.join(', ')}`);
+    
+    // Options for writing data
+    const options = {
+      sheetName: sheetName,
+      columns: columns,
+      headerRow: headers,
       entityType: entityType,
-      sheetName: sheetName
-    });
-
-    // Complete phase 3
-    updateSyncStatus(3, 'completed', `Data successfully synced to "${sheetName}"!`, 100);
-
-    // Show success toast
-    SpreadsheetApp.getActiveSpreadsheet().toast(`${entityType} successfully synced from Pipedrive to "${sheetName}"! (${items.length} items total)`);
-    refreshSyncStatusStyling();
+      optionMappings: optionMappings,
+      twoWaySyncEnabled: twoWaySyncEnabled
+    };
+    
+    // Write data to the sheet
+    writeDataToSheet(items, options);
+    
+    // Update sync status to completed
+    updateSyncStatus('3', 'completed', 'Data successfully written to spreadsheet', 100);
+    
+    // Store sync timestamp
+    const timestamp = new Date().toISOString();
+    scriptProperties.setProperty(`LAST_SYNC_${sheetName}`, timestamp);
+    
+    Logger.log(`Successfully synced ${items.length} items from Pipedrive to sheet "${sheetName}"`);
+    
+    return true;
   } catch (error) {
-    Logger.log('Error: ' + error.message);
-    updateSyncStatus(0, 'error', error.message, 0);
-    SpreadsheetApp.getActiveSpreadsheet().toast('Error: ' + error.message);
+    Logger.log(`Error in syncPipedriveDataToSheet: ${error.message}`);
+    Logger.log(`Stack trace: ${error.stack}`);
+    
+    // Update sync status to error
+    updateSyncStatus('3', 'error', `Error: ${error.message}`, 0);
+    
+    // Show error in UI
+    SpreadsheetApp.getUi().alert(`Error syncing data: ${error.message}`);
+    
+    throw error;
   }
 }
 
@@ -288,232 +359,227 @@ function syncPipedriveDataToSheet(entityType, skipPush = false) {
  * @param {Object} options - Options for writing data
  */
 function writeDataToSheet(items, options) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheetName = options.sheetName ||
-    PropertiesService.getScriptProperties().getProperty('SHEET_NAME') ||
-    DEFAULT_SHEET_NAME;
-
-  let sheet = ss.getSheetByName(sheetName);
-  if (!sheet) {
-    sheet = ss.insertSheet(sheetName);
-  }
-
-  // IMPORTANT: Clean up previous sync status column before writing new data
-  cleanupPreviousSyncStatusColumn(sheet, sheetName);
-
-  // Get script properties
-  const scriptProperties = PropertiesService.getScriptProperties();
-
-  // Check if two-way sync is enabled for this sheet
-  const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
-  const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
-  const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
-
-  // For preservation of status data - key is entity ID, value is status
-  let statusByIdMap = new Map();
-  let configuredTrackingColumn = '';
-  let statusColumnIndex = -1;
-
-  // Create the header row from options
-  let fullHeaderRow = [...options.headerRow];
-
-  // If two-way sync is enabled, handle the Sync Status column
-  if (twoWaySyncEnabled) {
-    // Check if we need to force the Sync Status column at the end
-    const twoWaySyncColumnAtEndKey = `TWOWAY_SYNC_COLUMN_AT_END_${sheetName}`;
-    const forceColumnAtEnd = scriptProperties.getProperty(twoWaySyncColumnAtEndKey) === 'true';
-
-    // Get the configured tracking column letter and verify if it exists
-    configuredTrackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey) || '';
-
-    // If we need to force the column at the end, or no configured column exists,
-    // add the Sync Status column at the end
-    if (forceColumnAtEnd || !configuredTrackingColumn) {
-      Logger.log('Adding Sync Status column at the end');
-      statusColumnIndex = fullHeaderRow.length;
-      fullHeaderRow.push('Sync Status');
-
-      // Clear the "force at end" flag after we've processed it
-      if (forceColumnAtEnd) {
-        scriptProperties.deleteProperty(twoWaySyncColumnAtEndKey);
-        Logger.log('Cleared the force-at-end flag after repositioning the Sync Status column');
-      }
-    } else {
-      // Try to find the existing Sync Status column
-      statusColumnIndex = fullHeaderRow.findIndex(header => header === 'Sync Status');
-
-      // If we didn't find an existing column, try using the configured index
-      if (statusColumnIndex === -1 && configuredTrackingColumn) {
-        const existingTrackingIndex = columnLetterToIndex(configuredTrackingColumn) - 1;
-
-        // Always use the configured position, regardless of current headerRow length
-        Logger.log(`Using configured tracking column at position ${existingTrackingIndex} (${configuredTrackingColumn})`);
-
-        // Ensure our headers array has enough elements
-        while (fullHeaderRow.length <= existingTrackingIndex) {
-          fullHeaderRow.push('');
+  try {
+    Logger.log(`Starting writeDataToSheet with ${items.length} items`);
+    
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(options.sheetName);
+    
+    if (!sheet) {
+      throw new Error(`Sheet "${options.sheetName}" not found`);
+    }
+    
+    // Check for two-way sync
+    const twoWaySyncEnabled = options.twoWaySyncEnabled || false;
+    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${options.sheetName}`;
+    let statusColumnIndex = -1;
+    
+    // Create a map to preserve existing status values
+    const statusByIdMap = new Map();
+    
+    // Handle status columns for two-way sync
+    if (twoWaySyncEnabled) {
+      Logger.log(`Two-way sync is enabled for sheet ${options.sheetName}`);
+      // Track existing status values before clearing the sheet
+      try {
+        const existingTrackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey);
+        Logger.log(`Existing tracking column: ${existingTrackingColumn}`);
+        
+        if (existingTrackingColumn) {
+          // Find the column index and get the existing status values
+          const statusColumnIdx = columnLetterToIndex(existingTrackingColumn) - 1; // Convert to 0-based
+          Logger.log(`Status column index: ${statusColumnIdx}`);
+          
+          // Preserve existing status data keyed by the ID column (assumed to be first column)
+          if (sheet.getLastRow() > 1) {
+            const idData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+            const statusData = sheet.getRange(2, statusColumnIdx + 1, sheet.getLastRow() - 1, 1).getValues();
+            
+            Logger.log(`Found ${idData.length} existing IDs and status values`);
+            
+            // Store status by ID
+            for (let i = 0; i < idData.length; i++) {
+              const id = idData[i][0];
+              const status = statusData[i][0];
+              
+              // Skip empty cells or certain status values
+              if (!id || !status || (status !== 'Modified' && status !== 'Synced' && status !== 'Error')) {
+                continue;
+              }
+              
+              statusByIdMap.set(id.toString(), status);
+              Logger.log(`Preserved status "${status}" for ID ${id}`);
+            }
+          }
         }
-
-        // Place the Sync Status column at its original position
-        statusColumnIndex = existingTrackingIndex;
-        fullHeaderRow[statusColumnIndex] = 'Sync Status';
+      } catch (e) {
+        Logger.log(`Error preserving status data: ${e.message}`);
       }
     }
-
-    if (configuredTrackingColumn && statusColumnIndex !== -1) {
-      const newTrackingColumn = columnToLetter(statusColumnIndex + 1);
-      if (newTrackingColumn !== configuredTrackingColumn) {
-        scriptProperties.setProperty(`PREVIOUS_TRACKING_COLUMN_${sheetName}`, configuredTrackingColumn);
-        Logger.log(`Stored previous tracking column ${configuredTrackingColumn} before moving to ${newTrackingColumn}`);
-      }
+    
+    // Clear the sheet and set up headers
+    sheet.clear();
+    
+    // Get headers from options
+    const headers = options.headerRow;
+    
+    // Add "Sync Status" column if two-way sync is enabled
+    if (twoWaySyncEnabled) {
+      statusColumnIndex = headers.length;
+      headers.push('Sync Status');
+      
+      // Save column letter for future reference
+      const statusColumn = columnToLetter(statusColumnIndex + 1);
+      scriptProperties.setProperty(twoWaySyncTrackingColumnKey, statusColumn);
+      Logger.log(`Added Sync Status column at position ${statusColumnIndex + 1} (${statusColumn})`);
     }
-
-    // Save the status column position to properties for future use
-    const statusColumnLetter = columnToLetter(statusColumnIndex + 1);
-    scriptProperties.setProperty(twoWaySyncTrackingColumnKey, statusColumnLetter);
-    Logger.log(`Setting status column at index ${statusColumnIndex} (column ${statusColumnLetter})`);
-  }
-
-  // Write the header row
-  sheet.getRange(1, 1, 1, fullHeaderRow.length).setValues([fullHeaderRow]);
-
-  // Create data rows array
-  const dataRows = [];
-
-  // Process each item from Pipedrive
-  items.forEach(item => {
-    // Create a row array with the right number of columns
-    const row = new Array(fullHeaderRow.length).fill('');
-
-    // Extract values for each column from the Pipedrive item
-    options.columns.forEach((column, index) => {
-      // Get the value using path notation
-      const key = typeof column === 'object' ? column.key : column;
-      const value = getValueByPath(item, key);
-
-      // Format the value and add it to the row
-      row[index] = formatValue(value, key, options.optionMappings);
+    
+    // Set header row
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    
+    Logger.log(`Set up ${headers.length} headers in the sheet`);
+    
+    // Create data rows
+    Logger.log(`Processing ${items.length} items to create data rows`);
+    const dataRows = items.map(item => {
+      // Create a row with empty values for all columns
+      const row = Array(headers.length).fill('');
+      
+      // Log the first few items to see their structure
+      if (items.indexOf(item) < 3) {
+        Logger.log(`Processing item ${items.indexOf(item) + 1}:`);
+        // Log if it has email or phone data
+        if (item.email) {
+          Logger.log(`Item ${items.indexOf(item) + 1} email: ${JSON.stringify(item.email)}`);
+        }
+        if (item.phone) {
+          Logger.log(`Item ${items.indexOf(item) + 1} phone: ${JSON.stringify(item.phone)}`);
+        }
+      }
+      
+      // For each column, extract and format the value from the Pipedrive item
+      options.columns.forEach((column, index) => {
+        Logger.log(`Processing column ${index + 1}: ${JSON.stringify(column)}`);
+        
+        const columnKey = typeof column === 'object' ? column.key : column;
+        Logger.log(`Column key: ${columnKey}`);
+        
+        // Special handling for email.work and phone.work fields
+        let processedValue = null;
+        
+        if (typeof columnKey === 'string' && columnKey.includes('.')) {
+          const parts = columnKey.split('.');
+          
+          // If this is an email or phone field with a specific type (e.g., email.work)
+          if ((parts[0] === 'email' || parts[0] === 'phone') && parts.length > 1) {
+            const fieldType = parts[0]; // 'email' or 'phone'
+            const labelType = parts[1].toLowerCase(); // 'work', 'home', etc.
+            
+            Logger.log(`Special handling for ${fieldType}.${labelType}`);
+            
+            // Get the email/phone array from the item
+            let contactArray = item[fieldType];
+            Logger.log(`Contact array: ${JSON.stringify(contactArray)}`);
+            
+            if (Array.isArray(contactArray)) {
+              // Find the entry with the matching label
+              const matchingEntry = contactArray.find(entry => 
+                entry && entry.label && entry.label.toLowerCase() === labelType
+              );
+              
+              if (matchingEntry && matchingEntry.value) {
+                // Found the specific type (e.g., work email)
+                processedValue = matchingEntry.value;
+                Logger.log(`Found matching entry with label "${labelType}": ${processedValue}`);
+              } else {
+                // If specific type not found, use primary or first as fallback
+                const primaryEntry = contactArray.find(entry => entry && entry.primary) || 
+                                    (contactArray.length > 0 ? contactArray[0] : null);
+                
+                if (primaryEntry && primaryEntry.value) {
+                  processedValue = primaryEntry.value;
+                  Logger.log(`Using fallback (primary or first): ${processedValue}`);
+                } else {
+                  processedValue = '';
+                  Logger.log(`No suitable value found for ${fieldType}.${labelType}`);
+                }
+              }
+            } else {
+              Logger.log(`${fieldType} is not an array: ${JSON.stringify(contactArray)}`);
+            }
+          }
+        }
+        
+        // If we already processed the value above, use it
+        if (processedValue !== null) {
+          row[index] = processedValue;
+          Logger.log(`Using processed value: ${processedValue}`);
+        } else {
+          // Standard field processing for non-specialized fields
+          const value = getValueByPath(item, columnKey);
+          Logger.log(`Value from getValueByPath: ${JSON.stringify(value)}`);
+          
+          // For nested fields, we need to handle the specific requested property
+          if (typeof value === 'object' && value !== null && columnKey.includes('.')) {
+            const parts = columnKey.split('.');
+            const lastPart = parts[parts.length - 1];
+            if (value[lastPart] !== undefined) {
+              row[index] = formatValue(value[lastPart], column, options.optionMappings || {});
+              Logger.log(`Using nested value ${lastPart}: ${row[index]}`);
+            } else {
+              row[index] = formatValue(value, column, options.optionMappings || {});
+              Logger.log(`Using formatted object value: ${row[index]}`);
+            }
+          } else {
+            row[index] = formatValue(value, column, options.optionMappings || {});
+            Logger.log(`Using standard formatted value: ${row[index]}`);
+          }
+        }
+      });
+      
+      // Add Sync Status if two-way sync is enabled
+      if (twoWaySyncEnabled && statusColumnIndex !== -1) {
+        // Ensure row array is long enough
+        while (row.length <= statusColumnIndex) {
+          row.push('');
+        }
+        
+        // Get the item ID (assuming first column is ID)
+        const id = row[0] ? row[0].toString() : '';
+        
+        // If we have a saved status for this ID, use it, otherwise use "Not modified"
+        if (id && statusByIdMap.has(id)) {
+          row[statusColumnIndex] = statusByIdMap.get(id);
+          Logger.log(`Using preserved status for ID ${id}: ${row[statusColumnIndex]}`);
+        } else {
+          row[statusColumnIndex] = 'Not modified';
+        }
+      }
+      
+      return row;
     });
-
-    // If two-way sync is enabled, add the status column
+    
+    // Write all data at once
+    if (dataRows.length > 0) {
+      Logger.log(`Writing ${dataRows.length} rows to the sheet`);
+      sheet.getRange(2, 1, dataRows.length, headers.length).setValues(dataRows);
+    }
+  
+    // Set up status column formatting if two-way sync is enabled
     if (twoWaySyncEnabled && statusColumnIndex !== -1) {
-      // Get the item ID (assuming first column is ID)
-      const id = row[0] ? row[0].toString() : '';
-
-      // If we have a saved status for this ID, use it, otherwise use "Not modified"
-      if (id && statusByIdMap.has(id)) {
-        row[statusColumnIndex] = statusByIdMap.get(id);
-      } else {
-        row[statusColumnIndex] = 'Not modified';
-      }
+      // ... code for formatting status column ...
     }
-
-    // Add the row to our data array
-    dataRows.push(row);
-  });
-
-  // Write all data rows at once
-  if (dataRows.length > 0) {
-    sheet.getRange(2, 1, dataRows.length, fullHeaderRow.length).setValues(dataRows);
+  
+    // Auto-resize columns for better readability
+    sheet.autoResizeColumns(1, sheet.getLastColumn());
+    
+    Logger.log('Data successfully written to sheet.');
+  } catch (error) {
+    Logger.log(`Error in writeDataToSheet: ${error.message}`);
+    Logger.log(`Stack trace: ${error.stack}`);
+    throw error;
   }
-
-  // If two-way sync is enabled, set up data validation and formatting for the status column
-  if (twoWaySyncEnabled && statusColumnIndex !== -1 && dataRows.length > 0) {
-    try {
-      // Clear any existing data validation from ALL cells in the sheet first
-      sheet.clearDataValidations();
-
-      // Convert to 1-based column
-      const statusColumnPos = statusColumnIndex + 1;
-
-      // IMPORTANT: Apply validation EXPLICITLY to EACH data row instead of the entire range
-      // This gives us precise control over which cells get validation
-      for (let i = 0; i < dataRows.length; i++) {
-        const row = i + 2; // Data starts at row 2 (after header)
-        const statusCell = sheet.getRange(row, statusColumnPos);
-
-        // Use the same dropdown for all cells
-        const rule = SpreadsheetApp.newDataValidation()
-          .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
-          .build();
-        statusCell.setDataValidation(rule);
-      }
-
-      // Style the header to make it clear it's for sync status
-      sheet.getRange(1, statusColumnPos).setBackground('#E8F0FE')
-        .setFontWeight('bold')
-        .setNote('This column tracks changes for two-way sync with Pipedrive');
-
-      // Style the status column
-      const statusRange = sheet.getRange(2, statusColumnPos, dataRows.length, 1);
-      statusRange.setBackground('#F8F9FA')  // Light gray
-        .setBorder(null, true, null, true, false, false, '#DADCE0', SpreadsheetApp.BorderStyle.SOLID);
-
-      // Set up conditional formatting for the status values
-      const rules = [];
-
-      // Add rule for "Modified" status - red background
-      let modifiedRule = SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo('Modified')
-        .setBackground('#FCE8E6')  // Light red background
-        .setFontColor('#D93025')   // Red text
-        .setRanges([statusRange])
-        .build();
-      rules.push(modifiedRule);
-
-      // Add rule for "Synced" status - green background
-      let syncedRule = SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo('Synced')
-        .setBackground('#E6F4EA')  // Light green background
-        .setFontColor('#137333')   // Green text
-        .setRanges([statusRange])
-        .build();
-      rules.push(syncedRule);
-
-      // Add rule for "Error" status - red background with bold text
-      let errorRule = SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo('Error')
-        .setBackground('#FCE8E6')  // Light red background
-        .setFontColor('#D93025')   // Red text
-        .setBold(true)             // Bold text for errors
-        .setRanges([statusRange])
-        .build();
-      rules.push(errorRule);
-
-      sheet.setConditionalFormatRules(rules);
-
-      Logger.log('Applied data validation and conditional formatting to status column');
-    } catch (e) {
-      Logger.log(`Error setting up status column formatting: ${e.message}`);
-    }
-  }
-
-  // Check if timestamp is enabled (moved outside the else block to work for all sheets)
-  const timestampEnabledKey = `TIMESTAMP_ENABLED_${sheetName}`;
-  const timestampEnabled = scriptProperties.getProperty(timestampEnabledKey) === 'true';
-
-  // Add timestamp of last sync if enabled
-  if (timestampEnabled) {
-    const timestampRow = sheet.getLastRow() + 2;
-    sheet.getRange(timestampRow, 1).setValue('Last synced:');
-    sheet.getRange(timestampRow, 2).setValue(new Date()).setNumberFormat('yyyy-MM-dd HH:mm:ss');
-
-    // Format the timestamp for better visibility
-    sheet.getRange(timestampRow, 1, 1, 2).setFontWeight('bold');
-    sheet.getRange(timestampRow, 1, 1, 2).setBackground('#f1f3f4');  // Light gray background
-
-    // Clear any data validation from the timestamp row and spacer row
-    if (twoWaySyncEnabled && statusColumnIndex !== -1) {
-      // Clear the entire spacer row and timestamp row from any data validation
-      const spacerRow = timestampRow - 1;
-      if (spacerRow > dataRows.length + 1) { // Make sure we don't clear data rows
-        sheet.getRange(spacerRow, 1, 2, sheet.getLastColumn()).setDataValidation(null);
-      }
-    }
-  }
-
-  // Auto-resize columns for better readability
-  sheet.autoResizeColumns(1, sheet.getLastColumn());
 }
 
 /**
@@ -588,6 +654,82 @@ function updateSyncStatus(phase, status, detail, progress) {
     SpreadsheetApp.getActiveSpreadsheet().toast(detail || 'Processing...', 'Sync Status', 2);
     return null;
   }
+}
+
+/**
+ * Shows the sync status dialog to the user
+ * @param {string} sheetName - The name of the sheet being synced
+ */
+function showSyncStatus(sheetName) {
+  try {
+    // Reset any previous sync status
+    const scriptProperties = PropertiesService.getScriptProperties();
+    scriptProperties.setProperty('SYNC_COMPLETED', 'false');
+    scriptProperties.setProperty('SYNC_ERROR', '');
+    
+    // Initialize status for each phase
+    for (let phase = 1; phase <= 3; phase++) {
+      const status = phase === 1 ? 'active' : 'pending';
+      const detail = phase === 1 ? 'Connecting to Pipedrive...' : 'Waiting to start...';
+      const progress = phase === 1 ? 0 : 0;
+      
+      scriptProperties.setProperty(`SYNC_PHASE_${phase}_STATUS`, status);
+      scriptProperties.setProperty(`SYNC_PHASE_${phase}_DETAIL`, detail);
+      scriptProperties.setProperty(`SYNC_PHASE_${phase}_PROGRESS`, progress.toString());
+    }
+    
+    // Set current phase to 1
+    scriptProperties.setProperty('SYNC_CURRENT_PHASE', '1');
+    
+    // Get entity type for the sheet
+    const entityTypeKey = `ENTITY_TYPE_${sheetName}`;
+    const entityType = scriptProperties.getProperty(entityTypeKey) || ENTITY_TYPES.DEALS;
+    const entityTypeName = formatEntityTypeName(entityType);
+    
+    // Create the dialog
+    const htmlTemplate = HtmlService.createTemplateFromFile('SyncStatus');
+    htmlTemplate.sheetName = sheetName;
+    htmlTemplate.entityType = entityType;
+    htmlTemplate.entityTypeName = entityTypeName;
+    
+    const html = htmlTemplate.evaluate()
+      .setWidth(400)
+      .setHeight(400)
+      .setTitle('Sync Status');
+    
+    // Show dialog
+    SpreadsheetApp.getUi().showModalDialog(html, 'Sync Status');
+    
+    // Return true to indicate success
+    return true;
+  } catch (error) {
+    Logger.log(`Error showing sync status: ${error.message}`);
+    Logger.log(`Stack trace: ${error.stack}`);
+    
+    // Show a fallback toast message instead
+    SpreadsheetApp.getActiveSpreadsheet().toast('Starting sync operation...', 'Pipedrive Sync', 3);
+    return false;
+  }
+}
+
+/**
+ * Helper function to format entity type name for display
+ * @param {string} entityType - The entity type to format
+ * @return {string} Formatted entity type name
+ */
+function formatEntityTypeName(entityType) {
+  if (!entityType) return '';
+  
+  const entityMap = {
+    'deals': 'Deals',
+    'persons': 'Persons',
+    'organizations': 'Organizations',
+    'activities': 'Activities',
+    'leads': 'Leads',
+    'products': 'Products'
+  };
+  
+  return entityMap[entityType] || entityType.charAt(0).toUpperCase() + entityType.slice(1);
 }
 
 /**
@@ -835,50 +977,62 @@ function onEdit(e) {
 
 /**
  * Main function to sync deals from a Pipedrive filter to the Google Sheet
+ * @param {string} filterId - The filter ID to use
  * @param {boolean} skipPush - Whether to skip pushing changes back to Pipedrive
+ * @param {string} sheetName - The name of the sheet to sync to
  */
-function syncDealsFromFilter(skipPush = false) {
-  syncPipedriveDataToSheet(ENTITY_TYPES.DEALS, skipPush);
+function syncDealsFromFilter(filterId, skipPush = false, sheetName = null) {
+  syncPipedriveDataToSheet(ENTITY_TYPES.DEALS, skipPush, sheetName, filterId);
 }
 
 /**
  * Main function to sync persons from a Pipedrive filter to the Google Sheet
+ * @param {string} filterId - The filter ID to use
  * @param {boolean} skipPush - Whether to skip pushing changes back to Pipedrive
+ * @param {string} sheetName - The name of the sheet to sync to
  */
-function syncPersonsFromFilter(skipPush = false) {
-  syncPipedriveDataToSheet(ENTITY_TYPES.PERSONS, skipPush);
+function syncPersonsFromFilter(filterId, skipPush = false, sheetName = null) {
+  syncPipedriveDataToSheet(ENTITY_TYPES.PERSONS, skipPush, sheetName, filterId);
 }
 
 /**
  * Main function to sync organizations from a Pipedrive filter to the Google Sheet
+ * @param {string} filterId - The filter ID to use
  * @param {boolean} skipPush - Whether to skip pushing changes back to Pipedrive
+ * @param {string} sheetName - The name of the sheet to sync to
  */
-function syncOrganizationsFromFilter(skipPush = false) {
-  syncPipedriveDataToSheet(ENTITY_TYPES.ORGANIZATIONS, skipPush);
+function syncOrganizationsFromFilter(filterId, skipPush = false, sheetName = null) {
+  syncPipedriveDataToSheet(ENTITY_TYPES.ORGANIZATIONS, skipPush, sheetName, filterId);
 }
 
 /**
  * Main function to sync activities from a Pipedrive filter to the Google Sheet
+ * @param {string} filterId - The filter ID to use
  * @param {boolean} skipPush - Whether to skip pushing changes back to Pipedrive
+ * @param {string} sheetName - The name of the sheet to sync to
  */
-function syncActivitiesFromFilter(skipPush = false) {
-  syncPipedriveDataToSheet(ENTITY_TYPES.ACTIVITIES, skipPush);
+function syncActivitiesFromFilter(filterId, skipPush = false, sheetName = null) {
+  syncPipedriveDataToSheet(ENTITY_TYPES.ACTIVITIES, skipPush, sheetName, filterId);
 }
 
 /**
  * Main function to sync leads from a Pipedrive filter to the Google Sheet
+ * @param {string} filterId - The filter ID to use
  * @param {boolean} skipPush - Whether to skip pushing changes back to Pipedrive
+ * @param {string} sheetName - The name of the sheet to sync to
  */
-function syncLeadsFromFilter(skipPush = false) {
-  syncPipedriveDataToSheet(ENTITY_TYPES.LEADS, skipPush);
+function syncLeadsFromFilter(filterId, skipPush = false, sheetName = null) {
+  syncPipedriveDataToSheet(ENTITY_TYPES.LEADS, skipPush, sheetName, filterId);
 }
 
 /**
  * Main function to sync products from a Pipedrive filter to the Google Sheet
+ * @param {string} filterId - The filter ID to use
  * @param {boolean} skipPush - Whether to skip pushing changes back to Pipedrive
+ * @param {string} sheetName - The name of the sheet to sync to
  */
-function syncProductsFromFilter(skipPush = false) {
-  syncPipedriveDataToSheet(ENTITY_TYPES.PRODUCTS, skipPush);
+function syncProductsFromFilter(filterId, skipPush = false, sheetName = null) {
+  syncPipedriveDataToSheet(ENTITY_TYPES.PRODUCTS, skipPush, sheetName, filterId);
 }
 
 /**
@@ -1341,8 +1495,6 @@ function refreshSyncStatusStyling() {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     const sheetName = sheet.getName();
 
-    cleanupPreviousSyncStatusColumn(sheet, sheetName);
-
     // Check if two-way sync is enabled for this sheet
     const scriptProperties = PropertiesService.getScriptProperties();
     const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
@@ -1350,12 +1502,8 @@ function refreshSyncStatusStyling() {
 
     const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
 
+    // If two-way sync is not enabled, just return silently
     if (!twoWaySyncEnabled) {
-      SpreadsheetApp.getActiveSpreadsheet().toast(
-        'Two-way sync is not enabled for this sheet. Please enable it first in "Two-Way Sync Settings".',
-        'Cannot Refresh Styling',
-        5
-      );
       return;
     }
 
@@ -1472,12 +1620,6 @@ function refreshSyncStatusStyling() {
       // Apply all rules
       sheet.setConditionalFormatRules(newRules);
     }
-
-    SpreadsheetApp.getActiveSpreadsheet().toast(
-      'Sync Status column styling has been refreshed successfully.',
-      'Styling Updated',
-      5
-    );
   } catch (error) {
     Logger.log(`Error refreshing sync status styling: ${error.message}`);
     SpreadsheetApp.getActiveSpreadsheet().toast(
@@ -2301,3 +2443,13 @@ SyncService.cleanupPreviousSyncStatusColumn = function(sheet, sheetName) {
     Logger.log(`Error in cleanupPreviousSyncStatusColumn: ${error.message}`);
   }
 };
+
+// Export functions to the SyncService namespace
+SyncService.syncFromPipedrive = syncFromPipedrive;
+SyncService.syncPipedriveDataToSheet = syncPipedriveDataToSheet;
+SyncService.isSyncRunning = isSyncRunning;
+SyncService.setSyncRunning = setSyncRunning;
+SyncService.updateSyncStatus = updateSyncStatus;
+SyncService.showSyncStatus = showSyncStatus;
+SyncService.getSyncStatus = getSyncStatus;
+SyncService.formatEntityTypeName = formatEntityTypeName;

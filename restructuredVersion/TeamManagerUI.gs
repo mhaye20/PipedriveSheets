@@ -819,4 +819,65 @@ TeamManagerUI.getScripts = function() {
     // Hide loading indicator on initial load
     hideLoading();
   `;
-}; 
+};
+
+/**
+ * Shows the team management UI.
+ * @param {boolean} joinOnly - Whether to show only the join team section.
+ */
+TeamManagerUI.showTeamManager = function(joinOnly = false) {
+  try {
+    // Get the active user's email
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      throw new Error('Unable to retrieve your email address. Please make sure you are logged in.');
+    }
+
+    // Get team data
+    const teamAccess = new TeamAccess();
+    const hasTeam = teamAccess.isUserInTeam(userEmail);
+    let teamName = '';
+    let teamId = '';
+    let teamMembers = [];
+    let userRole = '';
+
+    if (hasTeam) {
+      const teamData = teamAccess.getUserTeamData(userEmail);
+      teamName = teamData.name;
+      teamId = teamData.id;
+      teamMembers = teamAccess.getTeamMembers(teamId);
+      userRole = teamData.role;
+    }
+
+    // Create the HTML template
+    const template = HtmlService.createTemplateFromFile('TeamManager');
+    
+    // Set template variables
+    template.userEmail = userEmail;
+    template.hasTeam = hasTeam;
+    template.teamName = teamName;
+    template.teamId = teamId;
+    template.teamMembers = teamMembers;
+    template.userRole = userRole;
+    template.initialTab = joinOnly ? 'join' : (hasTeam ? 'manage' : 'create');
+    
+    // Make include function available to the template
+    template.include = include;
+    
+    // Evaluate the template
+    const htmlOutput = template.evaluate()
+      .setWidth(500)
+      .setHeight(hasTeam ? 600 : 400)
+      .setTitle(hasTeam ? 'Team Management' : 'Team Access')
+      .setSandboxMode(HtmlService.SandboxMode.IFRAME);
+
+    // Show the dialog
+    SpreadsheetApp.getUi().showModalDialog(htmlOutput, hasTeam ? 'Team Management' : 'Team Access');
+  } catch (error) {
+    Logger.log(`Error in showTeamManager: ${error.message}`);
+    showError('An error occurred while loading the team management interface: ' + error.message);
+  }
+};
+
+// Export functions to be globally accessible
+this.showTeamManager = TeamManagerUI.showTeamManager; 

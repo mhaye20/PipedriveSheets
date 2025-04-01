@@ -401,10 +401,16 @@
       const selectedCountEl = document.getElementById('selectedCount');
       
       // Debug information
-      console.log("Working with availableColumns:", availableColumns.length);
+      console.log("Working with availableColumns:", availableColumns ? availableColumns.length : "none");
+      if (!availableColumns || availableColumns.length === 0) {
+        console.error("No available columns found! This is a problem.");
+      } else {
+        console.log("First few available columns:", availableColumns.slice(0, 5));
+      }
       
       // Create a deep copy of the original available columns to ensure we don't lose data
-      const originalAvailableColumns = JSON.parse(JSON.stringify(availableColumns));
+      const originalAvailableColumns = availableColumns ? JSON.parse(JSON.stringify(availableColumns)) : [];
+      console.log("Original available columns copy created with length:", originalAvailableColumns.length);
       
       // Render the lists
       function renderAvailableList(searchTerm = '') {
@@ -697,13 +703,30 @@
           return;
         }
         
+        console.log('Save button clicked, sending data to server');
+        console.log(`Sending ${selectedColumns.length} columns to save`);
+        
+        // Log email and phone columns specifically
+        const emailColumns = selectedColumns.filter(col => col.key.startsWith('email.'));
+        const phoneColumns = selectedColumns.filter(col => col.key.startsWith('phone.'));
+        
+        console.log('Email columns:', emailColumns);
+        console.log('Phone columns:', phoneColumns);
+        
         // Show loading animation
         document.getElementById('saveLoading').style.display = 'flex';
         document.getElementById('saveBtn').disabled = true;
         document.getElementById('cancelBtn').disabled = true;
         
+        console.log('Calling handleSaveColumns with:', {
+          columns: selectedColumns.map(c => ({key: c.key, name: c.name, customName: c.customName})),
+          entityType,
+          sheetName
+        });
+        
         google.script.run
-          .withSuccessHandler(() => {
+          .withSuccessHandler((result) => {
+            console.log('Save successful, result:', result);
             document.getElementById('saveLoading').style.display = 'none';
             showStatus('success', 'Column preferences saved successfully!');
             
@@ -713,12 +736,13 @@
             }, 1500);
           })
           .withFailureHandler((error) => {
+            console.error('Save failed:', error);
             document.getElementById('saveLoading').style.display = 'none';
             document.getElementById('saveBtn').disabled = false;
             document.getElementById('cancelBtn').disabled = false;
             showStatus('error', 'Error: ' + error.message);
           })
-          .saveColumnPreferences(selectedColumns, entityType, sheetName);
+          .handleSaveColumns(selectedColumns, entityType, sheetName);
       };
       
       document.getElementById('cancelBtn').onclick = () => {

@@ -488,7 +488,7 @@ const TriggerManagerUI = {
     const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
     
     // Get current triggers for this sheet
-    const currentTriggers = getTriggersForSheet(activeSheetName);
+    const currentTriggers = TriggerManagerUI.getTriggersForSheet(activeSheetName);
     
     // Create the HTML template
     const template = HtmlService.createTemplateFromFile('TriggerManager');
@@ -508,5 +508,113 @@ const TriggerManagerUI = {
       .setTitle('Schedule Automatic Sync');
       
     SpreadsheetApp.getUi().showModalDialog(html, 'Schedule Automatic Sync');
+  },
+
+  getTriggersForSheet(sheetName) {
+    try {
+      // Get all triggers for the spreadsheet
+      const triggers = ScriptApp.getProjectTriggers();
+      
+      // Filter triggers for syncFromPipedrive function and this sheet
+      return triggers
+        .filter(trigger => {
+          // Only include sync triggers
+          if (trigger.getHandlerFunction() !== 'syncFromPipedrive') {
+            return false;
+          }
+          
+          // Get trigger event source (the sheet)
+          const triggerSource = trigger.getTriggerSource();
+          if (triggerSource === null) {
+            return false;
+          }
+          
+          // For time-based triggers, check if they're for this sheet
+          if (trigger.getEventType() === ScriptApp.EventType.CLOCK) {
+            // We store the sheet name in the trigger's unique ID
+            const triggerId = trigger.getUniqueId();
+            return triggerId.includes(sheetName);
+          }
+          
+          return false;
+        })
+        .map(trigger => {
+          const info = TriggerManagerUI.getTriggerInfo(trigger);
+          return {
+            id: trigger.getUniqueId(),
+            type: info.type,
+            description: info.description
+          };
+        });
+    } catch (e) {
+      Logger.log(`Error in getTriggersForSheet: ${e.message}`);
+      return [];
+    }
+  },
+
+  getTriggerInfo(trigger) {
+    try {
+      const eventType = trigger.getEventType();
+      
+      if (eventType === ScriptApp.EventType.CLOCK) {
+        const atTime = trigger.getAtHour() !== null;
+        const everyHours = !atTime;
+        
+        if (atTime) {
+          // Daily/weekly/monthly trigger
+          const hour = trigger.getAtHour();
+          const minute = trigger.getAtMinute() || 0;
+          const weekDay = trigger.getWeekDay();
+          const monthDay = trigger.getMonthDay();
+          
+          const time = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+          
+          if (weekDay !== null) {
+            // Weekly trigger
+            const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            return {
+              type: 'Weekly',
+              description: `Every ${days[weekDay - 1]} at ${time}`
+            };
+          } else if (monthDay !== null) {
+            // Monthly trigger
+            const suffix = ['st', 'nd', 'rd'][monthDay - 1] || 'th';
+            return {
+              type: 'Monthly',
+              description: `On the ${monthDay}${suffix} at ${time}`
+            };
+          } else {
+            // Daily trigger
+            return {
+              type: 'Daily',
+              description: `Every day at ${time}`
+            };
+          }
+        } else if (everyHours) {
+          // Hourly trigger
+          const hours = trigger.getAtHour() || 1;
+          return {
+            type: 'Hourly',
+            description: `Every ${hours} hour${hours > 1 ? 's' : ''}`
+          };
+        }
+      }
+      
+      return {
+        type: 'Unknown',
+        description: 'Unknown trigger type'
+      };
+    } catch (e) {
+      Logger.log(`Error in getTriggerInfo: ${e.message}`);
+      return {
+        type: 'Error',
+        description: 'Error getting trigger info'
+      };
+    }
   }
-}; 
+};
+
+// Export functions to be globally accessible
+this.showTriggerManager = TriggerManagerUI.showTriggerManager;
+this.getTriggersForSheet = TriggerManagerUI.getTriggersForSheet;
+this.getTriggerInfo = TriggerManagerUI.getTriggerInfo; 

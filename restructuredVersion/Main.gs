@@ -1,48 +1,30 @@
 /**
  * Pipedrive to Google Sheets Integration
- * Version: 1.0.0
  * 
- * This add-on connects to Pipedrive API and fetches data based on filters
- * to populate a Google Sheet with the requested fields. It allows for two-way
- * synchronization, team collaboration, and scheduled updates.
+ * This script connects to Pipedrive API and fetches data based on filters
+ * to populate a Google Sheet with the requested fields.
  * 
- * @author Your Name
- * @license Apache License 2.0
+ * Version: 2.0.0
+ * Author: Your Name
+ * License: MIT
  */
 
-/**
- * Define the OAuth scopes the script needs
- * @OnlyCurrentDoc
- */
+// OAuth scopes needed for the add-on
+const OAUTH_SCOPES = [
+  'https://www.googleapis.com/auth/spreadsheets.currentonly',
+  'https://www.googleapis.com/auth/script.container.ui',
+  'https://www.googleapis.com/auth/script.scriptapp',
+  'https://www.googleapis.com/auth/script.external_request'
+];
 
-/**
- * Define necessary service namespaces 
- */
-var SyncService = SyncService || {};
-var UI = UI || {};
+// Service namespaces
+if (typeof SyncService === 'undefined') {
+  var SyncService = {};
+}
 
-/**
- * Constants
- */
-const API_KEY = ''; // Default API key
-const FILTER_ID = ''; // Default filter ID
-const DEFAULT_PIPEDRIVE_SUBDOMAIN = 'api';
-const DEFAULT_SHEET_NAME = 'PDexport'; // Default sheet name
-const PIPEDRIVE_API_URL_PREFIX = 'https://';
-const PIPEDRIVE_API_URL_SUFFIX = '.pipedrive.com/v1';
-const ENTITY_TYPES = {
-  DEALS: 'deals',
-  PERSONS: 'persons',
-  ORGANIZATIONS: 'organizations',
-  ACTIVITIES: 'activities',
-  LEADS: 'leads',
-  PRODUCTS: 'products'
-};
-
-// OAuth Constants - YOU NEED TO REGISTER YOUR APP WITH PIPEDRIVE TO GET THESE
-// Go to https://developers.pipedrive.com/docs/api/v1/oauth2/auth and create an app
-const PIPEDRIVE_CLIENT_ID = 'f48c99e028029bab'; // Client ID from Pipedrive
-const PIPEDRIVE_CLIENT_SECRET = '2d245de02052108d8c22d8f7ea8004bc00e7aac7'; // Client Secret from Pipedrive
+if (typeof UI === 'undefined') {
+  var UI = {};
+}
 
 /**
  * Cache for verified users
