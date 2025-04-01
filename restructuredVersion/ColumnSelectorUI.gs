@@ -1346,7 +1346,7 @@ function handleSaveColumns(selectedColumns, entityType, sheetName) {
       });
     }
     
-    // Save the column preferences
+    // Fix the parameter order here to match the expected order in saveColumnPreferences
     const saveResult = saveColumnPreferences(entityType, sheetName, selectedColumns);
     
     if (saveResult) {

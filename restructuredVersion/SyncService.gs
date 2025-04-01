@@ -238,11 +238,30 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
     
     // Get column preferences
     const columnPrefsKey = `COLUMN_PREFS_${entityType}_${sheetName}`;
-    // For backward compatibility, also try old key format
-    const oldFormatKey = `COLUMNS_${sheetName}_${entityType}`;
     
-    const savedColumnsJson = scriptProperties.getProperty(columnPrefsKey) || 
+    // For backward compatibility, also try old key format and user-specific format
+    const oldFormatKey = `COLUMNS_${sheetName}_${entityType}`;
+    const userEmail = Session.getEffectiveUser().getEmail();
+    const userSpecificKey = `COLUMNS_${sheetName}_${entityType}_${userEmail}`;
+    
+    Logger.log(`Looking for column preferences with keys:`);
+    Logger.log(`- User specific: ${userSpecificKey}`);
+    Logger.log(`- Old format key: ${oldFormatKey}`);
+    Logger.log(`- Column prefs key: ${columnPrefsKey}`);
+    
+    const savedColumnsJson = scriptProperties.getProperty(userSpecificKey) || 
+                            scriptProperties.getProperty(columnPrefsKey) || 
                             scriptProperties.getProperty(oldFormatKey);
+    
+    if (scriptProperties.getProperty(userSpecificKey)) {
+      Logger.log(`Found user-specific column preferences`);
+    } else if (scriptProperties.getProperty(columnPrefsKey)) {
+      Logger.log(`Found generic column preferences`);
+    } else if (scriptProperties.getProperty(oldFormatKey)) {
+      Logger.log(`Found old format column preferences`);
+    } else {
+      Logger.log(`No saved column preferences found with any key format`);
+    }
     
     let columns = [];
     
