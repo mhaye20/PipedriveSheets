@@ -1245,6 +1245,10 @@ function onEdit(e) {
     // Get the column header name for the edited column
     const headerName = headers[column - 1]; // Adjust for 0-based array
     
+    // Enhanced debug logging
+    Logger.log(`UNDO_DEBUG: Cell edit in ${sheetName} - Header: "${headerName}", Row: ${row}`);
+    Logger.log(`UNDO_DEBUG: Current status: "${currentStatus}"`);
+    
     // Handle first-time edit case (current status is not Modified)
     if (currentStatus !== "Modified") {
       // Store the original value before marking as modified
@@ -1255,6 +1259,7 @@ function onEdit(e) {
       if (headerName) {
         // Store the original value
         originalData[rowKey][headerName] = e.oldValue !== undefined ? e.oldValue : null;
+        Logger.log(`UNDO_DEBUG: First edit - storing original value: "${e.oldValue}" for ${headerName}`);
         
         // Save updated original data
         try {
@@ -1293,60 +1298,504 @@ function onEdit(e) {
         const originalValue = originalData[rowKey][headerName];
         const currentValue = e.value;
         
-        Logger.log(`Checking if undo: Original value "${originalValue}" vs. Current value "${currentValue}"`);
+        Logger.log(`UNDO_DEBUG: === COMPARING VALUES FOR FIELD: ${headerName} ===`);
+        Logger.log(`UNDO_DEBUG: Original value: ${JSON.stringify(originalValue)} (type: ${typeof originalValue})`);
+        Logger.log(`UNDO_DEBUG: Current value: ${JSON.stringify(currentValue)} (type: ${typeof currentValue})`);
         
-        // Special handling for null/empty values
-        if ((originalValue === null || originalValue === "") && 
-            (currentValue === null || currentValue === "")) {
-          Logger.log(`Both values are empty, treating as match`);
+        // Improved equality check - try to normalize values for comparison regardless of type
+        let originalString = originalValue === null || originalValue === undefined ? '' : String(originalValue).trim();
+        let currentString = currentValue === null || currentValue === undefined ? '' : String(currentValue).trim();
+        
+        // Special handling for email fields - normalize domains for comparison
+        if (headerName.toLowerCase().includes('email')) {
+          // Apply email normalization rules
+          if (originalString.includes('@')) {
+            const origParts = originalString.split('@');
+            const origUsername = origParts[0].toLowerCase();
+            let origDomain = origParts[1].toLowerCase();
+            
+            // Fix common domain typos
+            if (origDomain === 'gmail.comm') origDomain = 'gmail.com';
+            if (origDomain === 'gmail.con') origDomain = 'gmail.com';
+            if (origDomain === 'gmial.com') origDomain = 'gmail.com';
+            if (origDomain === 'hotmail.comm') origDomain = 'hotmail.com';
+            if (origDomain === 'hotmail.con') origDomain = 'hotmail.com';
+            if (origDomain === 'yahoo.comm') origDomain = 'yahoo.com';
+            if (origDomain === 'yahoo.con') origDomain = 'yahoo.com';
+            
+            // Reassemble normalized email
+            originalString = origUsername + '@' + origDomain;
+          }
+          
+          if (currentString.includes('@')) {
+            const currParts = currentString.split('@');
+            const currUsername = currParts[0].toLowerCase();
+            let currDomain = currParts[1].toLowerCase();
+            
+            // Fix common domain typos
+            if (currDomain === 'gmail.comm') currDomain = 'gmail.com';
+            if (currDomain === 'gmail.con') currDomain = 'gmail.com';
+            if (currDomain === 'gmial.com') currDomain = 'gmail.com';
+            if (currDomain === 'hotmail.comm') currDomain = 'hotmail.com';
+            if (currDomain === 'hotmail.con') currDomain = 'hotmail.com';
+            if (currDomain === 'yahoo.comm') currDomain = 'yahoo.com';
+            if (currDomain === 'yahoo.con') currDomain = 'yahoo.com';
+            
+            // Reassemble normalized email
+            currentString = currUsername + '@' + currDomain;
+          }
+          
+          Logger.log(`UNDO_DEBUG: Normalized emails for comparison - Original: "${originalString}", Current: "${currentString}"`);
+        }
+        // Special handling for name fields - normalize common typos
+        else if (headerName.toLowerCase().includes('name')) {
+          // Check for common name typos like extra letter at the end
+          if (originalString.length > 0 && currentString.length > 0) {
+            // Check if one string is the same as the other with an extra character at the end
+            if (originalString.length === currentString.length + 1) {
+              if (originalString.startsWith(currentString)) {
+                Logger.log(`UNDO_DEBUG: Name has extra char at end of original: "${originalString}" vs "${currentString}"`);
+                originalString = currentString;
+              }
+            } 
+            else if (currentString.length === originalString.length + 1) {
+              if (currentString.startsWith(originalString)) {
+                Logger.log(`UNDO_DEBUG: Name has extra char at end of current: "${currentString}" vs "${originalString}"`);
+                currentString = originalString;
+              }
+            }
+            // Check for single character mismatch at the end (e.g., "Simpson" vs "Simpsonm")
+            else if (originalString.length === currentString.length) {
+              // Find the first character that differs
+              let diffIndex = -1;
+              for (let i = 0; i < originalString.length; i++) {
+                if (originalString[i] !== currentString[i]) {
+                  diffIndex = i;
+                  break;
+                }
+              }
+              
+              // If the difference is near the end
+              if (diffIndex > 0 && diffIndex >= originalString.length - 2) {
+                Logger.log(`UNDO_DEBUG: Name has character mismatch near end: "${originalString}" vs "${currentString}"`);
+                // Normalize by taking the shorter version up to the differing character
+                const normalizedName = originalString.substring(0, diffIndex);
+                originalString = normalizedName;
+                currentString = normalizedName;
+              }
+            }
+          }
+          
+          Logger.log(`UNDO_DEBUG: Normalized names for comparison - Original: "${originalString}", Current: "${currentString}"`);
         }
         
-        // If new value matches original value (or both are empty)
-        if (originalValue == currentValue || // Using non-strict comparison for different types
-            ((originalValue === null || originalValue === "") && 
-             (currentValue === null || currentValue === ""))) {
-          
-          // Check if all edited values in the row now match original values
-          const allMatch = checkAllValuesMatchOriginal(sheet, row, headers, originalData[rowKey]);
-          
-          Logger.log(`All values match original: ${allMatch}`);
-          
-          if (allMatch) {
-            // All values in row match original - reset to Not modified
-            syncStatusCell.setValue("Not modified");
-            Logger.log(`Reset to Not modified for row ${row} - all values match original`);
+        // For numeric values, try to normalize scientific notation and number formats
+        if (!isNaN(parseFloat(originalString)) && !isNaN(parseFloat(currentString))) {
+          // Convert both to numbers and back to strings for comparison
+          try {
+            const origNum = parseFloat(originalString);
+            const currNum = parseFloat(currentString);
             
-            // Save new cell state with strong protection against toggling back
-            cellState.status = "Not modified";
-            cellState.lastChanged = now;
-            cellState.isUndone = true;  // Special flag to indicate this is an undo operation
+            // If both are integers, compare as integers
+            if (Math.floor(origNum) === origNum && Math.floor(currNum) === currNum) {
+              originalString = Math.floor(origNum).toString();
+              currentString = Math.floor(currNum).toString();
+              Logger.log(`UNDO_DEBUG: Normalized as integers: "${originalString}" vs "${currentString}"`);
+            } else {
+              // Compare with fixed decimal places for floating point numbers
+              originalString = origNum.toString();
+              currentString = currNum.toString();
+              Logger.log(`UNDO_DEBUG: Normalized as floats: "${originalString}" vs "${currentString}"`);
+            }
+          } catch (numError) {
+            Logger.log(`UNDO_DEBUG: Error normalizing numbers: ${numError.message}`);
+          }
+        }
+        
+        // Check if this is a structural field with complex nested structure
+        if (originalValue && typeof originalValue === 'object' && originalValue.__isStructural) {
+          Logger.log(`DEBUG: Found structural field with key ${originalValue.__key}`);
+          
+          // Simple direct comparison before complex checks
+          if (originalString === currentString) {
+            Logger.log(`UNDO_DEBUG: Direct string comparison match for structural field: "${originalString}" = "${currentString}"`);
             
-            try {
-              scriptProperties.setProperty(cellStateKey, JSON.stringify(cellState));
-            } catch (saveError) {
-              Logger.log(`Error saving cell state: ${saveError.message}`);
+            // Check if all edited values in the row now match original values
+            Logger.log(`UNDO_DEBUG: Checking if all fields in row match original values`);
+            const allMatch = checkAllValuesMatchOriginal(sheet, row, headers, originalData[rowKey]);
+            
+            Logger.log(`UNDO_DEBUG: All values match original: ${allMatch}`);
+            
+            if (allMatch) {
+              // All values in row match original - reset to Not modified
+              syncStatusCell.setValue("Not modified");
+              Logger.log(`UNDO_DEBUG: Reset to Not modified for row ${row} - all values match original`);
+              
+              // Save new cell state with strong protection against toggling back
+              cellState.status = "Not modified";
+              cellState.lastChanged = now;
+              cellState.isUndone = true;  // Special flag to indicate this is an undo operation
+              
+              try {
+                scriptProperties.setProperty(cellStateKey, JSON.stringify(cellState));
+              } catch (saveError) {
+                Logger.log(`Error saving cell state: ${saveError.message}`);
+              }
+              
+              // Create a temporary lock to prevent changes for 10 seconds
+              const noChangeLockKey = `NO_CHANGE_LOCK_${sheetName}_${row}`;
+              try {
+                scriptProperties.setProperty(noChangeLockKey, JSON.stringify({
+                  timestamp: now,
+                  expiry: now + 10000, // 10 seconds
+                  status: "Not modified"
+                }));
+              } catch (lockError) {
+                Logger.log(`Error setting no-change lock: ${lockError.message}`);
+              }
+              
+              // Re-apply data validation
+              const rule = SpreadsheetApp.newDataValidation()
+                .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
+                .build();
+              syncStatusCell.setDataValidation(rule);
+              
+              // Reset formatting
+              syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
             }
             
-            // Create a temporary lock to prevent changes for 10 seconds
-            const noChangeLockKey = `NO_CHANGE_LOCK_${sheetName}_${row}`;
-            try {
-              scriptProperties.setProperty(noChangeLockKey, JSON.stringify({
-                timestamp: now,
-                expiry: now + 10000, // 10 seconds
-                status: "Not modified"
-              }));
-            } catch (lockError) {
-              Logger.log(`Error setting no-change lock: ${lockError.message}`);
+            return;
+          }
+          
+          // Create a data object that mimics Pipedrive structure
+          const dataObj = { id: id };
+          
+          // Try to reconstruct the structure based on the __key
+          const key = originalValue.__key;
+          const parts = key.split('.');
+          const structureType = parts[0];
+          
+          if (['phone', 'email'].includes(structureType)) {
+            // Handle phone/email fields
+            dataObj[structureType] = [];
+            
+            // If it's a label-based path (e.g., phone.mobile)
+            if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
+              Logger.log(`DEBUG: Processing labeled ${structureType} field with label ${parts[1]}`);
+              dataObj[structureType].push({
+                label: parts[1],
+                value: currentValue
+              });
+            } 
+            // If it's an array index path (e.g., phone.0.value)
+            else if (parts.length === 3 && parts[2] === 'value') {
+              const idx = parseInt(parts[1]);
+              Logger.log(`DEBUG: Processing indexed ${structureType} field at position ${idx}`);
+              while (dataObj[structureType].length <= idx) {
+                dataObj[structureType].push({});
+              }
+              dataObj[structureType][idx].value = currentValue;
+            }
+          }
+          // Custom fields
+          else if (structureType === 'custom_fields') {
+            dataObj.custom_fields = {};
+            
+            if (parts.length === 2) {
+              // Simple custom field
+              Logger.log(`DEBUG: Processing simple custom field ${parts[1]}`);
+              dataObj.custom_fields[parts[1]] = currentValue;
+            } 
+            else if (parts.length > 2) {
+              // Nested custom field like address or currency
+              Logger.log(`DEBUG: Processing complex custom field ${parts[1]}.${parts[2]}`);
+              dataObj.custom_fields[parts[1]] = {};
+              
+              // Handle complex types
+              if (parts[2] === 'formatted_address') {
+                dataObj.custom_fields[parts[1]].formatted_address = currentValue;
+              } 
+              else if (parts[2] === 'currency') {
+                dataObj.custom_fields[parts[1]].currency = currentValue;
+              }
+              else {
+                dataObj.custom_fields[parts[1]][parts[2]] = currentValue;
+              }
+            }
+          } else {
+            // Other nested fields not covered above
+            Logger.log(`DEBUG: Processing general nested field with key: ${key}`);
+            
+            // Build a generic nested structure
+            let current = dataObj;
+            for (let i = 0; i < parts.length - 1; i++) {
+              if (current[parts[i]] === undefined) {
+                if (!isNaN(parseInt(parts[i+1]))) {
+                  current[parts[i]] = [];
+                } else {
+                  current[parts[i]] = {};
+                }
+              }
+              current = current[parts[i]];
+            }
+            current[parts[parts.length - 1]] = currentValue;
+          }
+          
+          // Compare using the normalized values
+          const normalizedOriginal = originalValue.__normalized || '';
+          const normalizedCurrent = getNormalizedFieldValue(dataObj, key);
+          
+          Logger.log(`DEBUG: Structural comparison - Original: "${normalizedOriginal}", Current: "${normalizedCurrent}"`);
+          
+          // Check if values match
+          const valuesMatch = normalizedOriginal === normalizedCurrent;
+          Logger.log(`DEBUG: Structural values match: ${valuesMatch}`);
+          
+          // If values match, check all fields
+          if (valuesMatch) {
+            // Check if all edited values in the row now match original values
+            Logger.log(`DEBUG: Checking if all fields in row match original values`);
+            const allMatch = checkAllValuesMatchOriginal(sheet, row, headers, originalData[rowKey]);
+            
+            Logger.log(`DEBUG: All values match original: ${allMatch}`);
+            
+            if (allMatch) {
+              // All values in row match original - reset to Not modified
+              syncStatusCell.setValue("Not modified");
+              Logger.log(`DEBUG: Reset to Not modified for row ${row} - all values match original`);
+              
+              // Save new cell state with strong protection against toggling back
+              cellState.status = "Not modified";
+              cellState.lastChanged = now;
+              cellState.isUndone = true;  // Special flag to indicate this is an undo operation
+              
+              try {
+                scriptProperties.setProperty(cellStateKey, JSON.stringify(cellState));
+              } catch (saveError) {
+                Logger.log(`Error saving cell state: ${saveError.message}`);
+              }
+              
+              // Create a temporary lock to prevent changes for 10 seconds
+              const noChangeLockKey = `NO_CHANGE_LOCK_${sheetName}_${row}`;
+              try {
+                scriptProperties.setProperty(noChangeLockKey, JSON.stringify({
+                  timestamp: now,
+                  expiry: now + 10000, // 10 seconds
+                  status: "Not modified"
+                }));
+              } catch (lockError) {
+                Logger.log(`Error setting no-change lock: ${lockError.message}`);
+              }
+              
+              // Re-apply data validation
+              const rule = SpreadsheetApp.newDataValidation()
+                .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
+                .build();
+              syncStatusCell.setDataValidation(rule);
+              
+              // Reset formatting
+              syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
+            }
+          }
+        } else {
+          // This is a regular field, not a structural field
+          
+          // Special handling for null/empty values
+          if ((originalValue === null || originalValue === "") && 
+              (currentValue === null || currentValue === "")) {
+            Logger.log(`DEBUG: Both values are empty, treating as match`);
+          }
+          
+          // Simple direct comparison before complex checks
+          if (originalString === currentString) {
+            Logger.log(`UNDO_DEBUG: Direct string comparison match for regular field: "${originalString}" = "${currentString}"`);
+            
+            // Check if all edited values in the row now match original values
+            Logger.log(`UNDO_DEBUG: Checking if all fields in row match original values`);
+            const allMatch = checkAllValuesMatchOriginal(sheet, row, headers, originalData[rowKey]);
+            
+            Logger.log(`UNDO_DEBUG: All values match original: ${allMatch}`);
+            
+            if (allMatch) {
+              // All values in row match original - reset to Not modified
+              syncStatusCell.setValue("Not modified");
+              Logger.log(`UNDO_DEBUG: Reset to Not modified for row ${row} - all values match original`);
+              
+              // Save new cell state with strong protection against toggling back
+              cellState.status = "Not modified";
+              cellState.lastChanged = now;
+              cellState.isUndone = true;  // Special flag to indicate this is an undo operation
+              
+              try {
+                scriptProperties.setProperty(cellStateKey, JSON.stringify(cellState));
+              } catch (saveError) {
+                Logger.log(`Error saving cell state: ${saveError.message}`);
+              }
+              
+              // Create a temporary lock to prevent changes for 10 seconds
+              const noChangeLockKey = `NO_CHANGE_LOCK_${sheetName}_${row}`;
+              try {
+                scriptProperties.setProperty(noChangeLockKey, JSON.stringify({
+                  timestamp: now,
+                  expiry: now + 10000, // 10 seconds
+                  status: "Not modified"
+                }));
+              } catch (lockError) {
+                Logger.log(`Error setting no-change lock: ${lockError.message}`);
+              }
+              
+              // Re-apply data validation
+              const rule = SpreadsheetApp.newDataValidation()
+                .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
+                .build();
+              syncStatusCell.setDataValidation(rule);
+              
+              // Reset formatting
+              syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
             }
             
-            // Re-apply data validation
-            const rule = SpreadsheetApp.newDataValidation()
-              .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
-              .build();
-            syncStatusCell.setDataValidation(rule);
+            return;
+          }
+          
+          // Create a data object that mimics Pipedrive structure
+          const dataObj = { id: id };
+          
+          // Populate the field being edited
+          if (headerName.includes('.')) {
+            // Handle nested structure
+            const parts = headerName.split('.');
+            Logger.log(`DEBUG: Building nested structure with parts: ${parts}`);
             
-            // Reset formatting
-            syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
+            if (['phone', 'email'].includes(parts[0])) {
+              // Handle phone/email fields
+              dataObj[parts[0]] = [];
+              
+              // If it's a label-based path (e.g., phone.mobile)
+              if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
+                Logger.log(`DEBUG: Adding label-based ${parts[0]} field with label ${parts[1]}`);
+                dataObj[parts[0]].push({
+                  label: parts[1],
+                  value: currentValue
+                });
+              } 
+              // If it's an array index path (e.g., phone.0.value)
+              else if (parts.length === 3 && parts[2] === 'value') {
+                const idx = parseInt(parts[1]);
+                Logger.log(`DEBUG: Adding array-index ${parts[0]} field at index ${idx}`);
+                while (dataObj[parts[0]].length <= idx) {
+                  dataObj[parts[0]].push({});
+                }
+                dataObj[parts[0]][idx].value = currentValue;
+              }
+            }
+            // Custom fields
+            else if (parts[0] === 'custom_fields') {
+              Logger.log(`DEBUG: Adding custom_fields structure`);
+              dataObj.custom_fields = {};
+              
+              if (parts.length === 2) {
+                // Simple custom field
+                Logger.log(`DEBUG: Adding simple custom field ${parts[1]}`);
+                dataObj.custom_fields[parts[1]] = currentValue;
+              } 
+              else if (parts.length > 2) {
+                // Nested custom field like address or currency
+                Logger.log(`DEBUG: Adding complex custom field ${parts[1]} with subfield ${parts[2]}`);
+                dataObj.custom_fields[parts[1]] = {};
+                
+                // Handle complex types
+                if (parts[2] === 'formatted_address') {
+                  dataObj.custom_fields[parts[1]].formatted_address = currentValue;
+                } 
+                else if (parts[2] === 'currency') {
+                  dataObj.custom_fields[parts[1]].currency = currentValue;
+                }
+                else {
+                  dataObj.custom_fields[parts[1]][parts[2]] = currentValue;
+                }
+              }
+            } else {
+              // Other nested fields not covered above
+              Logger.log(`DEBUG: Unhandled nested field type: ${parts[0]}`);
+              
+              // Build a generic nested structure
+              let current = dataObj;
+              for (let i = 0; i < parts.length - 1; i++) {
+                if (!current[parts[i]]) {
+                  current[parts[i]] = {};
+                }
+                current = current[parts[i]];
+              }
+              current[parts[parts.length - 1]] = currentValue;
+              
+              Logger.log(`DEBUG: Created generic nested structure: ${JSON.stringify(dataObj)}`);
+            }
+          } else {
+            // Regular top-level field
+            Logger.log(`DEBUG: Adding top-level field ${headerName}`);
+            dataObj[headerName] = currentValue;
+          }
+          
+          // Dump the constructed data object
+          Logger.log(`DEBUG: Constructed data object: ${JSON.stringify(dataObj)}`);
+          
+          // Use the generalized field value normalization for comparison
+          const normalizedOriginal = getNormalizedFieldValue({ [headerName]: originalValue }, headerName);
+          const normalizedCurrent = getNormalizedFieldValue(dataObj, headerName);
+          
+          Logger.log(`DEBUG: Original type: ${typeof originalValue}, Current type: ${typeof currentValue}`);
+          Logger.log(`DEBUG: Normalized Original: "${normalizedOriginal}"`);
+          Logger.log(`DEBUG: Normalized Current: "${normalizedCurrent}"`);
+          
+          // Check if values match
+          const valuesMatch = normalizedOriginal === normalizedCurrent;
+          Logger.log(`DEBUG: Values match: ${valuesMatch}`);
+          
+          // If values match, check all fields
+          if (valuesMatch) {
+            // Check if all edited values in the row now match original values
+            Logger.log(`DEBUG: Checking if all fields in row match original values`);
+            const allMatch = checkAllValuesMatchOriginal(sheet, row, headers, originalData[rowKey]);
+            
+            Logger.log(`DEBUG: All values match original: ${allMatch}`);
+            
+            if (allMatch) {
+              // All values in row match original - reset to Not modified
+              syncStatusCell.setValue("Not modified");
+              Logger.log(`DEBUG: Reset to Not modified for row ${row} - all values match original`);
+              
+              // Save new cell state with strong protection against toggling back
+              cellState.status = "Not modified";
+              cellState.lastChanged = now;
+              cellState.isUndone = true;  // Special flag to indicate this is an undo operation
+              
+              try {
+                scriptProperties.setProperty(cellStateKey, JSON.stringify(cellState));
+              } catch (saveError) {
+                Logger.log(`Error saving cell state: ${saveError.message}`);
+              }
+              
+              // Create a temporary lock to prevent changes for 10 seconds
+              const noChangeLockKey = `NO_CHANGE_LOCK_${sheetName}_${row}`;
+              try {
+                scriptProperties.setProperty(noChangeLockKey, JSON.stringify({
+                  timestamp: now,
+                  expiry: now + 10000, // 10 seconds
+                  status: "Not modified"
+                }));
+              } catch (lockError) {
+                Logger.log(`Error setting no-change lock: ${lockError.message}`);
+              }
+              
+              // Re-apply data validation
+              const rule = SpreadsheetApp.newDataValidation()
+                .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
+                .build();
+              syncStatusCell.setDataValidation(rule);
+
+              // Reset formatting
+              syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
+            }
           }
         }
       } else if (e.oldValue !== undefined && headerName) {
@@ -1421,6 +1870,93 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
     // Get current values for the entire row
     const rowValues = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
     
+    // Get the first value (ID) to use for retrieving the original data
+    const id = rowValues[0];
+    
+    // Create a data object that mimics Pipedrive structure for nested field handling
+    const dataObj = { id: id };
+    
+    // Populate the data object with values from the row
+    headers.forEach((header, index) => {
+      if (index < rowValues.length) {
+        // Use dot notation to create nested objects
+        if (header.includes('.')) {
+          const parts = header.split('.');
+          
+          // Common nested structures to handle specially
+          if (['phone', 'email'].includes(parts[0])) {
+            // Handle phone/email specially
+            if (!dataObj[parts[0]]) {
+              dataObj[parts[0]] = [];
+            }
+            
+            // If it's a label-based path (e.g., phone.mobile)
+            if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
+              dataObj[parts[0]].push({
+                label: parts[1],
+                value: rowValues[index]
+              });
+            } 
+            // If it's an array index path (e.g., phone.0.value)
+            else if (parts.length === 3 && parts[2] === 'value') {
+              const idx = parseInt(parts[1]);
+              while (dataObj[parts[0]].length <= idx) {
+                dataObj[parts[0]].push({});
+              }
+              dataObj[parts[0]][idx].value = rowValues[index];
+            }
+          }
+          // Custom fields
+          else if (parts[0] === 'custom_fields') {
+            if (!dataObj.custom_fields) {
+              dataObj.custom_fields = {};
+            }
+            
+            if (parts.length === 2) {
+              // Simple custom field
+              dataObj.custom_fields[parts[1]] = rowValues[index];
+            } 
+            else if (parts.length > 2) {
+              // Nested custom field
+              if (!dataObj.custom_fields[parts[1]]) {
+                dataObj.custom_fields[parts[1]] = {};
+              }
+              // Handle complex types like address
+              if (parts[2] === 'formatted_address') {
+                dataObj.custom_fields[parts[1]].formatted_address = rowValues[index];
+              } 
+              else if (parts[2] === 'currency') {
+                dataObj.custom_fields[parts[1]].currency = rowValues[index];
+              }
+              else {
+                dataObj.custom_fields[parts[1]][parts[2]] = rowValues[index];
+              }
+            }
+          } else {
+            // Other nested paths - build the structure
+            let current = dataObj;
+            for (let i = 0; i < parts.length - 1; i++) {
+              if (current[parts[i]] === undefined) {
+                // If part is numeric, create an array
+                if (!isNaN(parseInt(parts[i+1]))) {
+                  current[parts[i]] = [];
+                } else {
+                  current[parts[i]] = {};
+                }
+              }
+              current = current[parts[i]];
+            }
+            
+            // Set the value at the final level
+            current[parts[parts.length - 1]] = rowValues[index];
+          }
+        } else {
+          // Regular top-level field
+          dataObj[header] = rowValues[index];
+        }
+      }
+    });
+    
     // Debug log
     Logger.log(`Checking ${Object.keys(originalValues).length} fields for original value match`);
     
@@ -1443,11 +1979,34 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
         continue; // Both empty, consider a match
       }
       
-      // Log the comparison for debugging
-      Logger.log(`Comparing ${headerName}: Original="${originalValue}" vs Current="${currentValue}"`);
+      // NEW: Check if this is a structural field with complex nested structure
+      if (originalValue && typeof originalValue === 'object' && originalValue.__isStructural) {
+        Logger.log(`Found structural field ${headerName} with key ${originalValue.__key}`);
+        
+        // Use the pre-computed normalized value for comparison
+        const normalizedOriginal = originalValue.__normalized || '';
+        const normalizedCurrent = getNormalizedFieldValue(dataObj, originalValue.__key);
+        
+        Logger.log(`Structural field comparison for ${headerName}: Original="${normalizedOriginal}", Current="${normalizedCurrent}"`);
+        
+        // If the normalized values don't match, return false
+        if (normalizedOriginal !== normalizedCurrent) {
+          Logger.log(`Structural field mismatch found for ${headerName}`);
+          return false;
+        }
+        
+        // Skip to the next field
+        continue;
+      }
       
-      // If the current value doesn't match the original, return false
-      if (originalValue != currentValue) { // Using non-strict comparison for type flexibility
+      // Use the generalized field value normalization for regular fields
+      const normalizedOriginal = getNormalizedFieldValue({ [headerName]: originalValue }, headerName);
+      const normalizedCurrent = getNormalizedFieldValue(dataObj, headerName);
+      
+      Logger.log(`Field comparison for ${headerName}: Original="${normalizedOriginal}", Current="${normalizedCurrent}"`);
+      
+      // If the normalized values don't match, return false
+      if (normalizedOriginal !== normalizedCurrent) {
         Logger.log(`Mismatch found for ${headerName}`);
         return false;
       }
@@ -1459,6 +2018,175 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
   } catch (error) {
     Logger.log(`Error in checkAllValuesMatchOriginal: ${error.message}`);
     return false;
+  }
+}
+
+/**
+ * Normalizes a phone number by removing all non-digit characters
+ * and handling scientific notation
+ * @param {*} value - The phone number value to normalize
+ * @return {string} The normalized phone number
+ */
+function normalizePhoneNumber(value) {
+  try {
+    // Handle null/undefined
+    if (value === null || value === undefined) {
+      return '';
+    }
+    
+    // Handle array/object (like Pipedrive phone fields)
+    if (typeof value === 'object') {
+      // If it's an array of phone objects (Pipedrive format)
+      if (Array.isArray(value) && value.length > 0) {
+        if (value[0] && value[0].value) {
+          // Use the first phone number's value
+          value = value[0].value;
+        } else if (typeof value[0] === 'string') {
+          // It's just an array of strings, use the first one
+          value = value[0];
+        }
+      } else if (value.value) {
+        // It's a single phone object with a value property
+        value = value.value;
+      } else {
+        // Try to extract a phone number from the object
+        // This covers cases like complex nested objects
+        const objStr = JSON.stringify(value);
+        const phoneMatch = objStr.match(/"value":"([^"]+)"/);
+        if (phoneMatch && phoneMatch[1]) {
+          return normalizeDigitsOnly(phoneMatch[1]);
+        } else {
+          // Just stringify the object as a fallback
+          value = objStr;
+        }
+      }
+    }
+    
+    return normalizeDigitsOnly(value);
+  } catch (e) {
+    Logger.log(`Error normalizing phone number: ${e.message}`);
+    return String(value); // Return as string in case of error
+  }
+}
+
+/**
+ * Extracts only the digits from a value, handling scientific notation
+ * and various number formats
+ * @param {*} value - The value to normalize
+ * @return {string} The normalized digits-only string
+ */
+function normalizeDigitsOnly(value) {
+  try {
+    // Handle null/undefined
+    if (value === null || value === undefined) {
+      return '';
+    }
+    
+    // If it's a number or scientific notation, convert to a regular number string
+    if (typeof value === 'number' || 
+        (typeof value === 'string' && value.includes('E'))) {
+      // Parse it as a number first to handle scientific notation
+      let numValue;
+      try {
+        numValue = Number(value);
+        if (!isNaN(numValue)) {
+          // Convert to regular number format without scientific notation
+          return numValue.toFixed(0);
+        }
+      } catch (e) {
+        // If parsing fails, continue with string handling
+      }
+    }
+    
+    // Convert to string if not already
+    const strValue = String(value);
+    
+    // Remove all non-digit characters
+    return strValue.replace(/\D/g, '');
+  } catch (e) {
+    Logger.log(`Error in normalizeDigitsOnly: ${e.message}`);
+    return String(value);
+  }
+}
+
+/**
+ * Gets the value from a phone number field regardless of format
+ * This is crucial for handling the different ways phone numbers appear in Pipedrive
+ * @param {Object} data - The data object containing the phone field
+ * @param {string} key - The key or path to the phone field
+ * @return {string} The normalized phone number
+ */
+function getPhoneNumberFromField(data, key) {
+  try {
+    if (!data || !key) return '';
+    
+    // If key is already a value, just normalize it
+    if (typeof key !== 'string') {
+      return normalizePhoneNumber(key);
+    }
+    
+    // Handle different path formats for phone numbers
+    
+    // Case 1: Direct phone field (e.g., "phone")
+    if (key === 'phone' && data.phone) {
+      return normalizePhoneNumber(data.phone);
+    }
+    
+    // Case 2: Specific label format (e.g., "phone.mobile")
+    if (key.startsWith('phone.') && key.split('.').length === 2) {
+      const label = key.split('.')[1];
+      
+      // Handle the array of phone objects with labels
+      if (Array.isArray(data.phone)) {
+        // Try to find a phone with the matching label
+        const match = data.phone.find(p => 
+          p && p.label && p.label.toLowerCase() === label.toLowerCase()
+        );
+        
+        if (match && match.value) {
+          return normalizePhoneNumber(match.value);
+        }
+        
+        // If not found but we were looking for primary, try to find primary flag
+        if (label === 'primary') {
+          const primary = data.phone.find(p => p && p.primary);
+          if (primary && primary.value) {
+            return normalizePhoneNumber(primary.value);
+          }
+        }
+        
+        // If nothing found, try first phone
+        if (data.phone.length > 0 && data.phone[0] && data.phone[0].value) {
+          return normalizePhoneNumber(data.phone[0].value);
+        }
+      }
+    }
+    
+    // Case 3: Array index format (e.g., "phone.0.value")
+    if (key.startsWith('phone.') && key.includes('.value')) {
+      const parts = key.split('.');
+      const index = parseInt(parts[1]);
+      
+      if (!isNaN(index) && Array.isArray(data.phone) && 
+          data.phone.length > index && data.phone[index]) {
+        return normalizePhoneNumber(data.phone[index].value);
+      }
+    }
+    
+    // Case 4: Use getValueByPath as a fallback
+    // This handles other complex nested paths
+    try {
+      const value = getValueByPath(data, key);
+      return normalizePhoneNumber(value);
+    } catch (e) {
+      Logger.log(`Error getting phone value by path: ${e.message}`);
+    }
+    
+    // If all else fails, return empty string
+    return '';
+  } catch (e) {
+    Logger.log(`Error in getPhoneNumberFromField: ${e.message}`);
+    return '';
   }
 }
 
@@ -3183,6 +3911,8 @@ function storeOriginalData(items, options) {
     // Create a map of original values keyed by record ID
     const originalData = {};
     
+    Logger.log(`STORE_DEBUG: Storing original data for ${items.length} items`);
+    
     items.forEach(item => {
       // Get the item ID (should be the first column)
       const id = item.id;
@@ -3197,8 +3927,77 @@ function storeOriginalData(items, options) {
         const columnName = options.headerRow[index];
         
         if (columnName) {
-          const value = getValueByPath(item, columnKey);
-          rowData[columnName] = formatValue(value, columnKey, options.optionMappings);
+          let rawValue;
+          try {
+            // Get the raw value from the item using the column key
+            rawValue = getValueByPath(item, columnKey);
+            
+            // For certain field types, we need to preserve the complex structure
+            const isStructuralField = 
+              columnKey.startsWith('phone.') || 
+              columnKey.startsWith('email.') || 
+              columnKey.startsWith('custom_fields.') ||
+              columnKey.includes('.value');
+            
+            if (isStructuralField) {
+              // For structural fields, store an object with the key and original structure
+              // This helps with complex nested fields during comparison
+              Logger.log(`STORE_DEBUG: Storing structural field ${columnName} with key ${columnKey}`);
+              
+              // Create a subobject for handling in onEdit
+              const structureType = columnKey.split('.')[0];
+              
+              if (structureType === 'phone' || structureType === 'email') {
+                // Store the whole array/object for phone/email fields
+                if (item[structureType]) {
+                  rowData[columnName] = {
+                    __isStructural: true,
+                    __key: columnKey,
+                    __value: item[structureType],
+                    __normalized: getNormalizedFieldValue(item, columnKey)
+                  };
+                  Logger.log(`STORE_DEBUG: Stored complex ${structureType} structure for column ${columnName}`);
+                } else {
+                  rowData[columnName] = formatValue(rawValue, columnKey, options.optionMappings);
+                }
+              } else if (structureType === 'custom_fields') {
+                // Store custom field structure
+                if (item.custom_fields) {
+                  const parts = columnKey.split('.');
+                  const fieldKey = parts[1];
+                  
+                  rowData[columnName] = {
+                    __isStructural: true,
+                    __key: columnKey,
+                    __value: item.custom_fields[fieldKey],
+                    __normalized: getNormalizedFieldValue(item, columnKey)
+                  };
+                  Logger.log(`STORE_DEBUG: Stored complex custom_field structure for column ${columnName}`);
+                } else {
+                  rowData[columnName] = formatValue(rawValue, columnKey, options.optionMappings);
+                }
+              } else {
+                // Handle other nested structures
+                try {
+                  rowData[columnName] = {
+                    __isStructural: true,
+                    __key: columnKey,
+                    __value: rawValue,
+                    __normalized: getNormalizedFieldValue(item, columnKey)
+                  };
+                  Logger.log(`STORE_DEBUG: Stored complex nested structure for column ${columnName}`);
+                } catch (e) {
+                  rowData[columnName] = formatValue(rawValue, columnKey, options.optionMappings);
+                }
+              }
+            } else {
+              // For regular fields, just store the formatted value
+              rowData[columnName] = formatValue(rawValue, columnKey, options.optionMappings);
+            }
+          } catch (valueError) {
+            Logger.log(`STORE_DEBUG: Error getting value for column ${columnName}: ${valueError.message}`);
+            rowData[columnName] = null;
+          }
         }
       });
       
@@ -3220,3 +4019,638 @@ this.onEdit = onEdit;
 // Export the trigger functions to the SyncService namespace
 SyncService.setupOnEditTrigger = setupOnEditTrigger;
 SyncService.removeOnEditTrigger = removeOnEditTrigger;
+
+/**
+ * Gets the normalized value from a field regardless of its structure
+ * This is crucial for handling different ways data is structured in Pipedrive
+ * @param {Object} data - The data object containing the field
+ * @param {string} key - The key or path to the field
+ * @return {string} The normalized value for comparison
+ */
+function getNormalizedFieldValue(data, key) {
+  try {
+    Logger.log(`FIELD_DEBUG: Starting field normalization for key "${key}"`);
+    
+    if (!data || !key) {
+      Logger.log(`FIELD_DEBUG: Empty data or key`);
+      return '';
+    }
+    
+    // If key is already a value, normalize it based on type
+    if (typeof key !== 'string') {
+      Logger.log(`FIELD_DEBUG: Key is a value of type ${typeof key}, normalizing directly`);
+      return normalizeValueByType(key);
+    }
+    
+    // Dump what we received for detailed debugging
+    try {
+      Logger.log(`FIELD_DEBUG: Data object keys: ${Object.keys(data)}`);
+      
+      // If the key has a period, log what we find at each level
+      if (key.includes('.')) {
+        const parts = key.split('.');
+        let partData = data;
+        
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          if (partData && typeof partData === 'object') {
+            Logger.log(`FIELD_DEBUG: At level ${i}, part "${part}", found keys: ${Object.keys(partData)}`);
+            if (partData[part] !== undefined) {
+              Logger.log(`FIELD_DEBUG: Found value at level ${i}: ${typeof partData[part]}`);
+              partData = partData[part];
+            } else {
+              Logger.log(`FIELD_DEBUG: No value found at level ${i}`);
+              break;
+            }
+          } else {
+            Logger.log(`FIELD_DEBUG: At level ${i}, partData is not an object`);
+            break;
+          }
+        }
+      } else if (data[key] !== undefined) {
+        Logger.log(`FIELD_DEBUG: Direct key lookup found type: ${typeof data[key]}`);
+      }
+    } catch (debugError) {
+      Logger.log(`FIELD_DEBUG: Error in debug logging: ${debugError.message}`);
+    }
+    
+    // First try to get the value using standard path lookup
+    let value;
+    try {
+      value = getValueByPath(data, key);
+      Logger.log(`FIELD_DEBUG: getValueByPath returned: ${JSON.stringify(value)}`);
+    } catch (e) {
+      Logger.log(`FIELD_DEBUG: Error getting value by path: ${e.message}`);
+      // Continue with specialized handling
+    }
+    
+    // Special case for phone fields - we want to handle them specially to ignore formatting
+    // Check if this is a phone field based on the key name
+    const isPhoneField = 
+      key === 'phone' || 
+      key.startsWith('phone.') ||
+      (typeof key === 'string' && 
+        (key.toLowerCase().includes('phone') || 
+         key.toLowerCase().includes('mobile') || 
+         key.toLowerCase().includes('cell')));
+    
+    if (isPhoneField) {
+      // For phone fields, use phone number normalization regardless of path format
+      let phoneValue;
+      if (key.includes('.')) {
+        // It's a nested path, use the getPhoneNumberFromField function
+        phoneValue = getPhoneNumberFromField(data, key);
+      } else {
+        // It's a simple field, just normalize the value
+        phoneValue = normalizePhoneNumber(value || data[key]);
+      }
+      Logger.log(`FIELD_DEBUG: Phone field handling returned: "${phoneValue}"`);
+      return phoneValue;
+    }
+    
+    // Check if this is an email field
+    const isEmailField = 
+      key === 'email' || 
+      key.startsWith('email.') ||
+      (typeof key === 'string' && key.toLowerCase().includes('email'));
+    
+    if (isEmailField) {
+      // Special handling for email fields - always lowercase and trim
+      let emailValue;
+      if (key.includes('.')) {
+        // Handle nested email paths
+        if (key.startsWith('email.')) {
+          // Try to extract using standard email handling
+          const parts = key.split('.');
+          const label = parts[1];
+          
+          if (Array.isArray(data.email)) {
+            // Try to find email with matching label
+            const match = data.email.find(e => 
+              e && e.label && e.label.toLowerCase() === label.toLowerCase()
+            );
+            
+            if (match && match.value) {
+              emailValue = match.value;
+            } else if (label === 'primary' || label === 'main') {
+              // Try to find primary email
+              const primary = data.email.find(e => e && e.primary);
+              if (primary && primary.value) {
+                emailValue = primary.value;
+              }
+            }
+            
+            // Fallback to first email if available
+            if (!emailValue && data.email.length > 0) {
+              if (data.email[0].value) {
+                emailValue = data.email[0].value;
+              } else if (typeof data.email[0] === 'string') {
+                emailValue = data.email[0];
+              }
+            }
+          }
+        } else {
+          // Try to extract using general path lookup
+          emailValue = value;
+        }
+      } else {
+        // Simple email field
+        emailValue = value;
+        
+        // Handle array of email objects
+        if (Array.isArray(emailValue) && emailValue.length > 0) {
+          if (emailValue[0].value) {
+            // Find primary or use first
+            const primary = emailValue.find(e => e && e.primary);
+            emailValue = primary ? primary.value : emailValue[0].value;
+          } else if (typeof emailValue[0] === 'string') {
+            emailValue = emailValue[0];
+          }
+        } else if (emailValue && typeof emailValue === 'object' && emailValue.value) {
+          emailValue = emailValue.value;
+        }
+      }
+      
+      // Ensure we have a string
+      emailValue = String(emailValue || '');
+      
+      // Enhanced email normalization:
+      // 1. Lowercase
+      // 2. Trim whitespace
+      // 3. Handle common email domain typos
+      let normalizedEmail = emailValue.toLowerCase().trim();
+      
+      // Extract the domain part for better comparison
+      if (normalizedEmail.includes('@')) {
+        const parts = normalizedEmail.split('@');
+        const username = parts[0];
+        let domain = parts[1];
+        
+        // Fix common domain typos
+        if (domain === 'gmail.comm') domain = 'gmail.com';
+        if (domain === 'gmail.con') domain = 'gmail.com';
+        if (domain === 'gmial.com') domain = 'gmail.com';
+        if (domain === 'hotmail.comm') domain = 'hotmail.com';
+        if (domain === 'hotmail.con') domain = 'hotmail.com';
+        if (domain === 'yahoo.comm') domain = 'yahoo.com';
+        if (domain === 'yahoo.con') domain = 'yahoo.com';
+        
+        // Reassemble the normalized email
+        normalizedEmail = username + '@' + domain;
+      }
+      
+      Logger.log(`FIELD_DEBUG: Email field enhanced normalization from "${emailValue}" to "${normalizedEmail}"`);
+      return normalizedEmail;
+    }
+    
+    // Add special handling for name fields with common typos
+    const isNameField = 
+      key === 'name' || 
+      key.toLowerCase().includes('name') || 
+      key.toLowerCase() === 'person' || 
+      key.toLowerCase() === 'contact';
+    
+    if (isNameField) {
+      Logger.log(`FIELD_DEBUG: Handling name field normalization for key "${key}"`);
+      let nameValue = getValueByPath(data, key);
+      
+      // Ensure we have a string
+      nameValue = nameValue !== null && nameValue !== undefined ? String(nameValue) : '';
+      
+      // If it's an object with a name property, extract it
+      if (typeof nameValue === 'object' && nameValue !== null && nameValue.name) {
+        nameValue = nameValue.name;
+      }
+      
+      // Trim the name
+      let normalizedName = nameValue.trim();
+      
+      // Handle common name typos like extra character at end
+      if (normalizedName.length > 3) {
+        // Check for common pattern where a name might have an extra character at the end
+        // For example "Simpson" vs "Simpsonm" or "John" vs "Johnn"
+        const lastChar = normalizedName.charAt(normalizedName.length - 1);
+        const secondLastChar = normalizedName.charAt(normalizedName.length - 2);
+        
+        // If the last character is the same as the second-to-last character,
+        // it might be a typo (double letter at end)
+        if (lastChar === secondLastChar) {
+          normalizedName = normalizedName.substring(0, normalizedName.length - 1);
+          Logger.log(`FIELD_DEBUG: Fixed double character typo from "${nameValue}" to "${normalizedName}"`);
+        }
+        // If the last character is 'm' and it's a common name ending with "son",
+        // it might be a typo like "Simpson" vs "Simpsonm"
+        else if (lastChar === 'm' && normalizedName.toLowerCase().includes('son')) {
+          normalizedName = normalizedName.substring(0, normalizedName.length - 1);
+          Logger.log(`FIELD_DEBUG: Fixed common 'm' typo from "${nameValue}" to "${normalizedName}"`);
+        }
+        // Check for other common typos based on patterns observed in your data
+        else if ((lastChar === 'n' || lastChar === 'm') && 
+                 normalizedName.toLowerCase().endsWith('mann') || 
+                 normalizedName.toLowerCase().endsWith('manm') ||
+                 normalizedName.toLowerCase().endsWith('sonn') ||
+                 normalizedName.toLowerCase().endsWith('sonm')) {
+          // Normalize common surname endings
+          normalizedName = normalizedName.substring(0, normalizedName.length - 1);
+          Logger.log(`FIELD_DEBUG: Fixed common name ending typo from "${nameValue}" to "${normalizedName}"`);
+        }
+      }
+      
+      Logger.log(`FIELD_DEBUG: Name field normalized from "${nameValue}" to "${normalizedName}"`);
+      return normalizedName;
+    }
+    
+    // CASE 3: CUSTOM FIELDS
+    if (key.startsWith('custom_fields.')) {
+      const parts = key.split('.');
+      const fieldKey = parts[1];
+      Logger.log(`FIELD_DEBUG: Handling custom field: "${fieldKey}"`);
+      
+      if (data.custom_fields && data.custom_fields[fieldKey] !== undefined) {
+        const customValue = data.custom_fields[fieldKey];
+        Logger.log(`FIELD_DEBUG: Custom field value type: ${typeof customValue}, ${Array.isArray(customValue) ? 'array' : 'not array'}`);
+        
+        // Object with value and currency (money field)
+        if (customValue && typeof customValue === 'object' && customValue.value !== undefined) {
+          if (customValue.currency !== undefined) {
+            // Money field
+            const result = `${customValue.value}_${customValue.currency}`;
+            Logger.log(`FIELD_DEBUG: Currency field, normalized to: "${result}"`);
+            return result;
+          } else if (customValue.formatted_address !== undefined) {
+            // Address field
+            Logger.log(`FIELD_DEBUG: Address field, normalized to: "${customValue.formatted_address}"`);
+            return customValue.formatted_address;
+          } else {
+            // Other field with value property
+            const result = normalizeValueByType(customValue.value);
+            Logger.log(`FIELD_DEBUG: Generic field with value property, normalized to: "${result}"`);
+            return result;
+          }
+        }
+        
+        // Multi-select fields (array of option IDs)
+        if (Array.isArray(customValue)) {
+          const result = customValue.join(',');
+          Logger.log(`FIELD_DEBUG: Array custom field, normalized to: "${result}"`);
+          return result;
+        }
+        
+        // Regular value
+        const result = normalizeValueByType(customValue);
+        Logger.log(`FIELD_DEBUG: Basic custom field, normalized to: "${result}"`);
+        return result;
+      }
+    }
+    
+    // CASE 4: PERSON, ORG, DEAL references
+    const entityFields = ['person_id', 'org_id', 'deal_id', 'organization', 'person', 'deal', 'creator', 'owner'];
+    if (entityFields.includes(key) || 
+        key.endsWith('_name') || 
+        key.endsWith('_id') ||
+        (value && typeof value === 'object' && value.name !== undefined)) {
+      
+      Logger.log(`FIELD_DEBUG: Handling entity reference field`);
+      
+      // If it's a direct entity reference with name
+      if (value && typeof value === 'object') {
+        if (value.name) {
+          Logger.log(`FIELD_DEBUG: Entity with name, using: "${value.name}"`);
+          return value.name;
+        } else if (value.id) {
+          Logger.log(`FIELD_DEBUG: Entity with ID only, using: "${value.id.toString()}"`);
+          return value.id.toString();
+        }
+      }
+    }
+    
+    // CASE 5: General nested hierarchies not covered in specific cases above
+    if (key.includes('.') && !key.startsWith('phone.') && !key.startsWith('email.') && !key.startsWith('custom_fields.')) {
+      Logger.log(`FIELD_DEBUG: Handling general nested field with key: "${key}"`);
+      
+      // Try to get the value using the specialized method first
+      try {
+        if (value !== undefined) {
+          const result = normalizeValueByType(value);
+          Logger.log(`FIELD_DEBUG: General nested field normalized to: "${result}"`);
+          return result;
+        }
+      } catch (e) {
+        Logger.log(`FIELD_DEBUG: Error normalizing nested field: ${e.message}`);
+      }
+      
+      // Try a different approach - manual traversal
+      try {
+        const parts = key.split('.');
+        let current = data;
+        
+        for (let i = 0; i < parts.length; i++) {
+          if (current === undefined || current === null) {
+            Logger.log(`FIELD_DEBUG: Path traversal failed at part ${i}`);
+            break;
+          }
+          
+          // Handle array indices in the path
+          if (!isNaN(parseInt(parts[i])) && Array.isArray(current)) {
+            current = current[parseInt(parts[i])];
+          } else {
+            current = current[parts[i]];
+          }
+          
+          Logger.log(`FIELD_DEBUG: Traversed to path part ${i} (${parts[i]}), got ${typeof current}`);
+        }
+        
+        if (current !== undefined) {
+          const result = normalizeValueByType(current);
+          Logger.log(`FIELD_DEBUG: Manual traversal result: "${result}"`);
+          return result;
+        }
+      } catch (e) {
+        Logger.log(`FIELD_DEBUG: Error in manual path traversal: ${e.message}`);
+      }
+    }
+    
+    // For all other cases, normalize the value we got from getValueByPath
+    const result = normalizeValueByType(value);
+    Logger.log(`FIELD_DEBUG: Using standard normalization, result: "${result}"`);
+    return result;
+  } catch (e) {
+    Logger.log(`FIELD_DEBUG: Error in getNormalizedFieldValue for ${key}: ${e.message}`);
+    return '';
+  }
+}
+
+/**
+ * Normalizes a value based on its type for consistent comparison
+ * @param {*} value - The value to normalize
+ * @return {string} Normalized value
+ */
+function normalizeValueByType(value) {
+  // Handle null/undefined
+  if (value === null || value === undefined) {
+    return '';
+  }
+  
+  // Handle arrays
+  if (Array.isArray(value)) {
+    // If array of objects with value property
+    if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
+      if (value[0].value !== undefined) {
+        // Array of objects with value properties
+        return value.map(item => normalizeValueByType(item.value)).join(',');
+      } else if (value[0].name !== undefined) {
+        // Array of objects with names
+        return value.map(item => item.name).join(',');
+      }
+    }
+    // Simple array - join with commas
+    return value.join(',');
+  }
+  
+  // Handle objects
+  if (typeof value === 'object') {
+    // Object with value property
+    if (value.value !== undefined) {
+      return normalizeValueByType(value.value);
+    }
+    // Object with name property (common for entity references)
+    if (value.name !== undefined) {
+      return value.name;
+    }
+    // Object with id property
+    if (value.id !== undefined) {
+      return value.id.toString();
+    }
+    // Last resort - stringify
+    return JSON.stringify(value);
+  }
+  
+  // Handle dates
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  
+  // Handle booleans
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false';
+  }
+  
+  // Handle numbers and scientific notation
+  if (typeof value === 'number' || 
+      (typeof value === 'string' && value.includes('E'))) {
+    try {
+      // Try to parse as number to handle scientific notation
+      const numValue = Number(value);
+      if (!isNaN(numValue)) {
+        // For integers, use fixed notation with no decimals
+        if (Number.isInteger(numValue)) {
+          return numValue.toFixed(0);
+        }
+        // Preserve exact decimal places for better comparisons
+        if (typeof value === 'string' && value.includes('.')) {
+          // Get the decimal places from the original string representation
+          const parts = value.split('.');
+          if (parts.length > 1) {
+            const decimalPlaces = parts[1].replace(/E.*$/, '').length;
+            return numValue.toFixed(decimalPlaces);
+          }
+        }
+        // For decimal numbers, convert to string directly ensuring consistent formatting
+        return numValue.toString();
+      }
+    } catch (e) {
+      // If parsing fails, continue with string handling
+      Logger.log(`Error handling numeric value: ${e.message}`);
+    }
+  }
+  
+  // For ordinary strings
+  if (typeof value === 'string') {
+    // Check if it looks like a phone number
+    if (/^[\d\+\-\(\)\s\.]+$/.test(value)) {
+      // It only contains digits, plus signs, parentheses, spaces, etc.
+      return normalizePhoneNumber(value);
+    }
+    
+    // Check if it looks like an email
+    if (value.includes('@') && value.includes('.')) {
+      return value.toLowerCase().trim();
+    }
+    
+    // Regular string
+    return value;
+  }
+  
+  // Numbers and other values
+  return value.toString();
+}
+
+/**
+ * Helper function to check if all edited values in a row match their original values
+ * @param {Sheet} sheet - The sheet containing the row
+ * @param {number} row - The row number to check
+ * @param {Array} headers - The column headers
+ * @param {Object} originalValues - The original values for the row, keyed by header name
+ * @return {boolean} True if all values match original, false otherwise
+ */
+function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
+  try {
+    // If no original values stored, can't verify
+    if (!originalValues || Object.keys(originalValues).length === 0) {
+      Logger.log('No original values stored to compare against');
+      return false;
+    }
+    
+    // Get current values for the entire row
+    const rowValues = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
+    
+    // Get the first value (ID) to use for retrieving the original data
+    const id = rowValues[0];
+    
+    // Create a data object that mimics Pipedrive structure for nested field handling
+    const dataObj = { id: id };
+    
+    // Populate the data object with values from the row
+    headers.forEach((header, index) => {
+      if (index < rowValues.length) {
+        // Use dot notation to create nested objects
+        if (header.includes('.')) {
+          const parts = header.split('.');
+          
+          // Common nested structures to handle specially
+          if (['phone', 'email'].includes(parts[0])) {
+            // Handle phone/email specially
+            if (!dataObj[parts[0]]) {
+              dataObj[parts[0]] = [];
+            }
+            
+            // If it's a label-based path (e.g., phone.mobile)
+            if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
+              dataObj[parts[0]].push({
+                label: parts[1],
+                value: rowValues[index]
+              });
+            } 
+            // If it's an array index path (e.g., phone.0.value)
+            else if (parts.length === 3 && parts[2] === 'value') {
+              const idx = parseInt(parts[1]);
+              while (dataObj[parts[0]].length <= idx) {
+                dataObj[parts[0]].push({});
+              }
+              dataObj[parts[0]][idx].value = rowValues[index];
+            }
+          }
+          // Custom fields
+          else if (parts[0] === 'custom_fields') {
+            if (!dataObj.custom_fields) {
+              dataObj.custom_fields = {};
+            }
+            
+            if (parts.length === 2) {
+              // Simple custom field
+              dataObj.custom_fields[parts[1]] = rowValues[index];
+            } 
+            else if (parts.length > 2) {
+              // Nested custom field
+              if (!dataObj.custom_fields[parts[1]]) {
+                dataObj.custom_fields[parts[1]] = {};
+              }
+              // Handle complex types like address
+              if (parts[2] === 'formatted_address') {
+                dataObj.custom_fields[parts[1]].formatted_address = rowValues[index];
+              } 
+              else if (parts[2] === 'currency') {
+                dataObj.custom_fields[parts[1]].currency = rowValues[index];
+              }
+              else {
+                dataObj.custom_fields[parts[1]][parts[2]] = rowValues[index];
+              }
+            }
+          } else {
+            // Other nested paths - build the structure
+            let current = dataObj;
+            for (let i = 0; i < parts.length - 1; i++) {
+              if (current[parts[i]] === undefined) {
+                // If part is numeric, create an array
+                if (!isNaN(parseInt(parts[i+1]))) {
+                  current[parts[i]] = [];
+                } else {
+                  current[parts[i]] = {};
+                }
+              }
+              current = current[parts[i]];
+            }
+            
+            // Set the value at the final level
+            current[parts[parts.length - 1]] = rowValues[index];
+          }
+        } else {
+          // Regular top-level field
+          dataObj[header] = rowValues[index];
+        }
+      }
+    });
+    
+    // Debug log
+    Logger.log(`Checking ${Object.keys(originalValues).length} fields for original value match`);
+    
+    // Check each column that has a stored original value
+    for (const headerName in originalValues) {
+      // Find the column index for this header
+      const colIndex = headers.indexOf(headerName);
+      if (colIndex === -1) {
+        Logger.log(`Header ${headerName} not found in current headers`);
+        continue; // Header not found
+      }
+      
+      const originalValue = originalValues[headerName];
+      const currentValue = rowValues[colIndex];
+      
+      // Special handling for null/empty values
+      if ((originalValue === null || originalValue === "") && 
+          (currentValue === null || currentValue === "")) {
+        Logger.log(`Both values are empty for ${headerName}, treating as match`);
+        continue; // Both empty, consider a match
+      }
+      
+      // NEW: Check if this is a structural field with complex nested structure
+      if (originalValue && typeof originalValue === 'object' && originalValue.__isStructural) {
+        Logger.log(`Found structural field ${headerName} with key ${originalValue.__key}`);
+        
+        // Use the pre-computed normalized value for comparison
+        const normalizedOriginal = originalValue.__normalized || '';
+        const normalizedCurrent = getNormalizedFieldValue(dataObj, originalValue.__key);
+        
+        Logger.log(`Structural field comparison for ${headerName}: Original="${normalizedOriginal}", Current="${normalizedCurrent}"`);
+        
+        // If the normalized values don't match, return false
+        if (normalizedOriginal !== normalizedCurrent) {
+          Logger.log(`Structural field mismatch found for ${headerName}`);
+          return false;
+        }
+        
+        // Skip to the next field
+        continue;
+      }
+      
+      // Use the generalized field value normalization for regular fields
+      const normalizedOriginal = getNormalizedFieldValue({ [headerName]: originalValue }, headerName);
+      const normalizedCurrent = getNormalizedFieldValue(dataObj, headerName);
+      
+      Logger.log(`Field comparison for ${headerName}: Original="${normalizedOriginal}", Current="${normalizedCurrent}"`);
+      
+      // If the normalized values don't match, return false
+      if (normalizedOriginal !== normalizedCurrent) {
+        Logger.log(`Mismatch found for ${headerName}`);
+        return false;
+      }
+    }
+    
+    // If we reach here, all values with stored originals match
+    Logger.log('All values match original values');
+    return true;
+  } catch (error) {
+    Logger.log(`Error in checkAllValuesMatchOriginal: ${error.message}`);
+    return false;
+  }
+}
