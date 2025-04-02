@@ -20,31 +20,26 @@
       
       <div id="status-container"></div>
       
-      <!-- Tab Navigation -->
+      <!-- Tab Navigation - Only show when there are multiple tabs (non-team users who are script owners) -->
+      <? if (!hasTeam && isScriptOwner) { ?>
       <div class="tab-container">
         <div class="tabs">
-          <? if (!hasTeam) { ?>
           <div class="tab <?= initialTab === 'join' ? 'active' : '' ?>" data-tab="join">
             <i class="material-icons">group_add</i>
             <span>Join Team</span>
           </div>
-          <? if (isScriptOwner) { ?>
           <div class="tab <?= initialTab === 'create' ? 'active' : '' ?>" data-tab="create">
             <i class="material-icons">add_circle</i>
             <span>Create Team</span>
           </div>
-          <? } ?>
-          <? } else { ?>
-          <div class="tab active" data-tab="manage">
-            <i class="material-icons">groups</i>
-            <span>Manage Team</span>
-          </div>
-          <? } ?>
         </div>
+      <? } else { ?>
+      <div class="tab-container">
+      <? } ?>  
         
         <? if (!hasTeam) { ?>
         <!-- Join Team Tab -->
-        <div id="join-tab" class="tab-content <?= initialTab === 'join' ? 'active' : '' ?>">
+        <div id="join-tab" class="tab-content <?= (!isScriptOwner || initialTab === 'join') ? 'active' : '' ?>">
           <div class="card">
             <div class="card-header">
               <i class="material-icons">group_add</i>
