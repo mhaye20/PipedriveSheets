@@ -480,6 +480,11 @@ function writeDataToSheet(items, options) {
     // Get sheet name from options
     const sheetName = options.sheetName;
     
+    // Get script properties for tracking previous column positions
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const previousSyncColumnKey = `PREVIOUS_TRACKING_COLUMN_${sheetName}`;
+    const previousColumnPosition = scriptProperties.getProperty(previousSyncColumnKey);
+    
     // Get sheet
     let sheet = ss.getSheetByName(sheetName);
     
@@ -498,23 +503,23 @@ function writeDataToSheet(items, options) {
       Logger.log(`Cleared sheet ${sheetName} to ensure clean sync`);
     }
     
-    // Get headers from options
-    const headers = options.headerRow;
+    // CRITICAL: Debug what headers we're getting from Pipedrive
+    Logger.log(`Incoming Pipedrive headers (${options.headerRow ? options.headerRow.length : 0}): ${JSON.stringify(options.headerRow)}`);
+    
+    // Get headers from options - ALWAYS make a copy to avoid modifying the original
+    const headers = options.headerRow ? [...options.headerRow] : [];
+    Logger.log(`Working with headers (${headers.length}): ${JSON.stringify(headers)}`);
     
     // Check if two-way sync is enabled
     const twoWaySyncEnabled = options.twoWaySyncEnabled || false;
     
-    // Get script properties
-    const scriptProperties = PropertiesService.getScriptProperties();
-    
     // Key for tracking column
     const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
     
-    // Get current and previous tracking columns
+    // Get current tracking column
     const currentSyncColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey);
-    const previousSyncColumnKey = `PREVIOUS_TRACKING_COLUMN_${sheetName}`;
     
-    // If two-way sync is enabled, store the previous column before any changes
+    // Store previous position if we have a current one
     if (twoWaySyncEnabled && currentSyncColumn) {
       scriptProperties.setProperty(previousSyncColumnKey, currentSyncColumn);
       Logger.log(`Stored previous sync column position: ${currentSyncColumn}`);
@@ -524,49 +529,35 @@ function writeDataToSheet(items, options) {
     let statusByIdMap = new Map();
     let statusColumnIndex = -1;
     
-    // Initialize the header row in the sheet
+    // FIRST: Write ALL Pipedrive headers to the sheet (before adding Sync Status)
+    // This ensures ALL column headers from Pipedrive are properly set
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
     
-    // If two-way sync is enabled, add a "Sync Status" column
+    // NOW: If two-way sync is enabled, handle Sync Status column
     if (twoWaySyncEnabled) {
-      // Try to find existing Sync Status column
-      const lastColumn = headers.length;
+      // The Sync Status will be added AFTER all Pipedrive columns
       const statusHeader = 'Sync Status';
-      statusColumnIndex = headers.indexOf(statusHeader);
+      const lastColumn = headers.length;
       
-      if (statusColumnIndex === -1) {
-        // Add Sync Status column at the end
-        statusColumnIndex = lastColumn;
-        headers.push(statusHeader);
-        sheet.getRange(1, lastColumn + 1).setValue(statusHeader);
+      // Add Sync Status column at the end
+      statusColumnIndex = lastColumn;
+      sheet.getRange(1, lastColumn + 1).setValue(statusHeader);
+      sheet.getRange(1, lastColumn + 1).setFontWeight('bold');
+      
+      Logger.log(`Added Sync Status column at position: ${lastColumn + 1}`);
+      
+      // Store status column position for tracking
+      const statusColumnLetter = columnToLetter(lastColumn + 1);
+      scriptProperties.setProperty(twoWaySyncTrackingColumnKey, statusColumnLetter);
+      Logger.log(`Set Sync Status column tracking to position ${statusColumnLetter}`);
+      
+      // Clean up any previous Sync Status columns
+      if (previousColumnPosition && previousColumnPosition !== statusColumnLetter) {
+        cleanupPreviousSyncStatusColumn(sheet, statusColumnLetter);
       }
       
-      Logger.log(`Using Sync Status column at index ${statusColumnIndex}`);
-      
-      // Store status column position for cleanup and recreation
-      const statusColumnLetter = columnToLetter(statusColumnIndex + 1);
-      
-      // If this is a new position, record the change
-      if (statusColumnLetter !== currentSyncColumn) {
-        // Store the previous position for cleanup
-        if (currentSyncColumn) {
-          scriptProperties.setProperty(previousSyncColumnKey, currentSyncColumn);
-          Logger.log(`Column position changed from ${currentSyncColumn} to ${statusColumnLetter}`);
-        }
-        
-        // Store the new position
-        scriptProperties.setProperty(twoWaySyncTrackingColumnKey, statusColumnLetter);
-        Logger.log(`Set Sync Status column tracking to ${statusColumnLetter}`);
-        
-        // Clean up previous sync status columns
-        if (currentSyncColumn) {
-          cleanupPreviousSyncStatusColumn(sheet, statusColumnLetter);
-        }
-      }
-      
-      // Get current status values to preserve them - we already cleared the sheet
-      // but we can get these from properties storage
+      // Get current status values to preserve them
       try {
         // Get stored status data for this sheet
         const statusDataKey = `SYNC_STATUS_DATA_${sheetName}`;
@@ -595,10 +586,11 @@ function writeDataToSheet(items, options) {
     
     // Process items and write data rows
     const dataRows = items.map(item => {
-      // Create a row with empty values for all columns
-      const row = Array(headers.length).fill('');
+      // Create a row with empty values for all columns plus status column if needed
+      const totalColumns = twoWaySyncEnabled ? headers.length + 1 : headers.length;
+      const row = Array(totalColumns).fill('');
       
-      // For each column, extract and format the value
+      // For each Pipedrive column, extract and format the value
       options.columns.forEach((column, index) => {
         // Skip if index is beyond our header count
         if (index >= headers.length) {
@@ -610,7 +602,7 @@ function writeDataToSheet(items, options) {
         row[index] = formatValue(value, columnKey, options.optionMappings);
       });
       
-      // If two-way sync is enabled, add the status column
+      // If two-way sync is enabled, add the status value in the last column
       if (twoWaySyncEnabled && statusColumnIndex !== -1) {
         // Get the item ID (assuming first column is ID)
         const id = row[0] ? row[0].toString() : '';
@@ -626,16 +618,22 @@ function writeDataToSheet(items, options) {
       return row;
     });
     
+    // Calculate the total number of columns we need to write
+    const totalColumns = twoWaySyncEnabled ? headers.length + 1 : headers.length;
+    
     // Write all data rows at once
     if (dataRows.length > 0) {
-      sheet.getRange(2, 1, dataRows.length, headers.length).setValues(dataRows);
+      sheet.getRange(2, 1, dataRows.length, totalColumns).setValues(dataRows);
     }
     
     // If two-way sync is enabled, set up data validation and formatting for the status column
     if (twoWaySyncEnabled && statusColumnIndex !== -1) {
       try {
+        // Status column is always going to be at the end
+        const statusColumnPosition = headers.length + 1;
+        
         // Style the header cell
-        const headerCell = sheet.getRange(1, statusColumnIndex + 1);
+        const headerCell = sheet.getRange(1, statusColumnPosition);
         headerCell
           .setValue('Sync Status')
           .setBackground('#E8F0FE')
@@ -645,7 +643,7 @@ function writeDataToSheet(items, options) {
         // Add data validation for all cells in the column
         const lastRow = Math.max(sheet.getLastRow(), 2);
         if (lastRow > 1) {
-          const dataRange = sheet.getRange(2, statusColumnIndex + 1, lastRow - 1, 1);
+          const dataRange = sheet.getRange(2, statusColumnPosition, lastRow - 1, 1);
           const rule = SpreadsheetApp.newDataValidation()
             .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
             .build();
@@ -732,9 +730,9 @@ function writeDataToSheet(items, options) {
     }
     
     // Final cleanup: do a thorough scan for any remaining old Sync Status columns
-    if (twoWaySyncEnabled && statusColumnIndex !== -1) {
+    if (twoWaySyncEnabled) {
       // Get the current status column letter for the final cleanup
-      const finalStatusColumnLetter = columnToLetter(statusColumnIndex + 1);
+      const finalStatusColumnLetter = columnToLetter(headers.length + 1);
       Logger.log(`Running final cleanup scan. Current Sync Status column: ${finalStatusColumnLetter}`);
       
       // This will find and clean any other columns with Sync Status headers
@@ -742,7 +740,7 @@ function writeDataToSheet(items, options) {
     }
     
     // Auto-resize columns to fit content
-    sheet.autoResizeColumns(1, headers.length);
+    sheet.autoResizeColumns(1, totalColumns);
     
     Logger.log('Successfully wrote data to sheet');
   } catch (error) {
@@ -3250,8 +3248,8 @@ function cleanupColumnFormatting(sheet, columnLetter, isCurrentColumn = false) {
     
     // Clean the header first - only if it's not the current column
     if (!isCurrentColumn) {
-      const headerCell = sheet.getRange(1, columnIndex);
-      const headerValue = headerCell.getValue();
+          const headerCell = sheet.getRange(1, columnIndex);
+          const headerValue = headerCell.getValue();
       const note = headerCell.getNote();
       
       Logger.log(`Checking header in column ${columnLetter}: "${headerValue}"`);
@@ -3324,40 +3322,62 @@ function cleanupPreviousSyncStatusColumn(sheet, currentSyncColumn) {
     const previousSyncColumnKey = `PREVIOUS_TRACKING_COLUMN_${sheetName}`;
     const previousSyncColumn = scriptProperties.getProperty(previousSyncColumnKey);
     
+    // IMPORTANT: We do NOT want to override column headers when Pipedrive adds new fields
+    // If the previous column is converted to a Pipedrive data column, we need to keep it
+    
     // Clean up the known previous column first if it exists and is different from current
     if (previousSyncColumn && previousSyncColumn !== currentSyncColumn) {
-      Logger.log(`Cleaning up known previous Sync Status column: ${previousSyncColumn}`);
-      cleanupColumnFormatting(sheet, previousSyncColumn, false);
+      Logger.log(`Previous Sync Status column found at ${previousSyncColumn}`);
       
-      // Force a complete clear of the previous column
-      const previousColumnIndex = letterToColumn(previousSyncColumn);
-      const lastRow = Math.max(sheet.getLastRow(), 2);
-      
-      // Completely clear everything in the previous column if it's confirmed to be a Sync Status column
-      const headerCell = sheet.getRange(1, previousColumnIndex);
-      const headerValue = headerCell.getValue();
-      const headerNote = headerCell.getNote();
-      
-      if (headerValue === "Sync Status" || 
-          headerValue === "Sync Status (hidden)" || 
-          headerValue === "Status" ||
-          (headerNote && (headerNote.includes('sync') || headerNote.includes('track') || headerNote.includes('Pipedrive')))) {
+      try {
+        // Convert letter to column index
+        const previousColumnIndex = letterToColumn(previousSyncColumn);
         
-        // Set all cells in the column to blank in a single batch operation
-        const range = sheet.getRange(1, previousColumnIndex, lastRow, 1);
-        const blankValues = Array(lastRow).fill(['']);
+        // Clean up all Sync Status-specific formatting and validation from this column
+        // but do NOT clear the header cell - let the main sync function handle headers
         
-        Logger.log(`Force-clearing entire previous Sync Status column ${previousSyncColumn}`);
-        range.setValues(blankValues);
-        range.clearFormat();
-        if (lastRow > 0) {
-          range.clearDataValidations();
+        // First, clear any sync-specific formatting and validation in the data cells
+        if (sheet.getLastRow() > 1) {
+          const dataRange = sheet.getRange(2, previousColumnIndex, Math.max(sheet.getLastRow() - 1, 1), 1);
+          
+          // Clear all formatting and validation from data cells
+          dataRange.clearFormat();
+          dataRange.clearDataValidations();
+          
+          // Check for and clear status-specific values ONLY
+          const values = dataRange.getValues();
+          const newValues = values.map(row => {
+            const value = String(row[0]).trim();
+            
+            // Only clear if it's one of the specific status values
+            if (value === "Modified" || 
+                value === "Not modified" || 
+                value === "Synced" || 
+                value === "Error") {
+              return [""];
+            }
+            return [value]; // Keep any other values
+          });
+          
+          // Write the cleaned values back
+          dataRange.setValues(newValues);
+          Logger.log(`Cleaned status values from previous column ${previousSyncColumn}`);
         }
-        range.clearNote();
+        
+        // Remove any sync-specific formatting or notes from the header
+        // but KEEP the header cell itself for Pipedrive data
+        const headerCell = sheet.getRange(1, previousColumnIndex);
+        headerCell.clearFormat();
+        headerCell.clearNote();
+        // Do NOT call setValue() - let the main sync function set the header
+        
+        Logger.log(`Cleaned formatting from previous Sync Status column ${previousSyncColumn}`);
+      } catch (e) {
+        Logger.log(`Error cleaning previous column ${previousSyncColumn}: ${e.message}`);
       }
     }
     
-    // Now scan for any other columns that might be Sync Status columns
+    // Scan for any other columns that might have sync status formatting
     const lastColumn = sheet.getLastColumn();
     
     for (let i = 1; i <= lastColumn; i++) {
@@ -3368,31 +3388,74 @@ function cleanupPreviousSyncStatusColumn(sheet, currentSyncColumn) {
         continue;
       }
       
-      const headerCell = sheet.getRange(1, i);
-      const headerValue = headerCell.getValue();
-      const headerNote = headerCell.getNote();
-      
-      // Check if this column has sync status indicators
-      if (headerValue === "Sync Status" || 
+      // Check if this might be a sync status column by inspecting formatting and values
+      try {
+        // Check the header for sync status indicators
+        const headerCell = sheet.getRange(1, i);
+        const headerValue = headerCell.getValue();
+        const headerNote = headerCell.getNote();
+        
+        const isSyncStatusHeader = 
+          headerValue === "Sync Status" || 
           headerValue === "Sync Status (hidden)" || 
           headerValue === "Status" ||
-          (headerNote && (headerNote.includes('sync') || headerNote.includes('track') || headerNote.includes('Pipedrive')))) {
+          (headerNote && (headerNote.includes('sync') || headerNote.includes('track') || headerNote.includes('Pipedrive')));
         
-        Logger.log(`Found additional Sync Status column at ${colLetter}, cleaning up`);
-        cleanupColumnFormatting(sheet, colLetter, false);
-        
-        // Also do a thorough cleanup of the entire column
-        const lastRow = Math.max(sheet.getLastRow(), 2);
-        const range = sheet.getRange(1, i, lastRow, 1);
-        const blankValues = Array(lastRow).fill(['']);
-        
-        Logger.log(`Force-clearing entire additional Sync Status column ${colLetter}`);
-        range.setValues(blankValues);
-        range.clearFormat();
-        if (lastRow > 0) {
-          range.clearDataValidations();
+        // Also check for sync status values in the data cells
+        let hasSyncStatusValues = false;
+        if (sheet.getLastRow() > 1) {
+          // Sample a few cells to check for status values
+          const sampleSize = Math.min(10, sheet.getLastRow() - 1);
+          const sampleRange = sheet.getRange(2, i, sampleSize, 1);
+          const sampleValues = sampleRange.getValues();
+          
+          hasSyncStatusValues = sampleValues.some(row => {
+            const value = String(row[0]).trim();
+            return value === "Modified" || 
+                   value === "Not modified" || 
+                   value === "Synced" || 
+                   value === "Error";
+          });
         }
-        range.clearNote();
+        
+        // If this column has sync status indicators, clean it
+        if (isSyncStatusHeader || hasSyncStatusValues) {
+          Logger.log(`Found additional Sync Status column at ${colLetter}, cleaning up...`);
+          
+          // Clean any sync-specific formatting and validation but preserve the header cell
+          if (sheet.getLastRow() > 1) {
+            const dataRange = sheet.getRange(2, i, Math.max(sheet.getLastRow() - 1, 1), 1);
+            
+            // Clear all formatting and validation
+            dataRange.clearFormat();
+            dataRange.clearDataValidations();
+            
+            // Only clear specific status values
+            const values = dataRange.getValues();
+            const newValues = values.map(row => {
+              const value = String(row[0]).trim();
+              if (value === "Modified" || 
+                  value === "Not modified" || 
+                  value === "Synced" || 
+                  value === "Error") {
+                return [""];
+              }
+              return [value]; // Keep any other values
+            });
+            
+            dataRange.setValues(newValues);
+          }
+          
+          // Remove sync-specific formatting and notes from header
+          // but preserve the header cell itself for Pipedrive data
+          headerCell.clearFormat();
+          headerCell.clearNote();
+          // Do NOT clear header text - let main sync function set it
+          
+          Logger.log(`Cleaned sync status formatting from column ${colLetter}`);
+        }
+      } catch (e) {
+        Logger.log(`Error checking column ${colLetter}: ${e.message}`);
       }
     }
     
@@ -3411,13 +3474,13 @@ function removeConditionalFormattingForColumn(sheet, columnIndex) {
     const rules = sheet.getConditionalFormatRules();
     const colA1Notation = columnToLetter(columnIndex + 1);
     const newRules = [];
-    
+
     // Only keep rules that don't apply to this column
     for (let i = 0; i < rules.length; i++) {
       const rule = rules[i];
       const ranges = rule.getRanges();
       let keepRule = true;
-      
+
       // Check if this rule applies to the column we're cleaning
       for (let j = 0; j < ranges.length; j++) {
         const range = ranges[j];
@@ -3425,18 +3488,18 @@ function removeConditionalFormattingForColumn(sheet, columnIndex) {
         
         // If the rule includes this column, don't keep it
         if (a1Notation.includes(colA1Notation)) {
-          keepRule = false;
-          break;
+            keepRule = false;
+            break;
         }
       }
-      
+
       if (keepRule) {
         newRules.push(rule);
       }
     }
-    
+
     // Update the conditional formatting rules
-    sheet.setConditionalFormatRules(newRules);
+      sheet.setConditionalFormatRules(newRules);
     Logger.log(`Removed conditional formatting rules for column ${columnToLetter(columnIndex + 1)}`);
   } catch (error) {
     Logger.log(`Error removing conditional formatting: ${error.message}`);
