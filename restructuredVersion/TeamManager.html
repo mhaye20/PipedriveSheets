@@ -71,7 +71,7 @@
               <h4>Create a New Team</h4>
             </div>
             <div class="card-body">
-              <p>Create a new team to share Pipedrive configuration with your colleagues:</p>
+              <p>Create a new team to share Pipedrive configuration with your colleagues. The team plan allows up to 5 users total (you + 4 team members).</p>
               <div class="form-group">
                 <div class="input-container">
                   <i class="material-icons input-icon">groups</i>
@@ -120,6 +120,7 @@
                 <div class="section-header">
                   <i class="material-icons">people</i>
                   <h5>Team Members</h5>
+                  <span class="member-count"><?= teamMembers.length ?>/5</span>
                 </div>
                 <div class="team-members">
                   <? for (var i = 0; i < teamMembers.length; i++) { ?>
@@ -153,7 +154,7 @@
                 </div>
               </div>
               
-              <? if (userRole === 'Admin') { ?>
+              <? if (userRole === 'Admin' && teamMembers.length < 5) { ?>
               <!-- Add Member Form -->
               <div class="section">
                 <div class="section-header">
@@ -169,6 +170,14 @@
                     <i class="material-icons">add</i>
                     <span class="button-text">Add</span>
                   </button>
+                </div>
+              </div>
+              <? } else if (userRole === 'Admin' && teamMembers.length >= 5) { ?>
+              <!-- Member limit reached message -->
+              <div class="section">
+                <div class="member-limit-message">
+                  <i class="material-icons">info</i>
+                  <span>Your team has reached the maximum of 5 members allowed in the team plan.</span>
                 </div>
               </div>
               <? } ?>

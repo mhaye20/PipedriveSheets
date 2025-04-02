@@ -257,11 +257,11 @@ function joinTeam(teamId) {
     }
 
     // Define maximum team members
-    const MAX_TEAM_MEMBERS = 50;
+    const MAX_TEAM_MEMBERS = 5; // Team plan allows up to 5 users total (admin + 4 members)
     
     // Check if the team is at maximum capacity
     if (teamsData[teamId].memberEmails && teamsData[teamId].memberEmails.length >= MAX_TEAM_MEMBERS) {
-      return { success: false, message: `This team has reached the maximum of ${MAX_TEAM_MEMBERS} members.` };
+      return { success: false, message: `This team has reached the maximum of ${MAX_TEAM_MEMBERS} members allowed in the team plan.` };
     }
 
     // Initialize member arrays if they don't exist
@@ -465,11 +465,11 @@ function addTeamMember(email) {
     }
     
     // Define maximum team members
-    const MAX_TEAM_MEMBERS = 50;
+    const MAX_TEAM_MEMBERS = 5; // Team plan allows up to 5 users total (admin + 4 members)
     
     // Check if team is at capacity
     if (teamsData[teamId].memberEmails.length >= MAX_TEAM_MEMBERS) {
-      return { success: false, message: `Team has reached the maximum of ${MAX_TEAM_MEMBERS} members.` };
+      return { success: false, message: `Team has reached the maximum of ${MAX_TEAM_MEMBERS} members allowed in the team plan.` };
     }
     
     // Add the member

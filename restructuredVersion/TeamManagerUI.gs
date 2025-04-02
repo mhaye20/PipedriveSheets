@@ -188,6 +188,31 @@ TeamManagerUI.getStyles = function() {
       color: var(--primary-color);
     }
     
+    .member-count {
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--text-medium);
+      background-color: var(--bg-light);
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+    
+    .member-limit-message {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background-color: var(--warning-light);
+      border-left: 3px solid var(--warning-color);
+      border-radius: var(--border-radius-small);
+      color: var(--text-medium);
+      font-size: 13px;
+    }
+    
+    .member-limit-message .material-icons {
+      color: var(--warning-color);
+    }
+    
     .form-container {
       max-width: 100%;
     }
