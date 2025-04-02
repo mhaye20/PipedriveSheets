@@ -57,14 +57,19 @@ SettingsDialogUI.showSettings = function() {
     
     // Create the HTML output from the template
     const htmlOutput = template.evaluate()
-      .setWidth(400)
-      .setHeight(520)
-      .setTitle(`Pipedrive Settings for "${activeSheetName}"`);
+      .setWidth(430)
+      .setHeight(550)
+      .setTitle(`Pipedrive Settings for "${activeSheetName}"`)
+      .setSandboxMode(HtmlService.SandboxMode.IFRAME);
     
+    // Show a toast notification
+    SpreadsheetApp.getActiveSpreadsheet().toast('Opening settings dialog...', 'Pipedrive Sheets', 3);
+    
+    // Show modal dialog
     SpreadsheetApp.getUi().showModalDialog(htmlOutput, `Pipedrive Settings for "${activeSheetName}"`);
   } catch (error) {
     Logger.log('Error showing settings: ' + error.message);
-    SpreadsheetApp.getActiveSpreadsheet().toast('Error showing settings: ' + error.message);
+    SpreadsheetApp.getActiveSpreadsheet().toast('Error showing settings: ' + error.message, 'Error', 5);
   }
 };
 
@@ -99,13 +104,17 @@ SettingsDialogUI.showHelp = function() {
     // Create and show dialog
     const html = template.evaluate()
       .setWidth(600)
-      .setHeight(400)
-      .setTitle('Help & About');
+      .setHeight(500)
+      .setTitle('Help & About')
+      .setSandboxMode(HtmlService.SandboxMode.IFRAME);
+      
+    // Show a toast notification
+    SpreadsheetApp.getActiveSpreadsheet().toast('Opening help dialog...', 'Pipedrive Sheets', 2);
       
     SpreadsheetApp.getUi().showModalDialog(html, 'Help & About');
   } catch (error) {
     Logger.log('Error in showHelp: ' + error.message);
-    SpreadsheetApp.getActiveSpreadsheet().toast('Error showing help: ' + error.message);
+    SpreadsheetApp.getActiveSpreadsheet().toast('Error showing help: ' + error.message, 'Error', 5);
   }
 };
 
