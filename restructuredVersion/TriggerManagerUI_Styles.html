@@ -1,0 +1,247 @@
+<style>
+  body {
+    font-family: 'Roboto', sans-serif;
+    color: #333;
+    margin: 0;
+    padding: 0;
+    font-size: 13px;
+  }
+  
+  .container {
+    padding: 16px;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  
+  h3 {
+    margin-top: 0;
+    color: #4285f4;
+    font-weight: 500;
+  }
+  
+  h4 {
+    margin-top: 20px;
+    margin-bottom: 10px;
+    font-weight: 500;
+    color: #555;
+  }
+  
+  .sheet-info, .two-way-sync-notice {
+    display: flex;
+    align-items: center;
+    background: #f5f5f5;
+    padding: 12px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+  }
+  
+  .two-way-sync-notice {
+    background: #e8f0fe;
+    color: #174ea6;
+  }
+  
+  .sheet-info svg, .two-way-sync-notice svg {
+    margin-right: 8px;
+    fill: currentColor;
+  }
+  
+  .triggers-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 16px;
+  }
+  
+  .triggers-table th {
+    text-align: left;
+    padding: 8px;
+    background: #f1f1f1;
+    font-weight: 500;
+  }
+  
+  .triggers-table td {
+    padding: 10px 8px;
+    border-bottom: 1px solid #eee;
+  }
+  
+  .form-group {
+    margin-bottom: 16px;
+  }
+  
+  label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    color: #555;
+  }
+  
+  select, button {
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    background: white;
+    font-size: 13px;
+    min-height: 36px;
+  }
+  
+  select {
+    min-width: 150px;
+  }
+  
+  .time-inputs {
+    display: flex;
+    gap: 10px;
+  }
+  
+  .button-container {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    margin-top: 24px;
+  }
+  
+  .primary-btn {
+    background: #4285f4;
+    color: white;
+    border: none;
+    padding: 8px 24px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  
+  .primary-btn:hover {
+    background: #1a73e8;
+  }
+  
+  .secondary-btn {
+    border: 1px solid #dadce0;
+    background: white;
+    color: #5f6368;
+    padding: 8px 24px;
+    margin-right: 12px;
+    cursor: pointer;
+  }
+  
+  .secondary-btn:hover {
+    background: #f1f3f4;
+    color: #202124;
+  }
+  
+  .delete-trigger {
+    color: #ea4335;
+    border: 1px solid #ea4335;
+    background: white;
+    cursor: pointer;
+    padding: 4px 12px;
+    font-size: 12px;
+    min-height: auto;
+  }
+  
+  .delete-trigger:hover {
+    background: #fce8e6;
+  }
+  
+  .existing-triggers, .no-triggers {
+    margin: 20px 0;
+  }
+  
+  .no-triggers p {
+    font-style: italic;
+    color: #5f6368;
+  }
+  
+  .help-text {
+    color: #5f6368;
+    font-size: 12px;
+    margin-top: 4px;
+    margin-bottom: 0;
+  }
+  
+  .day-selection {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  
+  .day-button {
+    background: #f1f3f4;
+    border: 1px solid #dadce0;
+    color: #5f6368;
+    border-radius: 16px;
+    padding: 4px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    min-height: auto;
+  }
+  
+  .day-button:hover {
+    background: #e8eaed;
+  }
+  
+  .day-button.selected {
+    background: #e8f0fe;
+    border-color: #4285f4;
+    color: #1a73e8;
+  }
+  
+  .indicator {
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    display: none;
+  }
+  
+  .indicator.success {
+    background-color: #e6f4ea;
+    color: #137333;
+  }
+  
+  .indicator.error {
+    background-color: #fce8e6;
+    color: #c5221f;
+  }
+  
+  .loading, .mini-loading {
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .loader, .mini-loader {
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #4285f4;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    animation: spin 1s linear infinite;
+  }
+  
+  .mini-loader {
+    width: 12px;
+    height: 12px;
+  }
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  
+  .fade-out {
+    animation: fadeOut 0.5s;
+    opacity: 0;
+  }
+  
+  @keyframes fadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  
+  .fade-in {
+    animation: fadeIn 0.5s;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+</style> 

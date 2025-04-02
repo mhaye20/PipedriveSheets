@@ -211,7 +211,9 @@ UI.getFileContent_ = function(filename) {
   if (filename === 'TeamManagerUI') {
     return `<style>${TeamManagerUI.getStyles()}</style><script>${TeamManagerUI.getScripts()}</script>`;
   } else if (filename === 'TriggerManagerUI') {
-    return `<style>${TriggerManagerUI.getStyles()}</style><script>${TriggerManagerUI.getScripts()}</script>`;
+    const styles = HtmlService.createHtmlOutputFromFile('TriggerManagerUI_Styles').getContent();
+    const scripts = HtmlService.createHtmlOutputFromFile('TriggerManagerUI_Scripts').getContent();
+    return `${styles}${scripts}`;
   } else if (filename === 'TwoWaySyncSettingsUI') {
     return `<style>${TwoWaySyncSettingsUI.getStyles()}</style><script>${TwoWaySyncSettingsUI.getScripts()}</script>`;
   }

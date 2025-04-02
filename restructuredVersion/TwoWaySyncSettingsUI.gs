@@ -754,7 +754,12 @@ function createSyncTrigger(triggerData) {
 
         return {
           success: true,
-          triggerId: hourlyTrigger.getUniqueId()
+          triggerId: hourlyTrigger.getUniqueId(),
+          triggerInfo: {
+            id: hourlyTrigger.getUniqueId(),
+            type: 'Hourly',
+            description: `Every ${triggerData.hourlyInterval} hour${triggerData.hourlyInterval > 1 ? 's' : ''} for sheet "${triggerData.sheetName}"`
+          }
         };
 
       case 'daily':
@@ -775,14 +780,25 @@ function createSyncTrigger(triggerData) {
           'daily'
         );
 
+        // Format time string
+        const hour12 = triggerData.hour % 12 === 0 ? 12 : triggerData.hour % 12;
+        const ampm = triggerData.hour < 12 ? 'AM' : 'PM';
+        const timeStr = `${hour12}:${triggerData.minute < 10 ? '0' + triggerData.minute : triggerData.minute} ${ampm}`;
+
         return {
           success: true,
-          triggerId: dailyTrigger.getUniqueId()
+          triggerId: dailyTrigger.getUniqueId(),
+          triggerInfo: {
+            id: dailyTrigger.getUniqueId(),
+            type: 'Daily',
+            description: `Every day at ${timeStr} for sheet "${triggerData.sheetName}"`
+          }
         };
 
       case 'weekly':
         // For weekly triggers, we need to create a separate trigger for each selected day
         const weekDayTriggers = [];
+        const weekDayDetails = [];
         
         // Convert numeric day values to ScriptApp.WeekDay enum values
         const weekDayMap = {
@@ -793,6 +809,16 @@ function createSyncTrigger(triggerData) {
           5: ScriptApp.WeekDay.FRIDAY,
           6: ScriptApp.WeekDay.SATURDAY,
           7: ScriptApp.WeekDay.SUNDAY
+        };
+
+        const weekDayNames = {
+          1: 'Monday',
+          2: 'Tuesday',
+          3: 'Wednesday',
+          4: 'Thursday',
+          5: 'Friday',
+          6: 'Saturday',
+          7: 'Sunday'
         };
         
         triggerData.weekDays.forEach(day => {
@@ -819,11 +845,22 @@ function createSyncTrigger(triggerData) {
           );
 
           weekDayTriggers.push(dayTrigger.getUniqueId());
+          weekDayDetails.push(weekDayNames[day]);
         });
+
+        // Format time string
+        const weekHour12 = triggerData.hour % 12 === 0 ? 12 : triggerData.hour % 12;
+        const weekAmpm = triggerData.hour < 12 ? 'AM' : 'PM';
+        const weekTimeStr = `${weekHour12}:${triggerData.minute < 10 ? '0' + triggerData.minute : triggerData.minute} ${weekAmpm}`;
 
         return {
           success: true,
-          triggerId: weekDayTriggers.join(',') // Return a comma-separated list of trigger IDs
+          triggerId: weekDayTriggers.join(','), // Return a comma-separated list of trigger IDs
+          triggerInfo: {
+            id: weekDayTriggers.join(','),
+            type: 'Weekly',
+            description: `Every week on ${weekDayDetails.join(', ')} at ${weekTimeStr} for sheet "${triggerData.sheetName}"`
+          }
         };
 
       case 'monthly':
@@ -844,9 +881,25 @@ function createSyncTrigger(triggerData) {
           'monthly'
         );
 
+        // Format time string
+        const monthHour12 = triggerData.hour % 12 === 0 ? 12 : triggerData.hour % 12;
+        const monthAmpm = triggerData.hour < 12 ? 'AM' : 'PM';
+        const monthTimeStr = `${monthHour12}:${triggerData.minute < 10 ? '0' + triggerData.minute : triggerData.minute} ${monthAmpm}`;
+
+        // Format day with proper suffix
+        let daySuffix = "th";
+        if (triggerData.monthDay % 10 === 1 && triggerData.monthDay !== 11) daySuffix = "st";
+        else if (triggerData.monthDay % 10 === 2 && triggerData.monthDay !== 12) daySuffix = "nd";
+        else if (triggerData.monthDay % 10 === 3 && triggerData.monthDay !== 13) daySuffix = "rd";
+
         return {
           success: true,
-          triggerId: monthlyTrigger.getUniqueId()
+          triggerId: monthlyTrigger.getUniqueId(),
+          triggerInfo: {
+            id: monthlyTrigger.getUniqueId(),
+            type: 'Monthly',
+            description: `Every month on the ${triggerData.monthDay}${daySuffix} at ${monthTimeStr} for sheet "${triggerData.sheetName}"`
+          }
         };
 
       default:

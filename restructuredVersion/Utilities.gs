@@ -514,9 +514,9 @@ function columnToLetter(columnIndex) {
 function include(filename) {
   // Handle special cases for TriggerManager UI components
   if (filename === 'TriggerManagerUI_Styles') {
-    return TriggerManagerUI.getStyles();
+    return HtmlService.createHtmlOutputFromFile('TriggerManagerUI_Styles').getContent();
   } else if (filename === 'TriggerManagerUI_Scripts') {
-    return TriggerManagerUI.getScripts();
+    return HtmlService.createHtmlOutputFromFile('TriggerManagerUI_Scripts').getContent();
   }
   
   // Handle special cases for TwoWaySyncSettings UI components
