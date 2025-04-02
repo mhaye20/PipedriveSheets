@@ -391,8 +391,9 @@ const TriggerManagerUI = {
               if (result.success) {
                 showStatus('success', 'Sync schedule created successfully!');
                 
-                // Close this dialog and reopen a fresh one after a short delay
+                // Reload after short delay to show the new trigger
                 setTimeout(function() {
+                  // Close and reopen the dialog to ensure a fresh reload
                   google.script.host.close();
                   google.script.run.showTriggerManager();
                 }, 1500);
@@ -427,14 +428,38 @@ const TriggerManagerUI = {
                   // Animation for removing the row
                   const row = document.getElementById('trigger-row-' + triggerId);
                   if (row) {
+                    // Add fade-out class for animation
                     row.classList.add('fade-out');
+                    
+                    // After animation completes, remove the row from DOM
+                    // and then reload the dialog to show updated list
                     setTimeout(() => {
-                      // Close this dialog and reopen a fresh one
+                      // First remove the row completely from DOM
+                      if (row.parentNode) {
+                        row.parentNode.removeChild(row);
+                      }
+                      
+                      // If this was the last row, show the "no triggers" message
+                      const remainingRows = document.querySelectorAll('.triggers-table tbody tr');
+                      if (remainingRows.length === 0) {
+                        const table = document.querySelector('.existing-triggers');
+                        if (table) {
+                          table.style.display = 'none';
+                          
+                          // Show "no triggers" message
+                          const noTriggersDiv = document.createElement('div');
+                          noTriggersDiv.className = 'no-triggers';
+                          noTriggersDiv.innerHTML = '<p>No automatic sync schedules are set up for this sheet.</p>';
+                          table.parentNode.insertBefore(noTriggersDiv, table.nextSibling);
+                        }
+                      }
+                      
+                      // Then refresh the whole dialog to ensure we see the latest state
                       google.script.host.close();
                       google.script.run.showTriggerManager();
                     }, 500);
                   } else {
-                    // Fallback if row not found
+                    // Fallback if row not found - just reload the dialog
                     google.script.host.close();
                     google.script.run.showTriggerManager();
                   }
@@ -444,7 +469,7 @@ const TriggerManagerUI = {
                     loadingElement.style.display = 'none';
                     buttonElement.style.display = 'inline-block';
                   }
-                  showStatus('error', 'Error: ' + result.error);
+                  showStatus('error', result.error || 'Error deleting trigger');
                 }
               })
               .withFailureHandler(function(error) {
@@ -525,7 +550,8 @@ const TriggerManagerUI = {
       const allTriggers = ScriptApp.getProjectTriggers();
       const scriptProperties = PropertiesService.getScriptProperties();
 
-      return allTriggers.filter(trigger => {
+      // Filter to get only valid triggers for this sheet
+      const validTriggers = allTriggers.filter(trigger => {
         // Only time-based triggers that run syncSheetFromTrigger
         if (trigger.getHandlerFunction() === 'syncSheetFromTrigger' &&
           trigger.getEventType() === ScriptApp.EventType.CLOCK) {
@@ -535,8 +561,31 @@ const TriggerManagerUI = {
           return triggerSheet === sheetName;
         }
         return false;
-      }).map(trigger => {
-        const info = TriggerManagerUI.getTriggerInfo(trigger);
+      });
+      
+      // Cleanup: Remove any stale trigger references from properties
+      // This ensures we don't have "ghost" triggers showing up after deletion
+      const allTriggerIds = new Set(allTriggers.map(t => t.getUniqueId()));
+      
+      // Get all property keys
+      const allProps = scriptProperties.getProperties();
+      
+      // Find keys that look like they're related to triggers for this sheet
+      Object.keys(allProps).forEach(key => {
+        if (key.startsWith('TRIGGER_') && key.endsWith('_SHEET')) {
+          const triggerId = key.replace('TRIGGER_', '').replace('_SHEET', '');
+          if (!allTriggerIds.has(triggerId) && allProps[key] === sheetName) {
+            // This is a stale trigger reference - delete it
+            scriptProperties.deleteProperty(key);
+            scriptProperties.deleteProperty(`TRIGGER_${triggerId}_FREQUENCY`);
+            Logger.log(`Cleaned up stale trigger reference: ${triggerId}`);
+          }
+        }
+      });
+      
+      // Map triggers to the format expected by the UI
+      return validTriggers.map(trigger => {
+        const info = this.getTriggerInfo(trigger);
         return {
           id: trigger.getUniqueId(),
           type: info.type,
@@ -664,8 +713,15 @@ function capitalizeFirstLetter(string) {
 }
 
 // Export functions to be globally accessible
-this.showTriggerManager = TriggerManagerUI.showTriggerManager;
 this.getTriggersForSheet = TriggerManagerUI.getTriggersForSheet;
 this.getTriggerInfo = TriggerManagerUI.getTriggerInfo;
 this.createSyncTrigger = createSyncTrigger;
-this.deleteTrigger = deleteTrigger; 
+this.deleteTrigger = deleteTrigger;
+
+/**
+ * Shows the trigger manager dialog - global function callable from client-side
+ * This is the main entry point for showing the trigger manager UI.
+ */
+function showTriggerManager() {
+  return TriggerManagerUI.showTriggerManager();
+} 

@@ -783,10 +783,27 @@ function createSyncTrigger(triggerData) {
       case 'weekly':
         // For weekly triggers, we need to create a separate trigger for each selected day
         const weekDayTriggers = [];
+        
+        // Convert numeric day values to ScriptApp.WeekDay enum values
+        const weekDayMap = {
+          1: ScriptApp.WeekDay.MONDAY,
+          2: ScriptApp.WeekDay.TUESDAY,
+          3: ScriptApp.WeekDay.WEDNESDAY,
+          4: ScriptApp.WeekDay.THURSDAY,
+          5: ScriptApp.WeekDay.FRIDAY,
+          6: ScriptApp.WeekDay.SATURDAY,
+          7: ScriptApp.WeekDay.SUNDAY
+        };
+        
         triggerData.weekDays.forEach(day => {
+          const weekDay = weekDayMap[day];
+          if (!weekDay) {
+            throw new Error(`Invalid week day value: ${day}`);
+          }
+          
           const dayTrigger = ScriptApp.newTrigger('syncSheetFromTrigger')
             .timeBased()
-            .onWeekDay(day)
+            .onWeekDay(weekDay)
             .atHour(triggerData.hour)
             .nearMinute(triggerData.minute)
             .create();
@@ -937,22 +954,52 @@ function deleteTrigger(triggerId) {
 
     // Handle comma-separated list of trigger IDs (for weekly triggers)
     const triggerIds = triggerId.split(',');
+    let allDeleted = true;
 
     triggerIds.forEach(id => {
+      let found = false;
       // Find and delete the trigger with this ID
       for (let i = 0; i < allTriggers.length; i++) {
         if (allTriggers[i].getUniqueId() === id) {
-          ScriptApp.deleteTrigger(allTriggers[i]);
-
-          // Also clean up the properties
-          scriptProperties.deleteProperty(`TRIGGER_${id}_SHEET`);
-          scriptProperties.deleteProperty(`TRIGGER_${id}_FREQUENCY`);
+          try {
+            ScriptApp.deleteTrigger(allTriggers[i]);
+            found = true;
+          } catch (e) {
+            Logger.log(`Error deleting trigger ${id}: ${e.message}`);
+            allDeleted = false;
+          }
           break;
         }
       }
+
+      // Always clean up the properties, even if trigger wasn't found
+      // (it might have been deleted by some other process)
+      try {
+        // Get the sheet name first for complete cleanup
+        const sheetName = scriptProperties.getProperty(`TRIGGER_${id}_SHEET`);
+        
+        // Delete the main properties
+        scriptProperties.deleteProperty(`TRIGGER_${id}_SHEET`);
+        scriptProperties.deleteProperty(`TRIGGER_${id}_FREQUENCY`);
+        
+        // Delete any other properties that might be related to this trigger
+        const allProps = scriptProperties.getProperties();
+        Object.keys(allProps).forEach(key => {
+          if (key.includes(id)) {
+            scriptProperties.deleteProperty(key);
+          }
+        });
+        
+        Logger.log(`Cleaned up properties for trigger ID: ${id}`);
+      } catch (e) {
+        Logger.log(`Error cleaning up properties for trigger ${id}: ${e.message}`);
+      }
     });
 
-    return { success: true };
+    return { 
+      success: allDeleted,
+      error: allDeleted ? null : "Some triggers could not be deleted. Stale references have been cleaned up."
+    };
   } catch (error) {
     Logger.log('Error deleting trigger: ' + error.message);
     return {
