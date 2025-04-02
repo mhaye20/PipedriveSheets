@@ -158,24 +158,12 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
     // Key for tracking column
     const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
     
-    // If user wants to skip push changes to Pipedrive, just sync
+    // If two-way sync is enabled and we're not skipping push, automatically push changes
     if (!skipPush && twoWaySyncEnabled) {
-      // Ask user if they want to push first
-      const ui = SpreadsheetApp.getUi();
-      const response = ui.alert(
-        'Push Changes First?',
-        'Do you want to push any changes to Pipedrive before syncing?',
-        ui.ButtonSet.YES_NO
-      );
-      
-      if (response === ui.Button.YES) {
-        Logger.log('User chose to push changes before syncing');
-        // Push changes to Pipedrive first
-        pushChangesToPipedrive(true, true); // true for scheduled sync, true for suppress warning
-        
-        // After pushing changes, continue with the sync
-        Logger.log('Changes pushed, continuing with sync');
-      }
+      Logger.log('Two-way sync is enabled, automatically pushing changes before syncing');
+      // Push changes to Pipedrive first without showing additional dialogs
+      pushChangesToPipedrive(true, true); // true for scheduled sync, true for suppress warning
+      Logger.log('Changes pushed, continuing with sync');
     }
     
     // Get data from Pipedrive based on entity type
