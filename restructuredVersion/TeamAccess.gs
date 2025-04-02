@@ -8,77 +8,79 @@
  */
 
 /**
- * TeamAccess class for handling team-related operations
+ * TeamAccess constructor for handling team-related operations
  */
-class TeamAccess {
-  /**
-   * Checks if a user is in any team
-   * @param {string} email The email to check
-   * @returns {boolean} True if the user is in a team, false otherwise
-   */
-  isUserInTeam(email) {
-    return isUserInTeam(email);
-  }
-  
-  /**
-   * Gets the user's team data
-   * @param {string} email The email of the user
-   * @returns {Object|null} Team data or null if not in a team
-   */
-  getUserTeamData(email) {
-    const userTeam = getUserTeam(email);
-    return userTeam ? {
-      name: userTeam.name,
-      id: userTeam.teamId,
-      role: userTeam.role
-    } : null;
-  }
-  
-  /**
-   * Gets all members of a team
-   * @param {string} teamId The ID of the team
-   * @returns {Array} Array of team members with email and role
-   */
-  getTeamMembers(teamId) {
-    const teamsData = getTeamsData();
-    const team = teamsData[teamId];
-    if (!team) return [];
-    
-    const members = [];
-    
-    // Check if using new members object format
-    if (team.members) {
-      Object.keys(team.members).forEach(email => {
-        members.push({
-          email: email,
-          role: team.members[email]
-        });
-      });
-    } 
-    // Legacy format using memberEmails and adminEmails
-    else if (team.memberEmails) {
-      team.memberEmails.forEach(email => {
-        const isAdmin = team.adminEmails && team.adminEmails.includes(email);
-        members.push({
-          email: email,
-          role: isAdmin ? 'Admin' : 'Member'
-        });
-      });
-    }
-    
-    return members;
-  }
-  
-  /**
-   * Gets the role of a user in their team
-   * @param {string} email The email of the user
-   * @returns {string} The user's role ('Admin', 'Member', or '')
-   */
-  getUserRole(email) {
-    const userTeam = getUserTeam(email);
-    return userTeam ? userTeam.role : '';
-  }
+function TeamAccess() {
+  // Constructor code here if needed
 }
+
+/**
+ * Checks if a user is in any team
+ * @param {string} email The email to check
+ * @returns {boolean} True if the user is in a team, false otherwise
+ */
+TeamAccess.prototype.isUserInTeam = function(email) {
+  return isUserInTeam(email);
+};
+
+/**
+ * Gets the user's team data
+ * @param {string} email The email of the user
+ * @returns {Object|null} Team data or null if not in a team
+ */
+TeamAccess.prototype.getUserTeamData = function(email) {
+  const userTeam = getUserTeam(email);
+  return userTeam ? {
+    name: userTeam.name,
+    id: userTeam.teamId,
+    role: userTeam.role
+  } : null;
+};
+
+/**
+ * Gets all members of a team
+ * @param {string} teamId The ID of the team
+ * @returns {Array} Array of team members with email and role
+ */
+TeamAccess.prototype.getTeamMembers = function(teamId) {
+  const teamsData = getTeamsData();
+  const team = teamsData[teamId];
+  if (!team) return [];
+  
+  const members = [];
+  
+  // Check if using new members object format
+  if (team.members) {
+    Object.keys(team.members).forEach(function(email) {
+      members.push({
+        email: email,
+        role: team.members[email]
+      });
+    });
+  } 
+  // Legacy format using memberEmails and adminEmails
+  else if (team.memberEmails) {
+    team.memberEmails.forEach(function(email) {
+      const isAdmin = team.adminEmails && team.adminEmails.includes(email);
+      members.push({
+        email: email,
+        role: isAdmin ? 'Admin' : 'Member'
+      });
+    });
+  }
+  
+  return members;
+};
+
+/**
+ * Gets the role of a user in their team
+ * @param {string} email The email of the user
+ * @returns {string} The user's role ('Admin', 'Member', or '')
+ */
+TeamAccess.prototype.getUserRole = function(email) {
+  const userTeam = getUserTeam(email);
+  return userTeam ? userTeam.role : '';
+};
 
 /**
  * Checks if the current user has any form of access rights

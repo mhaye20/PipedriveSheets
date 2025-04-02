@@ -124,6 +124,28 @@ TeamManagerUI.getStyles = function() {
       from { transform: scale(0.95); opacity: 0; }
       to { transform: scale(1); opacity: 1; }
     }
+    
+    @keyframes fadeOut {
+      from { opacity: 1; transform: translateY(0); }
+      to { opacity: 0; transform: translateY(10px); }
+    }
+    
+    @keyframes slideOutLeft {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(-30px); opacity: 0; }
+    }
+    
+    .fade-out {
+      animation: fadeOut 0.5s forwards;
+    }
+    
+    .slide-out-left {
+      animation: slideOutLeft 0.5s forwards;
+    }
+    
+    .fade-in {
+      animation: fadeIn 0.5s;
+    }
 
     .loading-spinner {
       display: inline-block;
@@ -468,11 +490,19 @@ TeamManagerUI.getStyles = function() {
       border-radius: var(--border-radius-small);
       background-color: var(--bg-light);
       transition: var(--transition-fast);
+      transform-origin: center;
+      overflow: hidden;
+      min-height: 54px; /* Ensure consistent height for animation */
     }
     
     .team-member:hover {
       background-color: var(--primary-light);
       box-shadow: var(--shadow-small);
+    }
+    
+    .team-member.removing {
+      background-color: var(--error-light);
+      border-left: 3px solid var(--error-color);
     }
     
     .member-info {
@@ -590,6 +620,18 @@ TeamManagerUI.getStyles = function() {
     .hidden {
       display: none !important;
     }
+    
+    .no-members-message {
+      text-align: center;
+      padding: 20px;
+      background-color: var(--bg-light);
+      border-radius: var(--border-radius-small);
+      color: var(--text-medium);
+      font-style: italic;
+      margin-top: 16px;
+      border: 1px dashed var(--border-color);
+      display: none;
+    }
   `;
 };
 
@@ -600,15 +642,15 @@ TeamManagerUI.getStyles = function() {
 TeamManagerUI.getScripts = function() {
   return `
     // Tab switching
-    document.querySelectorAll('.tab').forEach(tab => {
+    document.querySelectorAll('.tab').forEach(function(tab) {
       tab.addEventListener('click', function() {
         // Update active tab
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
         this.classList.add('active');
         
         // Show corresponding section
-        const tabId = this.dataset.tab;
-        document.querySelectorAll('.tab-content').forEach(section => {
+        var tabId = this.dataset.tab;
+        document.querySelectorAll('.tab-content').forEach(function(section) {
           section.classList.remove('active');
         });
         document.getElementById(tabId + '-tab').classList.add('active');
@@ -630,9 +672,9 @@ TeamManagerUI.getScripts = function() {
       
       // Auto-dismiss success messages after 5 seconds
       if (type === 'success') {
-        setTimeout(() => {
+        setTimeout(function() {
           statusEl.classList.add('hidden');
-          setTimeout(() => {
+          setTimeout(function() {
             statusEl.remove();
           }, 300);
         }, 5000);
@@ -706,7 +748,7 @@ TeamManagerUI.getScripts = function() {
               showStatus('Successfully joined team!', 'success');
               
               // Wait a moment, then reload
-              setTimeout(() => {
+              setTimeout(function() {
                 google.script.run.showTeamManager();
                 google.script.host.close();
               }, 2000);
@@ -745,7 +787,7 @@ TeamManagerUI.getScripts = function() {
               showStatus('Team created successfully!', 'success');
               
               // Wait a moment, then reload
-              setTimeout(() => {
+              setTimeout(function() {
                 google.script.run.showTeamManager();
                 google.script.host.close();
               }, 2000);
@@ -800,7 +842,7 @@ TeamManagerUI.getScripts = function() {
               showStatus('You have left the team.', 'success');
               
               // Wait a moment, then reload
-              setTimeout(() => {
+              setTimeout(function() {
                 google.script.run.showTeamManager();
                 google.script.host.close();
               }, 2000);
@@ -836,7 +878,7 @@ TeamManagerUI.getScripts = function() {
               showStatus('Team has been deleted.', 'success');
               
               // Wait a moment, then reload
-              setTimeout(() => {
+              setTimeout(function() {
                 google.script.run.showTeamManager();
                 google.script.host.close();
               }, 2000);
@@ -879,13 +921,173 @@ TeamManagerUI.getScripts = function() {
             
             if (result.success) {
               showStatus('Member added successfully.', 'success');
-              document.getElementById('new-member-email').value = '';
               
-              // Reload the page to show new member
-              setTimeout(() => {
-                google.script.run.showTeamManager();
-                google.script.host.close();
-              }, 2000);
+              // Update the UI directly without requiring a reload
+              const membersContainer = document.querySelector('.team-members');
+              if (membersContainer) {
+                // If we have a "no members" message, remove it
+                const noMembersMessage = document.querySelector('.no-members-message');
+                if (noMembersMessage) {
+                  noMembersMessage.classList.add('fade-out');
+                  setTimeout(function() {
+                    noMembersMessage.remove();
+                  }, 300);
+                }
+                
+                // Create a new member element
+                const newMember = document.createElement('div');
+                newMember.className = 'team-member';
+                newMember.style.opacity = '0';
+                newMember.style.transform = 'translateY(20px)';
+                
+                var userEmail = document.querySelector('.user-info strong').textContent;
+                var isCurrentUserAdmin = document.querySelector('.badge.admin') !== null;
+                
+                // Use a similar structure to the existing HTML
+                newMember.innerHTML = 
+                  '<div class="member-info">' +
+                    '<i class="material-icons">person</i>' +
+                    '<div>' +
+                      '<div class="member-email">' + email + '</div>' +
+                      '<div class="badge">Member</div>' +
+                    '</div>' +
+                  '</div>' +
+                  (isCurrentUserAdmin ? 
+                  '<div class="member-actions">' +
+                    '<button class="icon-button promote-member" data-email="' + email + '" title="Make Admin">' +
+                      '<i class="material-icons">upgrade</i>' +
+                    '</button>' +
+                    '<button class="icon-button remove-member" data-email="' + email + '" title="Remove Member">' +
+                      '<i class="material-icons">person_remove</i>' +
+                    '</button>' +
+                  '</div>'
+                   : '');
+                
+                // Add the new element to the container
+                membersContainer.appendChild(newMember);
+                
+                // Trigger animation after a small delay
+                setTimeout(function() {
+                  newMember.style.transition = 'all 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)';
+                  newMember.style.opacity = '1';
+                  newMember.style.transform = 'translateY(0)';
+                }, 50);
+                
+                // Add event listeners to the new buttons
+                if (isCurrentUserAdmin) {
+                  var promoteButton = newMember.querySelector('.promote-member');
+                  var removeButton = newMember.querySelector('.remove-member');
+                  
+                  if (promoteButton) {
+                    promoteButton.addEventListener('click', function() {
+                      var email = this.dataset.email;
+                      if (!confirm('Are you sure you want to promote ' + email + ' to admin?')) {
+                        return;
+                      }
+                      
+                      setButtonLoading(this, true);
+                      showLoading();
+                      
+                      google.script.run
+                        .withSuccessHandler(function(result) {
+                          hideLoading();
+                          setButtonLoading(promoteButton, false);
+                          
+                          if (result.success) {
+                            showStatus('Member promoted to admin successfully.', 'success');
+                            
+                            // Reload the page to show updated role
+                            setTimeout(function() {
+                              google.script.run.showTeamManager();
+                              google.script.host.close();
+                            }, 2000);
+                          } else {
+                            showStatus(result.message || 'Error promoting member', 'error');
+                          }
+                        })
+                        .withFailureHandler(function(error) {
+                          hideLoading();
+                          setButtonLoading(promoteButton, false);
+                          showStatus('Error: ' + error.message, 'error');
+                        })
+                        .promoteTeamMember(email);
+                    });
+                  }
+                  
+                  if (removeButton) {
+                    removeButton.addEventListener('click', function() {
+                      var email = this.dataset.email;
+                      if (!confirm('Are you sure you want to remove ' + email + ' from the team?')) {
+                        return;
+                      }
+                      
+                      // Get the member element
+                      var memberElement = this.closest('.team-member');
+                      
+                      // Add a visual indication that this member is being removed
+                      if (memberElement) {
+                        memberElement.classList.add('removing');
+                      }
+                      
+                      setButtonLoading(this, true);
+                      showLoading();
+                      
+                      google.script.run
+                        .withSuccessHandler(function(result) {
+                          hideLoading();
+                          
+                          if (result.success) {
+                            if (memberElement) {
+                              // Add slide-out animation
+                              memberElement.classList.add('slide-out-left');
+                              
+                              // After animation completes, remove the element
+                              setTimeout(function() {
+                                // Add fade-out effect
+                                memberElement.style.height = memberElement.offsetHeight + 'px';
+                                memberElement.style.minHeight = '0';
+                                memberElement.style.height = '0';
+                                memberElement.style.marginTop = '0';
+                                memberElement.style.marginBottom = '0';
+                                memberElement.style.padding = '0';
+                                memberElement.style.opacity = '0';
+                                
+                                // Finally remove after height animation
+                                setTimeout(function() {
+                                  memberElement.remove();
+                                }, 300);
+                              }, 500);
+                            }
+                            
+                            // Show success message
+                            showStatus('Member removed successfully.', 'success');
+                          } else {
+                            // If there was an error, reset the button and element
+                            setButtonLoading(removeButton, false);
+                            if (memberElement) {
+                              memberElement.classList.remove('removing');
+                            }
+                            showStatus(result.message || 'Error removing member', 'error');
+                          }
+                        })
+                        .withFailureHandler(function(error) {
+                          hideLoading();
+                          setButtonLoading(removeButton, false);
+                          
+                          // Reset the element if there was an error
+                          if (memberElement) {
+                            memberElement.classList.remove('removing');
+                          }
+                          showStatus('Error: ' + error.message, 'error');
+                        })
+                        .removeTeamMember(email);
+                    });
+                  }
+                }
+              }
+              
+              // Clear the input field
+              document.getElementById('new-member-email').value = '';
             } else {
               showStatus(result.message || 'Error adding member', 'error');
             }
@@ -900,12 +1102,15 @@ TeamManagerUI.getScripts = function() {
     }
     
     // Promote member handler
-    document.querySelectorAll('.promote-member').forEach(button => {
+    document.querySelectorAll('.promote-member').forEach(function(button) {
       button.addEventListener('click', function() {
-        const email = this.dataset.email;
-        if (!confirm(\`Are you sure you want to promote \${email} to admin?\`)) {
+        var email = this.dataset.email;
+        if (!confirm('Are you sure you want to promote ' + email + ' to admin?')) {
           return;
         }
+        
+        // Get the member element
+        var memberElement = this.closest('.team-member');
         
         setButtonLoading(this, true);
         showLoading();
@@ -913,17 +1118,168 @@ TeamManagerUI.getScripts = function() {
         google.script.run
           .withSuccessHandler(function(result) {
             hideLoading();
-            setButtonLoading(button, false);
             
             if (result.success) {
               showStatus('Member promoted to admin successfully.', 'success');
               
-              // Reload the page to show updated role
-              setTimeout(() => {
-                google.script.run.showTeamManager();
-                google.script.host.close();
-              }, 2000);
+              // Update UI directly without reloading
+              if (memberElement) {
+                // Find the badge element
+                var badgeElement = memberElement.querySelector('.badge');
+                var roleIconElement = memberElement.querySelector('.member-info .material-icons');
+                
+                if (badgeElement) {
+                  // Add animation effect
+                  badgeElement.style.transition = 'all 0.3s';
+                  badgeElement.style.transform = 'scale(1.1)';
+                  badgeElement.style.opacity = '0.5';
+                  
+                  // Update after a small delay
+                  setTimeout(function() {
+                    badgeElement.classList.add('admin');
+                    badgeElement.textContent = 'Admin';
+                    badgeElement.style.opacity = '1';
+                    
+                    // Reset transform after update
+                    setTimeout(function() {
+                      badgeElement.style.transform = 'scale(1)';
+                    }, 150);
+                  }, 300);
+                }
+                
+                // Update the icon as well
+                if (roleIconElement) {
+                  roleIconElement.textContent = 'admin_panel_settings';
+                }
+                
+                // Replace the promote button with demote button
+                var actionsContainer = memberElement.querySelector('.member-actions');
+                if (actionsContainer) {
+                  // Create new demote button
+                  var demoteButton = document.createElement('button');
+                  demoteButton.className = 'icon-button demote-member';
+                  demoteButton.title = 'Remove Admin';
+                  demoteButton.dataset.email = email;
+                  demoteButton.innerHTML = '<i class="material-icons">remove_moderator</i>';
+                  
+                  // Replace promote button with demote
+                  button.style.opacity = '0';
+                  setTimeout(function() {
+                    button.remove();
+                    actionsContainer.insertBefore(demoteButton, actionsContainer.firstChild);
+                    
+                    // Add the demote event listener to the new button
+                    demoteButton.addEventListener('click', function() {
+                      if (!confirm('Are you sure you want to remove admin privileges from ' + email + '?')) {
+                        return;
+                      }
+                      
+                      var memberEl = this.closest('.team-member');
+                      setButtonLoading(this, true);
+                      showLoading();
+                      
+                      google.script.run
+                        .withSuccessHandler(function(result) {
+                          hideLoading();
+                          setButtonLoading(demoteButton, false);
+                          
+                          if (result.success) {
+                            showStatus('Admin privileges removed successfully.', 'success');
+                            
+                            // Update UI without reloading
+                            if (memberEl) {
+                              var badge = memberEl.querySelector('.badge');
+                              var roleIcon = memberEl.querySelector('.member-info .material-icons');
+                              
+                              if (badge) {
+                                // Animation for role change
+                                badge.style.transition = 'all 0.3s';
+                                badge.style.transform = 'scale(0.9)';
+                                badge.style.opacity = '0.5';
+                                
+                                setTimeout(function() {
+                                  badge.classList.remove('admin');
+                                  badge.textContent = 'Member';
+                                  badge.style.opacity = '1';
+                                  
+                                  setTimeout(function() {
+                                    badge.style.transform = 'scale(1)';
+                                  }, 150);
+                                }, 300);
+                              }
+                              
+                              // Update icon
+                              if (roleIcon) {
+                                roleIcon.textContent = 'person';
+                              }
+                              
+                              // Replace demote button with promote
+                              var actions = memberEl.querySelector('.member-actions');
+                              if (actions) {
+                                var promoteButton = document.createElement('button');
+                                promoteButton.className = 'icon-button promote-member';
+                                promoteButton.title = 'Make Admin';
+                                promoteButton.dataset.email = email;
+                                promoteButton.innerHTML = '<i class="material-icons">upgrade</i>';
+                                
+                                demoteButton.style.opacity = '0';
+                                setTimeout(function() {
+                                  demoteButton.remove();
+                                  actions.insertBefore(promoteButton, actions.firstChild);
+                                  
+                                  // Add event listener to the new promote button
+                                  promoteButton.addEventListener('click', function() {
+                                    var email = this.dataset.email;
+                                    if (!confirm('Are you sure you want to promote ' + email + ' to admin?')) {
+                                      return;
+                                    }
+                                    
+                                    setButtonLoading(this, true);
+                                    showLoading();
+                                    
+                                    google.script.run
+                                      .withSuccessHandler(function(res) {
+                                        hideLoading();
+                                        setButtonLoading(promoteButton, false);
+                                        
+                                        if (res.success) {
+                                          showStatus('Member promoted to admin successfully.', 'success');
+                                          
+                                          // Reload the page to show updated role after delay
+                                          setTimeout(function() {
+                                            google.script.run.showTeamManager();
+                                            google.script.host.close();
+                                          }, 2000);
+                                        } else {
+                                          showStatus(res.message || 'Error promoting member', 'error');
+                                        }
+                                      })
+                                      .withFailureHandler(function(err) {
+                                        hideLoading();
+                                        setButtonLoading(promoteButton, false);
+                                        showStatus('Error: ' + err.message, 'error');
+                                      })
+                                      .promoteTeamMember(email);
+                                  });
+                                }, 300);
+                              }
+                            }
+                          } else {
+                            showStatus(result.message || 'Error removing admin privileges', 'error');
+                          }
+                        })
+                        .withFailureHandler(function(error) {
+                          hideLoading();
+                          setButtonLoading(demoteButton, false);
+                          showStatus('Error: ' + error.message, 'error');
+                        })
+                        .demoteTeamMember(email);
+                    });
+                  }, 300);
+                }
+              }
             } else {
+              setButtonLoading(button, false);
               showStatus(result.message || 'Error promoting member', 'error');
             }
           })
@@ -937,12 +1293,15 @@ TeamManagerUI.getScripts = function() {
     });
     
     // Demote member handler
-    document.querySelectorAll('.demote-member').forEach(button => {
+    document.querySelectorAll('.demote-member').forEach(function(button) {
       button.addEventListener('click', function() {
-        const email = this.dataset.email;
-        if (!confirm(\`Are you sure you want to remove admin privileges from \${email}?\`)) {
+        var email = this.dataset.email;
+        if (!confirm('Are you sure you want to remove admin privileges from ' + email + '?')) {
           return;
         }
+        
+        // Get the member element
+        var memberElement = this.closest('.team-member');
         
         setButtonLoading(this, true);
         showLoading();
@@ -950,17 +1309,168 @@ TeamManagerUI.getScripts = function() {
         google.script.run
           .withSuccessHandler(function(result) {
             hideLoading();
-            setButtonLoading(button, false);
             
             if (result.success) {
               showStatus('Admin privileges removed successfully.', 'success');
               
-              // Reload the page to show updated role
-              setTimeout(() => {
-                google.script.run.showTeamManager();
-                google.script.host.close();
-              }, 2000);
+              // Update UI directly instead of reloading
+              if (memberElement) {
+                // Find the badge element
+                var badgeElement = memberElement.querySelector('.badge');
+                var roleIconElement = memberElement.querySelector('.member-info .material-icons');
+                
+                if (badgeElement) {
+                  // Add animation effect
+                  badgeElement.style.transition = 'all 0.3s';
+                  badgeElement.style.transform = 'scale(0.9)';
+                  badgeElement.style.opacity = '0.5';
+                  
+                  // Update after a small delay
+                  setTimeout(function() {
+                    badgeElement.classList.remove('admin');
+                    badgeElement.textContent = 'Member';
+                    badgeElement.style.opacity = '1';
+                    
+                    // Reset transform after update
+                    setTimeout(function() {
+                      badgeElement.style.transform = 'scale(1)';
+                    }, 150);
+                  }, 300);
+                }
+                
+                // Update the icon
+                if (roleIconElement) {
+                  roleIconElement.textContent = 'person';
+                }
+                
+                // Replace the demote button with promote button
+                var actionsContainer = memberElement.querySelector('.member-actions');
+                if (actionsContainer) {
+                  // Create new promote button
+                  var promoteButton = document.createElement('button');
+                  promoteButton.className = 'icon-button promote-member';
+                  promoteButton.title = 'Make Admin';
+                  promoteButton.dataset.email = email;
+                  promoteButton.innerHTML = '<i class="material-icons">upgrade</i>';
+                  
+                  // Replace demote button with promote
+                  button.style.opacity = '0';
+                  setTimeout(function() {
+                    button.remove();
+                    actionsContainer.insertBefore(promoteButton, actionsContainer.firstChild);
+                    
+                    // Add the promote event listener to the new button
+                    promoteButton.addEventListener('click', function() {
+                      if (!confirm('Are you sure you want to promote ' + email + ' to admin?')) {
+                        return;
+                      }
+                      
+                      var memberEl = this.closest('.team-member');
+                      setButtonLoading(this, true);
+                      showLoading();
+                      
+                      google.script.run
+                        .withSuccessHandler(function(result) {
+                          hideLoading();
+                          setButtonLoading(promoteButton, false);
+                          
+                          if (result.success) {
+                            showStatus('Member promoted to admin successfully.', 'success');
+                            
+                            // Update UI without reloading
+                            if (memberEl) {
+                              var badge = memberEl.querySelector('.badge');
+                              var roleIcon = memberEl.querySelector('.member-info .material-icons');
+                              
+                              if (badge) {
+                                // Animation for role change
+                                badge.style.transition = 'all 0.3s';
+                                badge.style.transform = 'scale(1.1)';
+                                badge.style.opacity = '0.5';
+                                
+                                setTimeout(function() {
+                                  badge.classList.add('admin');
+                                  badge.textContent = 'Admin';
+                                  badge.style.opacity = '1';
+                                  
+                                  setTimeout(function() {
+                                    badge.style.transform = 'scale(1)';
+                                  }, 150);
+                                }, 300);
+                              }
+                              
+                              // Update icon
+                              if (roleIcon) {
+                                roleIcon.textContent = 'admin_panel_settings';
+                              }
+                              
+                              // Replace promote button with demote
+                              var actions = memberEl.querySelector('.member-actions');
+                              if (actions) {
+                                var demoteButton = document.createElement('button');
+                                demoteButton.className = 'icon-button demote-member';
+                                demoteButton.title = 'Remove Admin';
+                                demoteButton.dataset.email = email;
+                                demoteButton.innerHTML = '<i class="material-icons">remove_moderator</i>';
+                                
+                                promoteButton.style.opacity = '0';
+                                setTimeout(function() {
+                                  promoteButton.remove();
+                                  actions.insertBefore(demoteButton, actions.firstChild);
+                                  
+                                  // Add event listener to the new demote button
+                                  demoteButton.addEventListener('click', function() {
+                                    var email = this.dataset.email;
+                                    if (!confirm('Are you sure you want to remove admin privileges from ' + email + '?')) {
+                                      return;
+                                    }
+                                    
+                                    setButtonLoading(this, true);
+                                    showLoading();
+                                    
+                                    google.script.run
+                                      .withSuccessHandler(function(res) {
+                                        hideLoading();
+                                        setButtonLoading(demoteButton, false);
+                                        
+                                        if (res.success) {
+                                          showStatus('Admin privileges removed successfully.', 'success');
+                                          
+                                          // Reload the page to show updated role after delay
+                                          setTimeout(function() {
+                                            google.script.run.showTeamManager();
+                                            google.script.host.close();
+                                          }, 2000);
+                                        } else {
+                                          showStatus(res.message || 'Error removing admin privileges', 'error');
+                                        }
+                                      })
+                                      .withFailureHandler(function(err) {
+                                        hideLoading();
+                                        setButtonLoading(demoteButton, false);
+                                        showStatus('Error: ' + err.message, 'error');
+                                      })
+                                      .demoteTeamMember(email);
+                                  });
+                                }, 300);
+                              }
+                            }
+                          } else {
+                            showStatus(result.message || 'Error promoting member', 'error');
+                          }
+                        })
+                        .withFailureHandler(function(error) {
+                          hideLoading();
+                          setButtonLoading(promoteButton, false);
+                          showStatus('Error: ' + error.message, 'error');
+                        })
+                        .promoteTeamMember(email);
+                    });
+                  }, 300);
+                }
+              }
             } else {
+              setButtonLoading(button, false);
               showStatus(result.message || 'Error removing admin privileges', 'error');
             }
           })
@@ -974,11 +1484,19 @@ TeamManagerUI.getScripts = function() {
     });
     
     // Remove member handler
-    document.querySelectorAll('.remove-member').forEach(button => {
+    document.querySelectorAll('.remove-member').forEach(function(button) {
       button.addEventListener('click', function() {
-        const email = this.dataset.email;
-        if (!confirm(\`Are you sure you want to remove \${email} from the team?\`)) {
+        var email = this.dataset.email;
+        if (!confirm('Are you sure you want to remove ' + email + ' from the team?')) {
           return;
+        }
+        
+        // Get the member element
+        var memberElement = this.closest('.team-member');
+        
+        // Add a visual indication that this member is being removed
+        if (memberElement) {
+          memberElement.classList.add('removing');
         }
         
         setButtonLoading(this, true);
@@ -987,23 +1505,68 @@ TeamManagerUI.getScripts = function() {
         google.script.run
           .withSuccessHandler(function(result) {
             hideLoading();
-            setButtonLoading(button, false);
             
             if (result.success) {
+              if (memberElement) {
+                // Add slide-out animation
+                memberElement.classList.add('slide-out-left');
+                
+                // Get the members container to check if this is the last member
+                var membersContainer = memberElement.closest('.team-members');
+                var remainingMembers = membersContainer.querySelectorAll('.team-member:not(.slide-out-left)').length - 1;
+                
+                // After animation completes, remove the element
+                setTimeout(function() {
+                  // Add fade-out effect
+                  memberElement.style.height = memberElement.offsetHeight + 'px';
+                  memberElement.style.minHeight = '0';
+                  memberElement.style.height = '0';
+                  memberElement.style.marginTop = '0';
+                  memberElement.style.marginBottom = '0';
+                  memberElement.style.padding = '0';
+                  memberElement.style.opacity = '0';
+                  
+                  // Finally remove after height animation
+                  setTimeout(function() {
+                    memberElement.remove();
+                    
+                    // Check if we need to show the "no members" message
+                    if (remainingMembers === 0) {
+                      var noMembersMessage = document.createElement('div');
+                      noMembersMessage.className = 'no-members-message fade-in';
+                      noMembersMessage.textContent = 'No team members found.';
+                      membersContainer.appendChild(noMembersMessage);
+                      
+                      // Display the message
+                      setTimeout(function() {
+                        noMembersMessage.style.display = 'block';
+                      }, 100);
+                    }
+                  }, 300);
+                }, 500);
+              }
+              
+              // Show success message
               showStatus('Member removed successfully.', 'success');
               
-              // Reload the page to show updated members list
-              setTimeout(() => {
-                google.script.run.showTeamManager();
-                google.script.host.close();
-              }, 2000);
+              // We don't need to reload the page since we've updated the UI directly
             } else {
+              // If there was an error, reset the button and element
+              setButtonLoading(button, false);
+              if (memberElement) {
+                memberElement.classList.remove('removing');
+              }
               showStatus(result.message || 'Error removing member', 'error');
             }
           })
           .withFailureHandler(function(error) {
             hideLoading();
             setButtonLoading(button, false);
+            
+            // Reset the element if there was an error
+            if (memberElement) {
+              memberElement.classList.remove('removing');
+            }
             showStatus('Error: ' + error.message, 'error');
           })
           .removeTeamMember(email);
@@ -1016,15 +1579,15 @@ TeamManagerUI.getScripts = function() {
     });
     
     // Add keyboard event listener for Enter key on input fields
-    document.querySelectorAll('input').forEach(input => {
+    document.querySelectorAll('input').forEach(function(input) {
       input.addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
           e.preventDefault();
           
           // Find the submit button in the current tab and click it
-          const tabContent = this.closest('.tab-content');
+          var tabContent = this.closest('.tab-content');
           if (tabContent) {
-            const submitButton = tabContent.querySelector('.button-primary');
+            var submitButton = tabContent.querySelector('.button-primary');
             if (submitButton) {
               submitButton.click();
             }
@@ -1037,13 +1600,13 @@ TeamManagerUI.getScripts = function() {
     hideLoading();
     
     // Initialize tooltip hover behavior for icon buttons
-    document.querySelectorAll('[title]').forEach(el => {
+    document.querySelectorAll('[title]').forEach(function(el) {
       el.addEventListener('mouseover', function() {
-        const title = this.getAttribute('title');
+        var title = this.getAttribute('title');
         if (!title) return;
         
         // Create tooltip element
-        const tooltip = document.createElement('div');
+        var tooltip = document.createElement('div');
         tooltip.className = 'tooltip-popup';
         tooltip.textContent = title;
         
@@ -1062,12 +1625,12 @@ TeamManagerUI.getScripts = function() {
         document.body.appendChild(tooltip);
         
         // Position based on the element's position
-        const rect = this.getBoundingClientRect();
+        var rect = this.getBoundingClientRect();
         tooltip.style.top = (rect.bottom + 5) + 'px';
         tooltip.style.left = (rect.left + rect.width/2 - tooltip.offsetWidth/2) + 'px';
         
         // Show the tooltip
-        setTimeout(() => {
+        setTimeout(function() {
           tooltip.style.opacity = '1';
         }, 10);
         
@@ -1080,7 +1643,7 @@ TeamManagerUI.getScripts = function() {
           this.setAttribute('title', this.getAttribute('data-original-title'));
           this.removeAttribute('data-original-title');
           tooltip.style.opacity = '0';
-          setTimeout(() => {
+          setTimeout(function() {
             if (tooltip.parentNode) {
               document.body.removeChild(tooltip);
             }
@@ -1099,21 +1662,21 @@ TeamManagerUI.getScripts = function() {
 TeamManagerUI.showTeamManager = function(joinOnly = false) {
   try {
     // Get the active user's email
-    const userEmail = Session.getActiveUser().getEmail();
+    var userEmail = Session.getActiveUser().getEmail();
     if (!userEmail) {
       throw new Error('Unable to retrieve your email address. Please make sure you are logged in.');
     }
 
     // Get team data
-    const teamAccess = new TeamAccess();
-    const hasTeam = teamAccess.isUserInTeam(userEmail);
-    let teamName = '';
-    let teamId = '';
-    let teamMembers = [];
-    let userRole = '';
+    var teamAccess = new TeamAccess();
+    var hasTeam = teamAccess.isUserInTeam(userEmail);
+    var teamName = '';
+    var teamId = '';
+    var teamMembers = [];
+    var userRole = '';
 
     if (hasTeam) {
-      const teamData = teamAccess.getUserTeamData(userEmail);
+      var teamData = teamAccess.getUserTeamData(userEmail);
       teamName = teamData.name;
       teamId = teamData.id;
       teamMembers = teamAccess.getTeamMembers(teamId);
@@ -1121,7 +1684,7 @@ TeamManagerUI.showTeamManager = function(joinOnly = false) {
     }
 
     // Create the HTML template
-    const template = HtmlService.createTemplateFromFile('TeamManager');
+    var template = HtmlService.createTemplateFromFile('TeamManager');
     
     // Set template variables
     template.userEmail = userEmail;
@@ -1136,7 +1699,7 @@ TeamManagerUI.showTeamManager = function(joinOnly = false) {
     template.include = include;
     
     // Evaluate the template
-    const htmlOutput = template.evaluate()
+    var htmlOutput = template.evaluate()
       .setWidth(500)
       .setHeight(hasTeam ? 600 : 400)
       .setTitle(hasTeam ? 'Team Management' : 'Team Access')
@@ -1145,7 +1708,7 @@ TeamManagerUI.showTeamManager = function(joinOnly = false) {
     // Show the dialog
     SpreadsheetApp.getUi().showModalDialog(htmlOutput, hasTeam ? 'Team Management' : 'Team Access');
   } catch (error) {
-    Logger.log(`Error in showTeamManager: ${error.message}`);
+    Logger.log('Error in showTeamManager: ' + error.message);
     showError('An error occurred while loading the team management interface: ' + error.message);
   }
 };
