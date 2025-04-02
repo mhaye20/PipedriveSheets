@@ -1656,6 +1656,20 @@ TeamManagerUI.getScripts = function() {
 };
 
 /**
+ * Checks if the current user is the script owner/installer
+ * @return {boolean} True if the user is the script owner/installer, false otherwise
+ */
+TeamManagerUI.isScriptOwner = function() {
+  try {
+    var authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
+    return authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED;
+  } catch (e) {
+    Logger.log('Error checking script owner: ' + e.message);
+    return false;
+  }
+};
+
+/**
  * Shows the team management UI.
  * @param {boolean} joinOnly - Whether to show only the join team section.
  */
@@ -1666,6 +1680,9 @@ TeamManagerUI.showTeamManager = function(joinOnly = false) {
     if (!userEmail) {
       throw new Error('Unable to retrieve your email address. Please make sure you are logged in.');
     }
+
+    // Check if the user is the script owner
+    var isScriptOwner = TeamManagerUI.isScriptOwner();
 
     // Get team data
     var teamAccess = new TeamAccess();
@@ -1693,7 +1710,10 @@ TeamManagerUI.showTeamManager = function(joinOnly = false) {
     template.teamId = teamId;
     template.teamMembers = teamMembers;
     template.userRole = userRole;
-    template.initialTab = joinOnly ? 'join' : (hasTeam ? 'manage' : 'create');
+    template.isScriptOwner = isScriptOwner;
+    // For users without a team who are not script owners, default to join tab
+    // Otherwise, respect the joinOnly parameter or use default tab logic
+    template.initialTab = joinOnly ? 'join' : (hasTeam ? 'manage' : (isScriptOwner ? 'create' : 'join'));
     
     // Make include function available to the template
     template.include = include;

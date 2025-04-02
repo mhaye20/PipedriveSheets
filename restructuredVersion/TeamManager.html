@@ -28,10 +28,12 @@
             <i class="material-icons">group_add</i>
             <span>Join Team</span>
           </div>
+          <? if (isScriptOwner) { ?>
           <div class="tab <?= initialTab === 'create' ? 'active' : '' ?>" data-tab="create">
             <i class="material-icons">add_circle</i>
             <span>Create Team</span>
           </div>
+          <? } ?>
           <? } else { ?>
           <div class="tab active" data-tab="manage">
             <i class="material-icons">groups</i>
@@ -65,6 +67,7 @@
           </div>
         </div>
         
+        <? if (isScriptOwner) { ?>
         <!-- Create Team Tab -->
         <div id="create-tab" class="tab-content <?= initialTab === 'create' ? 'active' : '' ?>">
           <div class="card">
@@ -88,6 +91,7 @@
             </div>
           </div>
         </div>
+        <? } ?>
         <? } else { ?>
         
         <!-- Manage Team Tab -->

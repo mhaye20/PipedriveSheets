@@ -141,6 +141,20 @@ function saveTeamsData(teamsData) {
 }
 
 /**
+ * Checks if the current user is the script owner/installer
+ * @return {boolean} True if the user is the script owner/installer, false otherwise
+ */
+function isScriptOwner() {
+  try {
+    const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
+    return authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED;
+  } catch (e) {
+    Logger.log('Error checking script owner: ' + e.message);
+    return false;
+  }
+}
+
+/**
  * Creates a new team with the specified name
  * @param {string} teamName The name of the new team
  * @returns {Object} Result object with success/error information and team data
@@ -154,6 +168,14 @@ function createTeam(teamName) {
     const userEmail = Session.getActiveUser().getEmail();
     if (!userEmail) {
       return { success: false, message: 'Could not determine user email. Please make sure you are logged in.' };
+    }
+    
+    // Only allow script owners to create teams
+    if (!isScriptOwner()) {
+      return { 
+        success: false, 
+        message: 'Only the user who installed the extension can create teams. Please contact your administrator to get a team ID to join.' 
+      };
     }
 
     // Check if user is already in a team
