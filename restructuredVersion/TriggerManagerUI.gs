@@ -391,8 +391,9 @@ const TriggerManagerUI = {
               if (result.success) {
                 showStatus('success', 'Sync schedule created successfully!');
                 
-                // Reload after short delay to show the new trigger
+                // Close this dialog and reopen a fresh one after a short delay
                 setTimeout(function() {
+                  google.script.host.close();
                   google.script.run.showTriggerManager();
                 }, 1500);
               } else {
@@ -428,11 +429,13 @@ const TriggerManagerUI = {
                   if (row) {
                     row.classList.add('fade-out');
                     setTimeout(() => {
-                      // Reload to show updated triggers after animation
+                      // Close this dialog and reopen a fresh one
+                      google.script.host.close();
                       google.script.run.showTriggerManager();
                     }, 500);
                   } else {
                     // Fallback if row not found
+                    google.script.host.close();
                     google.script.run.showTriggerManager();
                   }
                 } else {
@@ -472,7 +475,9 @@ const TriggerManagerUI = {
         }
         
         // Initial form setup
-        updateFormVisibility();
+        document.addEventListener('DOMContentLoaded', function() {
+          updateFormVisibility();
+        });
       </script>
     `;
   },
@@ -482,19 +487,24 @@ const TriggerManagerUI = {
     const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     const activeSheetName = activeSheet.getName();
     
-    // Check if two-way sync is enabled for this sheet
+    // Get the entity type for this sheet
     const scriptProperties = PropertiesService.getScriptProperties();
+    const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
+    const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
+    
+    // Check if two-way sync is enabled for this sheet
     const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
     const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
     
     // Get current triggers for this sheet
-    const currentTriggers = TriggerManagerUI.getTriggersForSheet(activeSheetName);
+    const currentTriggers = getTriggersForSheet(activeSheetName);
     
     // Create the HTML template
     const template = HtmlService.createTemplateFromFile('TriggerManager');
     
     // Pass data to template
     template.sheetName = activeSheetName;
+    template.entityType = entityType;
     template.twoWaySyncEnabled = twoWaySyncEnabled;
     template.currentTriggers = currentTriggers;
     
@@ -512,40 +522,27 @@ const TriggerManagerUI = {
 
   getTriggersForSheet(sheetName) {
     try {
-      // Get all triggers for the spreadsheet
-      const triggers = ScriptApp.getProjectTriggers();
-      
-      // Filter triggers for syncFromPipedrive function and this sheet
-      return triggers
-        .filter(trigger => {
-          // Only include sync triggers
-          if (trigger.getHandlerFunction() !== 'syncFromPipedrive') {
-            return false;
-          }
-          
-          // Get trigger event source (the sheet)
-          const triggerSource = trigger.getTriggerSource();
-          if (triggerSource === null) {
-            return false;
-          }
-          
-          // For time-based triggers, check if they're for this sheet
-          if (trigger.getEventType() === ScriptApp.EventType.CLOCK) {
-            // We store the sheet name in the trigger's unique ID
-            const triggerId = trigger.getUniqueId();
-            return triggerId.includes(sheetName);
-          }
-          
-          return false;
-        })
-        .map(trigger => {
-          const info = TriggerManagerUI.getTriggerInfo(trigger);
-          return {
-            id: trigger.getUniqueId(),
-            type: info.type,
-            description: info.description
-          };
-        });
+      const allTriggers = ScriptApp.getProjectTriggers();
+      const scriptProperties = PropertiesService.getScriptProperties();
+
+      return allTriggers.filter(trigger => {
+        // Only time-based triggers that run syncSheetFromTrigger
+        if (trigger.getHandlerFunction() === 'syncSheetFromTrigger' &&
+          trigger.getEventType() === ScriptApp.EventType.CLOCK) {
+          // Check if this trigger is for the specified sheet
+          const triggerId = trigger.getUniqueId();
+          const triggerSheet = scriptProperties.getProperty(`TRIGGER_${triggerId}_SHEET`);
+          return triggerSheet === sheetName;
+        }
+        return false;
+      }).map(trigger => {
+        const info = TriggerManagerUI.getTriggerInfo(trigger);
+        return {
+          id: trigger.getUniqueId(),
+          type: info.type,
+          description: info.description
+        };
+      });
     } catch (e) {
       Logger.log(`Error in getTriggersForSheet: ${e.message}`);
       return [];
@@ -554,67 +551,121 @@ const TriggerManagerUI = {
 
   getTriggerInfo(trigger) {
     try {
-      const eventType = trigger.getEventType();
-      
-      if (eventType === ScriptApp.EventType.CLOCK) {
-        const atTime = trigger.getAtHour() !== null;
-        const everyHours = !atTime;
-        
-        if (atTime) {
-          // Daily/weekly/monthly trigger
-          const hour = trigger.getAtHour();
-          const minute = trigger.getAtMinute() || 0;
-          const weekDay = trigger.getWeekDay();
-          const monthDay = trigger.getMonthDay();
-          
-          const time = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-          
-          if (weekDay !== null) {
-            // Weekly trigger
-            const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      // Check if it's a time-based trigger
+      if (trigger.getEventType() !== ScriptApp.EventType.CLOCK) {
+        return { type: 'Unknown', description: 'Not a time-based trigger' };
+      }
+
+      // Get the trigger ID
+      const triggerId = trigger.getUniqueId();
+      const scriptProperties = PropertiesService.getScriptProperties();
+
+      // Get the sheet name
+      const sheetName = scriptProperties.getProperty(`TRIGGER_${triggerId}_SHEET`);
+      const sheetInfo = sheetName ? ` for sheet "${sheetName}"` : '';
+
+      // First check if we have the frequency stored as a property
+      const storedFrequency = scriptProperties.getProperty(`TRIGGER_${triggerId}_FREQUENCY`);
+
+      if (storedFrequency) {
+        // We have the stored frequency, now format description based on it
+        switch (storedFrequency) {
+          case 'hourly':
+            let hourInterval = 1;
+            try {
+              hourInterval = trigger.getHours() || 1;
+            } catch (e) { }
+
             return {
-              type: 'Weekly',
-              description: `Every ${days[weekDay - 1]} at ${time}`
+              type: 'Hourly',
+              description: `Every ${hourInterval} hour${hourInterval > 1 ? 's' : ''}${sheetInfo}`
             };
-          } else if (monthDay !== null) {
-            // Monthly trigger
-            const suffix = ['st', 'nd', 'rd'][monthDay - 1] || 'th';
-            return {
-              type: 'Monthly',
-              description: `On the ${monthDay}${suffix} at ${time}`
-            };
-          } else {
-            // Daily trigger
+
+          case 'daily':
+            let timeStr = '';
+            try {
+              const atHour = trigger.getAtHour();
+              const atMinute = trigger.getNearMinute();
+
+              if (atHour !== null && atMinute !== null) {
+                const hour12 = atHour % 12 === 0 ? 12 : atHour % 12;
+                const ampm = atHour < 12 ? 'AM' : 'PM';
+                timeStr = ` at ${hour12}:${atMinute < 10 ? '0' + atMinute : atMinute} ${ampm}`;
+              }
+            } catch (e) { }
+
             return {
               type: 'Daily',
-              description: `Every day at ${time}`
+              description: `Every day${timeStr}${sheetInfo}`
             };
-          }
-        } else if (everyHours) {
-          // Hourly trigger
-          const hours = trigger.getAtHour() || 1;
-          return {
-            type: 'Hourly',
-            description: `Every ${hours} hour${hours > 1 ? 's' : ''}`
-          };
+
+          case 'weekly':
+            let dayInfo = '';
+            try {
+              const weekDay = trigger.getWeekDay();
+              if (weekDay) {
+                const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                dayInfo = ` on ${weekDays[weekDay - 1] || 'a weekday'}`;
+              }
+            } catch (e) { }
+
+            return {
+              type: 'Weekly',
+              description: `Every week${dayInfo}${sheetInfo}`
+            };
+
+          case 'monthly':
+            let dayOfMonth = '';
+            try {
+              const monthDay = trigger.getMonthDay();
+              if (monthDay) {
+                dayOfMonth = ` on day ${monthDay}`;
+              }
+            } catch (e) { }
+
+            return {
+              type: 'Monthly',
+              description: `Every month${dayOfMonth}${sheetInfo}`
+            };
+
+          default:
+            return {
+              type: capitalizeFirstLetter(storedFrequency),
+              description: `${capitalizeFirstLetter(storedFrequency)} sync${sheetInfo}`
+            };
         }
       }
-      
+
+      // If we don't have stored frequency, fall back to generic type
+      if (sheetName) {
+        return {
+          type: 'Automatic',
+          description: `Sync for sheet "${sheetName}"`
+        };
+      }
+
       return {
-        type: 'Unknown',
-        description: 'Unknown trigger type'
+        type: 'Scheduled',
+        description: 'Automatic sync'
       };
     } catch (e) {
       Logger.log(`Error in getTriggerInfo: ${e.message}`);
       return {
-        type: 'Error',
-        description: 'Error getting trigger info'
+        type: 'Scheduled',
+        description: 'Automatic sync'
       };
     }
   }
 };
 
+// Helper function to capitalize first letter
+function capitalizeFirstLetter(string) {
+  return string.charAt(0).toUpperCase() + string.slice(1);
+}
+
 // Export functions to be globally accessible
 this.showTriggerManager = TriggerManagerUI.showTriggerManager;
 this.getTriggersForSheet = TriggerManagerUI.getTriggersForSheet;
-this.getTriggerInfo = TriggerManagerUI.getTriggerInfo; 
+this.getTriggerInfo = TriggerManagerUI.getTriggerInfo;
+this.createSyncTrigger = createSyncTrigger;
+this.deleteTrigger = deleteTrigger; 

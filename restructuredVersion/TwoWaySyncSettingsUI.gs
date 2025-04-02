@@ -726,4 +726,238 @@ function checkAndRecreateTriggers(sheetName) {
 // Export functions to be globally accessible
 this.showTwoWaySyncSettings = TwoWaySyncSettingsUI.showTwoWaySyncSettings;
 this.handleColumnPreferencesChange = TwoWaySyncSettingsUI.handleColumnPreferencesChange;
-this.checkAndRecreateTriggers = checkAndRecreateTriggers; 
+this.checkAndRecreateTriggers = checkAndRecreateTriggers;
+
+/**
+ * Creates a sync trigger based on user preferences
+ */
+function createSyncTrigger(triggerData) {
+  try {
+    // Configure the trigger based on frequency
+    switch (triggerData.frequency) {
+      case 'hourly':
+        const hourlyTrigger = ScriptApp.newTrigger('syncSheetFromTrigger')
+          .timeBased()
+          .everyHours(triggerData.hourlyInterval)
+          .create();
+
+        // Store sheet name and frequency in trigger properties
+        const scriptProperties = PropertiesService.getScriptProperties();
+        scriptProperties.setProperty(
+          `TRIGGER_${hourlyTrigger.getUniqueId()}_SHEET`,
+          triggerData.sheetName
+        );
+        scriptProperties.setProperty(
+          `TRIGGER_${hourlyTrigger.getUniqueId()}_FREQUENCY`,
+          'hourly'
+        );
+
+        return {
+          success: true,
+          triggerId: hourlyTrigger.getUniqueId()
+        };
+
+      case 'daily':
+        const dailyTrigger = ScriptApp.newTrigger('syncSheetFromTrigger')
+          .timeBased()
+          .atHour(triggerData.hour)
+          .nearMinute(triggerData.minute)
+          .everyDays(1)
+          .create();
+
+        // Store sheet name and frequency in trigger properties
+        PropertiesService.getScriptProperties().setProperty(
+          `TRIGGER_${dailyTrigger.getUniqueId()}_SHEET`,
+          triggerData.sheetName
+        );
+        PropertiesService.getScriptProperties().setProperty(
+          `TRIGGER_${dailyTrigger.getUniqueId()}_FREQUENCY`,
+          'daily'
+        );
+
+        return {
+          success: true,
+          triggerId: dailyTrigger.getUniqueId()
+        };
+
+      case 'weekly':
+        // For weekly triggers, we need to create a separate trigger for each selected day
+        const weekDayTriggers = [];
+        triggerData.weekDays.forEach(day => {
+          const dayTrigger = ScriptApp.newTrigger('syncSheetFromTrigger')
+            .timeBased()
+            .onWeekDay(day)
+            .atHour(triggerData.hour)
+            .nearMinute(triggerData.minute)
+            .create();
+
+          // Store sheet name and frequency in trigger properties
+          PropertiesService.getScriptProperties().setProperty(
+            `TRIGGER_${dayTrigger.getUniqueId()}_SHEET`,
+            triggerData.sheetName
+          );
+          PropertiesService.getScriptProperties().setProperty(
+            `TRIGGER_${dayTrigger.getUniqueId()}_FREQUENCY`,
+            'weekly'
+          );
+
+          weekDayTriggers.push(dayTrigger.getUniqueId());
+        });
+
+        return {
+          success: true,
+          triggerId: weekDayTriggers.join(',') // Return a comma-separated list of trigger IDs
+        };
+
+      case 'monthly':
+        const monthlyTrigger = ScriptApp.newTrigger('syncSheetFromTrigger')
+          .timeBased()
+          .onMonthDay(triggerData.monthDay)
+          .atHour(triggerData.hour)
+          .nearMinute(triggerData.minute)
+          .create();
+
+        // Store sheet name and frequency in trigger properties
+        PropertiesService.getScriptProperties().setProperty(
+          `TRIGGER_${monthlyTrigger.getUniqueId()}_SHEET`,
+          triggerData.sheetName
+        );
+        PropertiesService.getScriptProperties().setProperty(
+          `TRIGGER_${monthlyTrigger.getUniqueId()}_FREQUENCY`,
+          'monthly'
+        );
+
+        return {
+          success: true,
+          triggerId: monthlyTrigger.getUniqueId()
+        };
+
+      default:
+        return {
+          success: false,
+          error: 'Invalid frequency selected'
+        };
+    }
+
+  } catch (error) {
+    Logger.log('Error creating trigger: ' + error.message);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Syncs a specific sheet when triggered by a time-based trigger
+ */
+function syncSheetFromTrigger(event) {
+  try {
+    // Get the trigger ID from the event
+    const triggerId = event.triggerUid;
+
+    // Get the sheet name associated with this trigger
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const sheetName = scriptProperties.getProperty(`TRIGGER_${triggerId}_SHEET`);
+
+    if (!sheetName) {
+      Logger.log('No sheet name found for trigger: ' + triggerId);
+      return;
+    }
+
+    // Get the spreadsheet and find the sheet
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = spreadsheet.getSheetByName(sheetName);
+
+    if (!sheet) {
+      Logger.log(`Sheet "${sheetName}" not found in the spreadsheet.`);
+      return;
+    }
+
+    // Activate the sheet
+    sheet.activate();
+
+    // Set it as the current sheet for the sync operation
+    scriptProperties.setProperty('SHEET_NAME', sheetName);
+
+    // Check if two-way sync is enabled for this sheet
+    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
+    const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
+
+    // If two-way sync is enabled, push changes to Pipedrive first
+    if (twoWaySyncEnabled) {
+      Logger.log(`Two-way sync is enabled for sheet "${sheetName}". Pushing changes to Pipedrive before pulling new data.`);
+      pushChangesToPipedrive(true); // Pass true to indicate this is a scheduled sync
+    }
+
+    // Get the entity type for this sheet
+    const sheetEntityTypeKey = `ENTITY_TYPE_${sheetName}`;
+    const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
+
+    // Run the appropriate sync function based on entity type
+    switch (entityType) {
+      case ENTITY_TYPES.DEALS:
+        syncDealsFromFilter();
+        break;
+      case ENTITY_TYPES.PERSONS:
+        syncPersonsFromFilter();
+        break;
+      case ENTITY_TYPES.ORGANIZATIONS:
+        syncOrganizationsFromFilter();
+        break;
+      case ENTITY_TYPES.ACTIVITIES:
+        syncActivitiesFromFilter();
+        break;
+      case ENTITY_TYPES.LEADS:
+        syncLeadsFromFilter();
+        break;
+      case ENTITY_TYPES.PRODUCTS:
+        syncProductsFromFilter();
+        break;
+      default:
+        Logger.log('Unknown entity type: ' + entityType);
+        break;
+    }
+
+    // Log the completion
+    Logger.log(`Scheduled sync completed for sheet "${sheetName}" with entity type "${entityType}"`);
+
+  } catch (error) {
+    Logger.log('Error in scheduled sync: ' + error.message);
+  }
+}
+
+/**
+ * Deletes a trigger by its unique ID
+ */
+function deleteTrigger(triggerId) {
+  try {
+    const allTriggers = ScriptApp.getProjectTriggers();
+    const scriptProperties = PropertiesService.getScriptProperties();
+
+    // Handle comma-separated list of trigger IDs (for weekly triggers)
+    const triggerIds = triggerId.split(',');
+
+    triggerIds.forEach(id => {
+      // Find and delete the trigger with this ID
+      for (let i = 0; i < allTriggers.length; i++) {
+        if (allTriggers[i].getUniqueId() === id) {
+          ScriptApp.deleteTrigger(allTriggers[i]);
+
+          // Also clean up the properties
+          scriptProperties.deleteProperty(`TRIGGER_${id}_SHEET`);
+          scriptProperties.deleteProperty(`TRIGGER_${id}_FREQUENCY`);
+          break;
+        }
+      }
+    });
+
+    return { success: true };
+  } catch (error) {
+    Logger.log('Error deleting trigger: ' + error.message);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+} 

@@ -503,4 +503,29 @@ function columnToLetter(columnIndex) {
   }
   
   return letter;
+}
+
+/**
+ * Global include function for HTML templates
+ * Allows templates to include other templates or script files
+ * @param {string} filename - The name of the file to include
+ * @return {string} The content of the file
+ */
+function include(filename) {
+  // Handle special cases for TriggerManager UI components
+  if (filename === 'TriggerManagerUI_Styles') {
+    return TriggerManagerUI.getStyles();
+  } else if (filename === 'TriggerManagerUI_Scripts') {
+    return TriggerManagerUI.getScripts();
+  }
+  
+  // Handle special cases for TwoWaySyncSettings UI components
+  if (filename === 'TwoWaySyncSettingsUI_Styles') {
+    return TwoWaySyncSettingsUI.getStyles();
+  } else if (filename === 'TwoWaySyncSettingsUI_Scripts') {
+    return TwoWaySyncSettingsUI.getScripts();
+  }
+  
+  // For standard includes, return the content of the file
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
 } 
