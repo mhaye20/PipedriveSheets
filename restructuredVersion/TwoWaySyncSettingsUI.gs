@@ -13,9 +13,8 @@ var TwoWaySyncSettingsUI = TwoWaySyncSettingsUI || {};
  * Reference to sync trigger functions for two-way sync
  * These are defined in SyncService.gs
  */
-// If using setupOnEditTrigger directly doesn't work, uncomment these lines:
-// var setupOnEditTrigger = this.setupOnEditTrigger || SyncService.setupOnEditTrigger;
-// var removeOnEditTrigger = this.removeOnEditTrigger || SyncService.removeOnEditTrigger;
+// Access trigger functions when needed rather than storing as variables
+// This ensures we always get the most up-to-date function implementation
 
 /**
  * Shows the two-way sync settings dialog
@@ -171,8 +170,17 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
 
     // If enabling two-way sync, set up the tracking column
     if (enableTwoWaySync) {
-      // Set up the onEdit trigger to track changes
-      setupOnEditTrigger();
+      // Set up the onEdit trigger to track changes - use direct call to avoid variable reference issues
+      if (typeof SyncService !== 'undefined' && typeof SyncService.setupOnEditTrigger === 'function') {
+        SyncService.setupOnEditTrigger();
+      } else {
+        // Fallback to using the global function if available
+        if (typeof setupOnEditTrigger === 'function') {
+          setupOnEditTrigger();
+        } else {
+          Logger.log('Warning: setupOnEditTrigger function not found');
+        }
+      }
       
       // If no tracking column specified, use last column
       let columnIndex;
@@ -283,7 +291,17 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
 
     // Clean up onEdit trigger if two-way sync is disabled
     if (!enableTwoWaySync) {
-      removeOnEditTrigger();
+      // Use direct call to avoid variable reference issues
+      if (typeof SyncService !== 'undefined' && typeof SyncService.removeOnEditTrigger === 'function') {
+        SyncService.removeOnEditTrigger();
+      } else {
+        // Fallback to using the global function if available
+        if (typeof removeOnEditTrigger === 'function') {
+          removeOnEditTrigger();
+        } else {
+          Logger.log('Warning: removeOnEditTrigger function not found');
+        }
+      }
     }
 
     return true;

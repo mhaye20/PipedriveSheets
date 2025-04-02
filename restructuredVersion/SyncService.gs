@@ -1033,17 +1033,10 @@ function columnToLetter(columnIndex) {
  */
 function setupOnEditTrigger() {
   try {
-    // Check if the trigger already exists
-    const triggers = ScriptApp.getProjectTriggers();
-    for (let i = 0; i < triggers.length; i++) {
-      const trigger = triggers[i];
-      if (trigger.getHandlerFunction() === 'onEdit') {
-        Logger.log('onEdit trigger already exists');
-        return; // Exit if trigger already exists
-      }
-    }
+    // First, remove any existing onEdit triggers to avoid duplicates
+    removeOnEditTrigger();
     
-    // Create the trigger if it doesn't exist
+    // Then create a new trigger
     ScriptApp.newTrigger('onEdit')
       .forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet())
       .onEdit()
@@ -1104,11 +1097,47 @@ function onEdit(e) {
     const row = range.getRow();
     const column = range.getColumn();
     
+    // Create a unique execution ID to prevent duplicate processing
+    const executionId = Utilities.getUuid();
+    const lockKey = `EDIT_LOCK_${sheetName}`;
+    
+    try {
+      // Try to acquire a lock using properties
+      const currentLock = scriptProperties.getProperty(lockKey);
+      
+      // If there's an active lock, exit
+      if (currentLock) {
+        const lockData = JSON.parse(currentLock);
+        const now = new Date().getTime();
+        
+        // If the lock is less than 5 seconds old, exit
+        if ((now - lockData.timestamp) < 5000) {
+          Logger.log(`Exiting due to active lock: ${currentLock}`);
+          return;
+        }
+        
+        // Lock is old, we can override it
+        Logger.log(`Override old lock from ${lockData.timestamp}`);
+      }
+      
+      // Set a new lock
+      scriptProperties.setProperty(lockKey, JSON.stringify({
+        id: executionId,
+        timestamp: new Date().getTime(),
+        row: row,
+        col: column
+      }));
+    } catch (lockError) {
+      Logger.log(`Error setting lock: ${lockError.message}`);
+      // Continue execution even if lock fails
+    }
+    
     // Check if the edit is in the header row - if it is, we might need to update tracking
     const headerRow = 1;
     if (row === headerRow) {
       // If someone renamed the Sync Status column, we'd handle that here
       // For now, just exit as we don't need special handling
+      releaseLock(executionId, lockKey);
       return;
     }
 
@@ -1125,6 +1154,7 @@ function onEdit(e) {
     
     // Exit if no Sync Status column found
     if (syncStatusColIndex === -1) {
+      releaseLock(executionId, lockKey);
       return;
     }
     
@@ -1133,6 +1163,7 @@ function onEdit(e) {
     
     // Check if the edit is in the Sync Status column itself (to avoid loops)
     if (column === syncStatusColPos) {
+      releaseLock(executionId, lockKey);
       return;
     }
 
@@ -1151,6 +1182,7 @@ function onEdit(e) {
 
     // Skip if this is a timestamp row or has too few cells with data
     if (isTimestampRow || nonEmptyCells < 3) {
+      releaseLock(executionId, lockKey);
       return;
     }
 
@@ -1160,12 +1192,35 @@ function onEdit(e) {
 
     // Skip rows without an ID (likely empty rows)
     if (!id) {
+      releaseLock(executionId, lockKey);
       return;
     }
 
     // Get the sync status cell
     const syncStatusCell = sheet.getRange(row, syncStatusColPos);
     const currentStatus = syncStatusCell.getValue();
+    
+    // Get the cell state key for this cell
+    const cellStateKey = `CELL_STATE_${sheetName}_${row}_${id}`;
+    let cellState;
+    
+    try {
+      const cellStateJson = scriptProperties.getProperty(cellStateKey);
+      cellState = cellStateJson ? JSON.parse(cellStateJson) : { status: null, lastChanged: 0, originalValues: {} };
+    } catch (parseError) {
+      Logger.log(`Error parsing cell state: ${parseError.message}`);
+      cellState = { status: null, lastChanged: 0, originalValues: {} };
+    }
+    
+    // Get the current time
+    const now = new Date().getTime();
+    
+    // Check for recent changes to prevent toggling
+    if (cellState.lastChanged && (now - cellState.lastChanged) < 5000 && cellState.status === currentStatus) {
+      Logger.log(`Cell was recently changed to "${currentStatus}", skipping update`);
+      releaseLock(executionId, lockKey);
+      return;
+    }
     
     // Get the original data from Pipedrive
     const originalDataKey = `ORIGINAL_DATA_${sheetName}`;
@@ -1183,18 +1238,22 @@ function onEdit(e) {
     // Check if we have original data for this row
     const rowKey = id.toString();
     
-    // Handle first-time edit case
+    // Log for debugging
+    Logger.log(`onEdit triggered - Row: ${row}, Column: ${column}, Status: ${currentStatus}`);
+    Logger.log(`Row ID: ${id}, Cell Value: ${e.value}, Old Value: ${e.oldValue}`);
+    
+    // Get the column header name for the edited column
+    const headerName = headers[column - 1]; // Adjust for 0-based array
+    
+    // Handle first-time edit case (current status is not Modified)
     if (currentStatus !== "Modified") {
-      // New edit to unmodified row - store the current value before updating status
+      // Store the original value before marking as modified
       if (!originalData[rowKey]) {
         originalData[rowKey] = {};
       }
       
-      // Get the column header name for the edited column
-      const headerName = headers[column - 1]; // Adjust for 0-based array
-      
       if (headerName) {
-        // Store the original value before it was changed
+        // Store the original value
         originalData[rowKey][headerName] = e.oldValue !== undefined ? e.oldValue : null;
         
         // Save updated original data
@@ -1204,8 +1263,20 @@ function onEdit(e) {
           Logger.log(`Error saving original data: ${saveError.message}`);
         }
         
-        // Mark as modified
+        // Mark as modified (with special prevention of change-back)
         syncStatusCell.setValue("Modified");
+        Logger.log(`Changed status to Modified for row ${row}, column ${column}, header ${headerName}`);
+        
+        // Save new cell state to prevent toggling back
+        cellState.status = "Modified";
+        cellState.lastChanged = now;
+        cellState.originalValues[headerName] = e.oldValue;
+        
+        try {
+          scriptProperties.setProperty(cellStateKey, JSON.stringify(cellState));
+        } catch (saveError) {
+          Logger.log(`Error saving cell state: ${saveError.message}`);
+        }
 
         // Re-apply data validation to ensure consistent dropdown options
         const rule = SpreadsheetApp.newDataValidation()
@@ -1218,22 +1289,55 @@ function onEdit(e) {
       }
     } else {
       // Row is already modified - check if this edit reverts to original value
-      
-      // Get the column header name for the edited column
-      const headerName = headers[column - 1]; // Adjust for 0-based array
-      
       if (headerName && originalData[rowKey] && originalData[rowKey][headerName] !== undefined) {
         const originalValue = originalData[rowKey][headerName];
         const currentValue = e.value;
         
-        // If new value matches original value
-        if (originalValue == currentValue) { // Using non-strict comparison for different types
+        Logger.log(`Checking if undo: Original value "${originalValue}" vs. Current value "${currentValue}"`);
+        
+        // Special handling for null/empty values
+        if ((originalValue === null || originalValue === "") && 
+            (currentValue === null || currentValue === "")) {
+          Logger.log(`Both values are empty, treating as match`);
+        }
+        
+        // If new value matches original value (or both are empty)
+        if (originalValue == currentValue || // Using non-strict comparison for different types
+            ((originalValue === null || originalValue === "") && 
+             (currentValue === null || currentValue === ""))) {
+          
           // Check if all edited values in the row now match original values
           const allMatch = checkAllValuesMatchOriginal(sheet, row, headers, originalData[rowKey]);
+          
+          Logger.log(`All values match original: ${allMatch}`);
           
           if (allMatch) {
             // All values in row match original - reset to Not modified
             syncStatusCell.setValue("Not modified");
+            Logger.log(`Reset to Not modified for row ${row} - all values match original`);
+            
+            // Save new cell state with strong protection against toggling back
+            cellState.status = "Not modified";
+            cellState.lastChanged = now;
+            cellState.isUndone = true;  // Special flag to indicate this is an undo operation
+            
+            try {
+              scriptProperties.setProperty(cellStateKey, JSON.stringify(cellState));
+            } catch (saveError) {
+              Logger.log(`Error saving cell state: ${saveError.message}`);
+            }
+            
+            // Create a temporary lock to prevent changes for 10 seconds
+            const noChangeLockKey = `NO_CHANGE_LOCK_${sheetName}_${row}`;
+            try {
+              scriptProperties.setProperty(noChangeLockKey, JSON.stringify({
+                timestamp: now,
+                expiry: now + 10000, // 10 seconds
+                status: "Not modified"
+              }));
+            } catch (lockError) {
+              Logger.log(`Error setting no-change lock: ${lockError.message}`);
+            }
             
             // Re-apply data validation
             const rule = SpreadsheetApp.newDataValidation()
@@ -1245,7 +1349,7 @@ function onEdit(e) {
             syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
           }
         }
-      } else if (e.oldValue !== undefined && e.value !== undefined) {
+      } else if (e.oldValue !== undefined && headerName) {
         // Store the first known value as original if we don't have it yet
         if (!originalData[rowKey]) {
           originalData[rowKey] = {};
@@ -1253,6 +1357,7 @@ function onEdit(e) {
         
         if (!originalData[rowKey][headerName]) {
           originalData[rowKey][headerName] = e.oldValue;
+          Logger.log(`Stored original value "${e.oldValue}" for ${rowKey}.${headerName}`);
           
           // Save updated original data
           try {
@@ -1263,9 +1368,37 @@ function onEdit(e) {
         }
       }
     }
+    
+    // Release the lock at the end
+    releaseLock(executionId, lockKey);
   } catch (error) {
     // Silent fail for onEdit triggers
     Logger.log(`Error in onEdit trigger: ${error.message}`);
+    Logger.log(`Stack trace: ${error.stack}`);
+  }
+}
+
+/**
+ * Helper function to release the lock
+ * @param {string} executionId - The ID of the execution that set the lock
+ * @param {string} lockKey - The key used for the lock
+ */
+function releaseLock(executionId, lockKey) {
+  try {
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const currentLock = scriptProperties.getProperty(lockKey);
+    
+    if (currentLock) {
+      const lockData = JSON.parse(currentLock);
+      
+      // Only release if this execution set the lock
+      if (lockData.id === executionId) {
+        scriptProperties.deleteProperty(lockKey);
+        Logger.log(`Released lock: ${executionId}`);
+      }
+    }
+  } catch (error) {
+    Logger.log(`Error releasing lock: ${error.message}`);
   }
 }
 
@@ -1281,28 +1414,47 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
   try {
     // If no original values stored, can't verify
     if (!originalValues || Object.keys(originalValues).length === 0) {
+      Logger.log('No original values stored to compare against');
       return false;
     }
     
     // Get current values for the entire row
     const rowValues = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
     
+    // Debug log
+    Logger.log(`Checking ${Object.keys(originalValues).length} fields for original value match`);
+    
     // Check each column that has a stored original value
     for (const headerName in originalValues) {
       // Find the column index for this header
       const colIndex = headers.indexOf(headerName);
-      if (colIndex === -1) continue; // Header not found
+      if (colIndex === -1) {
+        Logger.log(`Header ${headerName} not found in current headers`);
+        continue; // Header not found
+      }
       
       const originalValue = originalValues[headerName];
       const currentValue = rowValues[colIndex];
       
+      // Special handling for null/empty values
+      if ((originalValue === null || originalValue === "") && 
+          (currentValue === null || currentValue === "")) {
+        Logger.log(`Both values are empty for ${headerName}, treating as match`);
+        continue; // Both empty, consider a match
+      }
+      
+      // Log the comparison for debugging
+      Logger.log(`Comparing ${headerName}: Original="${originalValue}" vs Current="${currentValue}"`);
+      
       // If the current value doesn't match the original, return false
-      if (originalValue != currentValue) { // Using non-strict comparison
+      if (originalValue != currentValue) { // Using non-strict comparison for type flexibility
+        Logger.log(`Mismatch found for ${headerName}`);
         return false;
       }
     }
     
     // If we reach here, all values with stored originals match
+    Logger.log('All values match original values');
     return true;
   } catch (error) {
     Logger.log(`Error in checkAllValuesMatchOriginal: ${error.message}`);
@@ -1901,7 +2053,7 @@ function refreshSyncStatusStyling() {
         .whenTextEqualTo('Modified')
         .setBackground('#FCE8E6')  // Light red background
         .setFontColor('#D93025')   // Red text
-        .setRanges([sheet.getRange(2, columnPos, lastRow - 1, 1)])
+        .setRanges([statusRange])
         .build();
       newRules.push(modifiedRule);
 
@@ -1910,17 +2062,16 @@ function refreshSyncStatusStyling() {
         .whenTextEqualTo('Synced')
         .setBackground('#E6F4EA')  // Light green background
         .setFontColor('#137333')   // Green text
-        .setRanges([sheet.getRange(2, columnPos, lastRow - 1, 1)])
+        .setRanges([statusRange])
         .build();
       newRules.push(syncedRule);
 
       // Create conditional format for "Error" status
       const errorRule = SpreadsheetApp.newConditionalFormatRule()
         .whenTextEqualTo('Error')
-        .setBackground('#FCE8E6')  // Light red background
-        .setFontColor('#D93025')   // Red text
-        .setBold(true)             // Bold text for errors
-        .setRanges([sheet.getRange(2, columnPos, lastRow - 1, 1)])
+        .setBackground('#FEF7E0')
+        .setFontColor('#B06000')
+        .setRanges([statusRange])
         .build();
       newRules.push(errorRule);
 
@@ -3065,3 +3216,7 @@ function storeOriginalData(items, options) {
 
 // Export the onEdit function to the global scope for the trigger to work correctly
 this.onEdit = onEdit;
+
+// Export the trigger functions to the SyncService namespace
+SyncService.setupOnEditTrigger = setupOnEditTrigger;
+SyncService.removeOnEditTrigger = removeOnEditTrigger;
