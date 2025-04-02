@@ -424,7 +424,22 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
     
     Logger.log(`Successfully synced ${items.length} items from Pipedrive to sheet "${sheetName}"`);
     
-    return true;
+    // Remove the duplicate update sync status call
+    // updateSyncStatus('3', 'completed', `Successfully synced ${items.length} ${entityType} from Pipedrive`, 100);
+    setSyncRunning(false);
+    
+    // Check if we need to recreate triggers after column changes
+    if (typeof checkAndRecreateTriggers === 'function') {
+      checkAndRecreateTriggers(sheetName);
+    } else if (typeof this.checkAndRecreateTriggers === 'function') {
+      this.checkAndRecreateTriggers(sheetName);
+    } else {
+      Logger.log(`Warning: checkAndRecreateTriggers function not found`);
+    }
+    
+    Logger.log(`Sync completed for ${entityType}`);
+    return { success: true, count: items.length };
+    
   } catch (error) {
     Logger.log(`Error in syncPipedriveDataToSheet: ${error.message}`);
     Logger.log(`Stack trace: ${error.stack}`);

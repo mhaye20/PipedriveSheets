@@ -97,6 +97,10 @@ TwoWaySyncSettingsUI.handleColumnPreferencesChange = function(sheetName) {
       const twoWaySyncColumnAtEndKey = `TWOWAY_SYNC_COLUMN_AT_END_${sheetName}`;
       scriptProperties.setProperty(twoWaySyncColumnAtEndKey, 'true');
       
+      // Add a flag to ensure the onEdit trigger is recreated after column reorganization
+      const twoWaySyncRecreateTriggersKey = `TWOWAY_SYNC_RECREATE_TRIGGERS_${sheetName}`;
+      scriptProperties.setProperty(twoWaySyncRecreateTriggersKey, 'true');
+      
       Logger.log(`Removed tracking column property for sheet "${sheetName}" to ensure correct positioning on next sync.`);
     }
   } catch (e) {
@@ -674,6 +678,52 @@ TwoWaySyncSettingsUI.getScripts = function() {
   </script>`;
 };
 
+/**
+ * Check and recreate the onEdit trigger after column changes
+ * This function is called after syncing data
+ * @param {string} sheetName - The name of the sheet that was synced
+ */
+function checkAndRecreateTriggers(sheetName) {
+  try {
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
+    const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
+    
+    // Check if we need to recreate triggers
+    const twoWaySyncRecreateTriggersKey = `TWOWAY_SYNC_RECREATE_TRIGGERS_${sheetName}`;
+    const shouldRecreateTriggers = scriptProperties.getProperty(twoWaySyncRecreateTriggersKey) === 'true';
+    
+    if (twoWaySyncEnabled && shouldRecreateTriggers) {
+      Logger.log(`Recreating onEdit trigger for sheet "${sheetName}" after column changes`);
+      
+      // Remove the existing trigger first
+      if (typeof SyncService !== 'undefined' && typeof SyncService.removeOnEditTrigger === 'function') {
+        SyncService.removeOnEditTrigger();
+      } else if (typeof removeOnEditTrigger === 'function') {
+        removeOnEditTrigger();
+      }
+      
+      // Create a new trigger
+      if (typeof SyncService !== 'undefined' && typeof SyncService.setupOnEditTrigger === 'function') {
+        SyncService.setupOnEditTrigger();
+      } else if (typeof setupOnEditTrigger === 'function') {
+        setupOnEditTrigger();
+      }
+      
+      // Clear the flag
+      scriptProperties.deleteProperty(twoWaySyncRecreateTriggersKey);
+      
+      Logger.log(`Successfully recreated onEdit trigger for sheet "${sheetName}"`);
+    }
+    
+    return true;
+  } catch (e) {
+    Logger.log(`Error in checkAndRecreateTriggers: ${e.message}`);
+    return false;
+  }
+}
+
 // Export functions to be globally accessible
 this.showTwoWaySyncSettings = TwoWaySyncSettingsUI.showTwoWaySyncSettings;
-this.handleColumnPreferencesChange = TwoWaySyncSettingsUI.handleColumnPreferencesChange; 
+this.handleColumnPreferencesChange = TwoWaySyncSettingsUI.handleColumnPreferencesChange;
+this.checkAndRecreateTriggers = checkAndRecreateTriggers; 
