@@ -1104,25 +1104,22 @@ function onEdit(e) {
       return;
     }
 
-    // Find the "Sync Status" column by header name
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    let syncStatusColIndex = -1;
-    
-    for (let i = 0; i < headers.length; i++) {
-      if (headers[i] === "Sync Status") {
-        syncStatusColIndex = i;
-        break;
-      }
-    }
+    // Find the "Sync Status" column using our helper function
+    const syncStatusColIndex = findSyncStatusColumn(sheet, sheetName);
     
     // Exit if no Sync Status column found
     if (syncStatusColIndex === -1) {
+      Logger.log(`No Sync Status column found for sheet ${sheetName}`);
       releaseLock(executionId, lockKey);
       return;
     }
     
+    // Get headers for later use
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    
     // Convert to 1-based for sheet functions
     const syncStatusColPos = syncStatusColIndex + 1;
+    Logger.log(`Using Sync Status column at position ${syncStatusColPos} (${columnToLetter(syncStatusColPos)})`);
     
     // Check if the edit is in the Sync Status column itself (to avoid loops)
     if (column === syncStatusColPos) {
@@ -1212,6 +1209,139 @@ function onEdit(e) {
     Logger.log(`UNDO_DEBUG: Cell edit in ${sheetName} - Header: "${headerName}", Row: ${row}`);
     Logger.log(`UNDO_DEBUG: Current status: "${currentStatus}"`);
     
+    // If this row is already Modified, check if we should undo the status
+    if (currentStatus === "Modified" && originalData[rowKey]) {
+      // Get the original value for the field that was just edited
+      const originalValue = originalData[rowKey][headerName];
+      const currentValue = e.value;
+      
+      Logger.log(`UNDO_DEBUG: Comparing original value "${originalValue}" to current value "${currentValue}" for field "${headerName}"`);
+      
+      // First try direct comparison for exact matches
+      let valuesMatch = originalValue === currentValue;
+      
+      // If values don't match exactly, try string conversion and trimming
+      if (!valuesMatch) {
+        const origString = originalValue === null || originalValue === undefined ? '' : String(originalValue).trim();
+        const currString = currentValue === null || currentValue === undefined ? '' : String(currentValue).trim();
+        valuesMatch = origString === currString;
+        
+        Logger.log(`UNDO_DEBUG: String comparison - Original:"${origString}" vs Current:"${currString}", Match: ${valuesMatch}`);
+      }
+      
+      // If the values match (original = current), check if all other values in the row match their originals
+      if (valuesMatch) {
+        Logger.log(`UNDO_DEBUG: Current value matches original for field "${headerName}", checking other fields...`);
+        
+        // Get the current row values
+        const rowValues = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
+        
+        // Flag to track if all values match
+        let allMatch = true;
+        
+        // Check each stored original value
+        for (const field in originalData[rowKey]) {
+          // Skip checking the same field we just verified
+          if (field === headerName) continue;
+          
+          // Skip non-data fields
+          if (field === "Sync Status") continue;
+          
+          // Find the column index for this field
+          const fieldIndex = headers.indexOf(field);
+          if (fieldIndex === -1) {
+            Logger.log(`UNDO_DEBUG: Field "${field}" not found in headers, skipping`);
+            continue;
+          }
+          
+          // Get the original and current values
+          const origValue = originalData[rowKey][field];
+          const currValue = rowValues[fieldIndex];
+          
+          // First try direct comparison
+          let fieldMatch = origValue === currValue;
+          
+          // If direct comparison fails, try string conversion
+          if (!fieldMatch) {
+            const origStr = origValue === null || origValue === undefined ? '' : String(origValue).trim();
+            const currStr = currValue === null || currValue === undefined ? '' : String(currValue).trim();
+            fieldMatch = origStr === currStr;
+            
+            // Special handling for numbers
+            if (!fieldMatch && !isNaN(origValue) && !isNaN(currValue)) {
+              // Try numeric comparison with potential floating point issues
+              const origNum = parseFloat(origValue);
+              const currNum = parseFloat(currValue);
+              
+              // Check if numbers are close enough (within a small epsilon)
+              const epsilon = 0.0001;
+              if (Math.abs(origNum - currNum) < epsilon) {
+                fieldMatch = true;
+                Logger.log(`UNDO_DEBUG: Number comparison succeeded: ${origNum} ≈ ${currNum}`);
+              }
+            }
+            
+            // Special handling for dates
+            if (!fieldMatch && 
+                (origStr.match(/^\d{4}-\d{2}-\d{2}/) || currStr.match(/^\d{4}-\d{2}-\d{2}/))) {
+              try {
+                // Try date parsing
+                const origDate = new Date(origStr);
+                const currDate = new Date(currStr);
+                
+                if (!isNaN(origDate.getTime()) && !isNaN(currDate.getTime())) {
+                  // Compare dates
+                  fieldMatch = origDate.getTime() === currDate.getTime();
+                  Logger.log(`UNDO_DEBUG: Date comparison: ${origDate} vs ${currDate}, Match: ${fieldMatch}`);
+                }
+              } catch (e) {
+                Logger.log(`UNDO_DEBUG: Error in date comparison: ${e.message}`);
+              }
+            }
+          }
+          
+          Logger.log(`UNDO_DEBUG: Field "${field}" - Original:"${origValue}" vs Current:"${currValue}", Match: ${fieldMatch}`);
+          
+          // If any field doesn't match, set flag to false and break
+          if (!fieldMatch) {
+            allMatch = false;
+            Logger.log(`UNDO_DEBUG: Field "${field}" doesn't match original, keeping "Modified" status`);
+            break;
+          }
+        }
+        
+        // If all fields match their original values, set status back to "Not Modified"
+        if (allMatch) {
+          Logger.log(`UNDO_DEBUG: All fields match original values, reverting status to "Not Modified"`);
+          
+          // Mark as not modified
+          syncStatusCell.setValue("Not modified");
+          
+          // Update cell state
+          cellState.status = "Not modified";
+          cellState.lastChanged = now;
+          
+          try {
+            scriptProperties.setProperty(cellStateKey, JSON.stringify(cellState));
+          } catch (saveError) {
+            Logger.log(`Error saving cell state: ${saveError.message}`);
+          }
+          
+          // Apply correct formatting
+          syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
+          
+          // Re-apply data validation
+          const rule = SpreadsheetApp.newDataValidation()
+            .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
+            .build();
+          syncStatusCell.setDataValidation(rule);
+          
+          releaseLock(executionId, lockKey);
+          return;
+        }
+      }
+    }
+    
     // Handle first-time edit case (current status is not Modified)
     if (currentStatus !== "Modified") {
       // Store the original value before marking as modified
@@ -1220,13 +1350,20 @@ function onEdit(e) {
       }
       
       if (headerName) {
-        // Store the original value
-        originalData[rowKey][headerName] = e.oldValue !== undefined ? e.oldValue : null;
-        Logger.log(`UNDO_DEBUG: First edit - storing original value: "${e.oldValue}" for ${headerName}`);
+        // Make sure we store the original value with the proper type and formatting
+        const oldValue = e.oldValue !== undefined ? e.oldValue : null;
+        
+        // Store original value and extra debug info
+        originalData[rowKey][headerName] = oldValue;
+        
+        // Log detailed information about the stored original value
+        Logger.log(`EDIT_DEBUG: Storing original value for ${headerName}:`);
+        Logger.log(`EDIT_DEBUG: Value: "${oldValue}", Type: ${typeof oldValue}`);
         
         // Save updated original data
         try {
           scriptProperties.setProperty(originalDataKey, JSON.stringify(originalData));
+          Logger.log(`EDIT_DEBUG: Successfully saved original data for row ${row}`);
         } catch (saveError) {
           Logger.log(`Error saving original data: ${saveError.message}`);
         }
@@ -1238,7 +1375,7 @@ function onEdit(e) {
         // Save new cell state to prevent toggling back
         cellState.status = "Modified";
         cellState.lastChanged = now;
-        cellState.originalValues[headerName] = e.oldValue;
+        cellState.originalValues[headerName] = oldValue;
         
         try {
           scriptProperties.setProperty(cellStateKey, JSON.stringify(cellState));
@@ -1391,8 +1528,8 @@ function onEdit(e) {
             
             if (allMatch) {
               // All values in row match original - reset to Not modified
-        syncStatusCell.setValue("Not modified");
-              Logger.log(`UNDO_DEBUG: Reset to Not modified for row ${row} - all values match original`);
+              syncStatusCell.setValue("Not modified");
+              Logger.log(`UNDO_DEBUG: Reset to Not modified for row ${row} - all values match original after edit`);
               
               // Save new cell state with strong protection against toggling back
               cellState.status = "Not modified";
@@ -1418,17 +1555,18 @@ function onEdit(e) {
               }
               
               // Re-apply data validation
-        const rule = SpreadsheetApp.newDataValidation()
-          .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
-          .build();
-        syncStatusCell.setDataValidation(rule);
-        
-        // Reset formatting
-        syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
+              const rule = SpreadsheetApp.newDataValidation()
+                .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
+                .build();
+              syncStatusCell.setDataValidation(rule);
+              
+              // Reset formatting
+              syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
             }
             
-        return;
-      }
+            releaseLock(executionId, lockKey);
+            return;
+          }
           
           // Create a data object that mimics Pipedrive structure
           const dataObj = { id: id };
@@ -1551,10 +1689,10 @@ function onEdit(e) {
               }
               
               // Re-apply data validation
-      const rule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
-        .build();
-      syncStatusCell.setDataValidation(rule);
+              const rule = SpreadsheetApp.newDataValidation()
+                .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
+                .build();
+              syncStatusCell.setDataValidation(rule);
 
               // Reset formatting
               syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
@@ -1617,6 +1755,7 @@ function onEdit(e) {
               syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
             }
             
+            releaseLock(executionId, lockKey);
             return;
           }
           
@@ -1830,6 +1969,9 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
       return false;
     }
     
+    Logger.log(`Checking if all values match original for row ${row}`);
+    Logger.log(`Original values: ${JSON.stringify(originalValues)}`);
+    
     // Get current values for the entire row
     const rowValues = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
     
@@ -1838,6 +1980,12 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
     
     // Create a data object that mimics Pipedrive structure for nested field handling
     const dataObj = { id: id };
+    
+    // Create a mapping of header names to their column indices for faster lookup
+    const headerIndices = {};
+    headers.forEach((header, index) => {
+      headerIndices[header] = index;
+    });
     
     // Populate the data object with values from the row
     headers.forEach((header, index) => {
@@ -1924,12 +2072,55 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
     Logger.log(`Checking ${Object.keys(originalValues).length} fields for original value match`);
     
     // Check each column that has a stored original value
+    let matchCount = 0;
+    let mismatchCount = 0;
+    
     for (const headerName in originalValues) {
+      // Skip the Sync Status column itself
+      if (headerName === "Sync Status") {
+        continue;
+      }
+      
       // Find the column index for this header
-      const colIndex = headers.indexOf(headerName);
-      if (colIndex === -1) {
-        Logger.log(`Header ${headerName} not found in current headers`);
-        continue; // Header not found
+      const colIndex = headerIndices[headerName];
+      if (colIndex === undefined) {
+        Logger.log(`Header "${headerName}" not found in current headers - columns may have been reorganized`);
+        
+        // Even if the header is not found, we'll try to compare by field name
+        // This handles cases where the column position changed but the header name is the same
+        let foundMatch = false;
+        for (let i = 0; i < headers.length; i++) {
+          if (headers[i] === headerName) {
+            Logger.log(`Found header "${headerName}" at position ${i+1}`);
+            foundMatch = true;
+            
+            const originalValue = originalValues[headerName];
+            const currentValue = rowValues[i];
+            
+            // Compare the values
+            const originalString = originalValue === null || originalValue === undefined ? '' : String(originalValue).trim();
+            const currentString = currentValue === null || currentValue === undefined ? '' : String(currentValue).trim();
+            
+            Logger.log(`Comparing values for "${headerName}": Original="${originalString}", Current="${currentString}"`);
+            
+            if (originalString === currentString) {
+              Logger.log(`Match found for "${headerName}"`);
+              matchCount++;
+            } else {
+              Logger.log(`Mismatch found for "${headerName}"`);
+              mismatchCount++;
+              return false; // Early exit on mismatch
+            }
+            
+            break;
+          }
+        }
+        
+        if (!foundMatch) {
+          // The header is truly missing, we can't compare
+          Logger.log(`Warning: Header "${headerName}" is completely missing from the sheet`);
+        }
+        continue;
       }
       
       const originalValue = originalValues[headerName];
@@ -1939,10 +2130,11 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
       if ((originalValue === null || originalValue === "") && 
           (currentValue === null || currentValue === "")) {
         Logger.log(`Both values are empty for ${headerName}, treating as match`);
+        matchCount++;
         continue; // Both empty, consider a match
       }
       
-      // NEW: Check if this is a structural field with complex nested structure
+      // Check if this is a structural field with complex nested structure
       if (originalValue && typeof originalValue === 'object' && originalValue.__isStructural) {
         Logger.log(`Found structural field ${headerName} with key ${originalValue.__key}`);
         
@@ -1955,9 +2147,11 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
         // If the normalized values don't match, return false
         if (normalizedOriginal !== normalizedCurrent) {
           Logger.log(`Structural field mismatch found for ${headerName}`);
+          mismatchCount++;
           return false;
         }
         
+        matchCount++;
         // Skip to the next field
         continue;
       }
@@ -1971,13 +2165,16 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
       // If the normalized values don't match, return false
       if (normalizedOriginal !== normalizedCurrent) {
         Logger.log(`Mismatch found for ${headerName}`);
+        mismatchCount++;
         return false;
       }
+      
+      matchCount++;
     }
     
     // If we reach here, all values with stored originals match
-    Logger.log('All values match original values');
-    return true;
+    Logger.log(`Comparison complete: ${matchCount} matches, ${mismatchCount} mismatches`);
+    return mismatchCount === 0 && matchCount > 0;
   } catch (error) {
     Logger.log(`Error in checkAllValuesMatchOriginal: ${error.message}`);
     return false;
@@ -3506,28 +3703,162 @@ function removeConditionalFormattingForColumn(sheet, columnIndex) {
   }
 }
 
-// Utility function to convert a column letter to a column index (1-based)
+/**
+ * Helper function to convert a column letter to a 1-based index
+ * @param {string} letter - The column letter (e.g., "A", "B", "AA")
+ * @return {number} The 1-based index 
+ */
 function letterToColumn(letter) {
   let column = 0;
   const length = letter.length;
-  
   for (let i = 0; i < length; i++) {
     column += (letter.charCodeAt(i) - 64) * Math.pow(26, length - i - 1);
   }
-  
   return column;
 }
 
-// Utility function to convert a column index to a letter (A, B, C, ..., Z, AA, AB, ...)
+/**
+ * Helper function to convert a column number to a letter
+ * @param {number} column - The column number (1-based)
+ * @return {string} The column letter
+ */
 function columnToLetter(column) {
-  let temp;
-  let letter = '';
-  
+  let temp, letter = '';
   while (column > 0) {
     temp = (column - 1) % 26;
     letter = String.fromCharCode(temp + 65) + letter;
     column = (column - temp - 1) / 26;
   }
-  
   return letter;
+}
+
+/**
+ * Helper function to find the Sync Status column index
+ * @param {Sheet} sheet - The sheet to search in
+ * @param {string} sheetName - The name of the sheet
+ * @return {number} The 0-based index of the Sync Status column, or -1 if not found
+ */
+function findSyncStatusColumn(sheet, sheetName) {
+  try {
+    // First try to find by header name
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    for (let i = 0; i < headers.length; i++) {
+      if (headers[i] === "Sync Status") {
+        Logger.log(`Found Sync Status column by header name at index ${i}`);
+        return i;
+      }
+    }
+    
+    // If not found by header, try to get from script properties
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const trackingKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
+    const trackingColumn = scriptProperties.getProperty(trackingKey);
+    
+    if (trackingColumn) {
+      // Convert column letter to index (0-based)
+      const index = letterToColumn(trackingColumn) - 1;
+      Logger.log(`Found Sync Status column from properties at ${trackingColumn} (index: ${index})`);
+      return index;
+    }
+    
+    // If still not found, check if there's a column with sync status values
+    const lastRow = Math.min(sheet.getLastRow(), 10); // Check first 10 rows max
+    if (lastRow > 1) {
+      for (let i = 0; i < headers.length; i++) {
+        // Get values in this column for the first few rows
+        const colValues = sheet.getRange(2, i + 1, lastRow - 1, 1).getValues().map(row => row[0]);
+        
+        // Check if any cell contains a typical sync status value
+        const containsSyncStatus = colValues.some(value => 
+          value === "Modified" || 
+          value === "Not modified" || 
+          value === "Synced" || 
+          value === "Error"
+        );
+        
+        if (containsSyncStatus) {
+          Logger.log(`Found potential Sync Status column by values at index ${i}`);
+          return i;
+        }
+      }
+    }
+    
+    // Not found
+    Logger.log(`Sync Status column not found in sheet ${sheetName}`);
+    return -1;
+  } catch (error) {
+    Logger.log(`Error in findSyncStatusColumn: ${error.message}`);
+    return -1;
+  }
+}
+
+/**
+ * Debug function to check the original values stored for a sheet
+ * This can be called manually to troubleshoot two-way sync issues
+ * @param {string} sheetName - The name of the sheet to check
+ */
+function debugTwoWaySyncOriginalValues(sheetName) {
+  try {
+    if (!sheetName) {
+      // Use active sheet if no sheet name provided
+      sheetName = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet().getName();
+    }
+    
+    Logger.log(`DEBUG: Checking original values for sheet "${sheetName}"...`);
+    
+    // Get script properties
+    const scriptProperties = PropertiesService.getScriptProperties();
+    
+    // Check if two-way sync is enabled
+    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
+    const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
+    
+    Logger.log(`DEBUG: Two-way sync enabled: ${twoWaySyncEnabled}`);
+    
+    if (!twoWaySyncEnabled) {
+      Logger.log(`DEBUG: Two-way sync is not enabled for sheet "${sheetName}"`);
+      return;
+    }
+    
+    // Get tracking column
+    const trackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
+    const trackingColumn = scriptProperties.getProperty(trackingColumnKey);
+    
+    Logger.log(`DEBUG: Tracking column: ${trackingColumn || 'Not set'}`);
+    
+    // Get original data
+    const originalDataKey = `ORIGINAL_DATA_${sheetName}`;
+    const originalDataJson = scriptProperties.getProperty(originalDataKey);
+    
+    if (!originalDataJson) {
+      Logger.log(`DEBUG: No original data found for sheet "${sheetName}"`);
+      return;
+    }
+    
+    // Parse original data
+    try {
+      const originalData = JSON.parse(originalDataJson);
+      const rowCount = Object.keys(originalData).length;
+      
+      Logger.log(`DEBUG: Found original data for ${rowCount} rows`);
+      
+      // Log details for each row
+      for (const rowKey in originalData) {
+        const rowData = originalData[rowKey];
+        const fieldCount = Object.keys(rowData).length;
+        
+        Logger.log(`DEBUG: Row ${rowKey} has ${fieldCount} fields with original values:`);
+        
+        // Log each field and its original value
+        for (const field in rowData) {
+          const value = rowData[field];
+          Logger.log(`DEBUG:   - ${field}: "${value}" (${typeof value})`);
+        }
+      }
+    } catch (parseError) {
+      Logger.log(`DEBUG: Error parsing original data: ${parseError.message}`);
+    }
+  } catch (error) {
+    Logger.log(`Error in debugTwoWaySyncOriginalValues: ${error.message}`);
+  }
 }
