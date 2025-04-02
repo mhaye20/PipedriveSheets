@@ -506,7 +506,6 @@ function columnToLetter(columnIndex) {
 }
 
 /**
- * Global include function for HTML templates
  * Allows templates to include other templates or script files
  * @param {string} filename - The name of the file to include
  * @return {string} The content of the file
@@ -524,6 +523,11 @@ function include(filename) {
     return TwoWaySyncSettingsUI.getStyles();
   } else if (filename === 'TwoWaySyncSettingsUI_Scripts') {
     return TwoWaySyncSettingsUI.getScripts();
+  }
+  
+  // Handle special case for ColumnSelectorUI
+  if (filename === 'ColumnSelectorUI') {
+    return ColumnSelectorUI.getScripts();
   }
   
   // For standard includes, return the content of the file
