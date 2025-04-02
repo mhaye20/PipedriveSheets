@@ -415,6 +415,28 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
     // Write data to the sheet
     writeDataToSheet(items, options);
     
+    // IMPORTANT: If two-way sync is enabled, make sure we thoroughly clean up previous Sync Status columns
+    if (twoWaySyncEnabled) {
+      try {
+        // Get the current Sync Status column position
+        const currentStatusColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey);
+        
+        // Get the sheet object
+        const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+        
+        if (sheet && currentStatusColumn) {
+          Logger.log(`Running comprehensive cleanup of previous Sync Status columns. Current column: ${currentStatusColumn}`);
+          cleanupPreviousSyncStatusColumn(sheet, currentStatusColumn);
+          
+          // Also perform a complete cell-by-cell scan for any sync status validation that might have been missed
+          scanAllCellsForSyncStatusValidation(sheet);
+        }
+      } catch (cleanupError) {
+        Logger.log(`Error during final Sync Status column cleanup: ${cleanupError.message}`);
+        // Continue with sync even if cleanup has issues
+      }
+    }
+    
     // Update sync status to completed
     updateSyncStatus('3', 'completed', 'Data successfully written to spreadsheet', 100);
     
@@ -429,17 +451,9 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
     setSyncRunning(false);
     
     // Check if we need to recreate triggers after column changes
-    if (typeof checkAndRecreateTriggers === 'function') {
-      checkAndRecreateTriggers(sheetName);
-    } else if (typeof this.checkAndRecreateTriggers === 'function') {
-      this.checkAndRecreateTriggers(sheetName);
-    } else {
-      Logger.log(`Warning: checkAndRecreateTriggers function not found`);
-    }
+    checkAndRecreateTriggers();
     
-    Logger.log(`Sync completed for ${entityType}`);
-    return { success: true, count: items.length };
-    
+    return true;
   } catch (error) {
     Logger.log(`Error in syncPipedriveDataToSheet: ${error.message}`);
     Logger.log(`Stack trace: ${error.stack}`);
@@ -455,205 +469,136 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
 }
 
 /**
- * Writes data to the sheet with the specified entities and options
- * @param {Array} items - Array of Pipedrive entities to write
+ * Writes data to the sheet with columns matching the data
+ * @param {Array} items - The items to write to the sheet
  * @param {Object} options - Options for writing data
  */
 function writeDataToSheet(items, options) {
   try {
-    Logger.log(`Starting writeDataToSheet with ${items.length} items`);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
     
-    const scriptProperties = PropertiesService.getScriptProperties();
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(options.sheetName);
+    // Get sheet name from options
+    const sheetName = options.sheetName;
     
+    // Get sheet
+    let sheet = ss.getSheetByName(sheetName);
+    
+    // Create the sheet if it doesn't exist
     if (!sheet) {
-      throw new Error(`Sheet "${options.sheetName}" not found`);
-    }
-    
-    // IMPORTANT: Clean up previous Sync Status column before writing new data
-    cleanupPreviousSyncStatusColumn(sheet, options.sheetName);
-    
-    // Check for two-way sync
-    const twoWaySyncEnabled = options.twoWaySyncEnabled || false;
-    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${options.sheetName}`;
-    let statusColumnIndex = -1;
-    let configuredTrackingColumn = '';
-    
-    // Create a map to preserve existing status values
-    const statusByIdMap = new Map();
-    
-    // If two-way sync is enabled, preserve existing status values
-    if (twoWaySyncEnabled) {
-      try {
-        Logger.log('Two-way sync is enabled, preserving status column data');
-        
-        // Get the configured tracking column letter from properties
-        configuredTrackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey) || '';
-        Logger.log(`Configured tracking column from properties: "${configuredTrackingColumn}"`);
-        
-        // If the sheet has data, extract status values
-        if (sheet.getLastRow() > 0) {
-          // Get all existing data
-          const existingData = sheet.getDataRange().getValues();
-          Logger.log(`Retrieved ${existingData.length} rows of existing data`);
-          
-          // Find headers row
-          const headers = existingData[0];
-          let idColumnIndex = 0; // Assuming ID is in first column
-          let statusColumnIndex = -1;
-          
-          // Find the status column by looking for header that contains "Sync Status"
-          for (let i = 0; i < headers.length; i++) {
-            if (headers[i] && 
-                headers[i].toString().toLowerCase().includes('sync') && 
-                headers[i].toString().toLowerCase().includes('status')) {
-              statusColumnIndex = i;
-              Logger.log(`Found status column at index ${statusColumnIndex} with header "${headers[i]}"`);
-              break;
-            }
-          }
-          
-          // If status column found, extract status values by ID
-          if (statusColumnIndex !== -1) {
-            // Process all data rows (skip header)
-            for (let i = 1; i < existingData.length; i++) {
-              const row = existingData[i];
-              const id = row[idColumnIndex];
-              const status = row[statusColumnIndex];
-              
-              // Skip rows without ID or status or timestamp rows
-              if (!id || !status ||
-                  ((typeof id === 'string') &&
-                   (id.toLowerCase().includes('last') ||
-                    id.toLowerCase().includes('synced') ||
-                    id.toLowerCase().includes('updated')))) {
-                continue;
-              }
-              
-              // Only preserve meaningful status values
-              if (status === 'Modified' || status === 'Synced' || status === 'Error') {
-                statusByIdMap.set(id.toString(), status);
-                Logger.log(`Preserved status "${status}" for ID ${id}`);
-              }
-            }
-            
-            Logger.log(`Preserved ${statusByIdMap.size} status values by ID`);
-          } else {
-            Logger.log('Could not find existing status column');
-          }
-        }
-      } catch (e) {
-        Logger.log(`Error preserving status values: ${e.message}`);
+      sheet = ss.insertSheet(sheetName);
+    } else {
+      // When resyncing, ALWAYS clear the entire sheet first to prevent old data persisting
+      // This ensures we don't have leftover values from previous syncs
+      sheet.clear();
+      sheet.clearFormats();
+      // Fix: Use getDataRange() to clear data validations
+      if (sheet.getLastRow() > 0 && sheet.getLastColumn() > 0) {
+        sheet.getDataRange().clearDataValidations();
       }
+      Logger.log(`Cleared sheet ${sheetName} to ensure clean sync`);
     }
-    
-    // Clear the sheet but keep formatting
-    sheet.clear();
     
     // Get headers from options
     const headers = options.headerRow;
     
-    // If two-way sync is enabled, add Sync Status column at the correct position
-    if (twoWaySyncEnabled) {
-      // Check if we need to force the Sync Status column at the end
-      const twoWaySyncColumnAtEndKey = `TWOWAY_SYNC_COLUMN_AT_END_${options.sheetName}`;
-      const forceColumnAtEnd = scriptProperties.getProperty(twoWaySyncColumnAtEndKey) === 'true';
-
-      // If we need to force the column at the end, or no configured column exists,
-      // add the Sync Status column at the end
-      if (forceColumnAtEnd || !configuredTrackingColumn) {
-        Logger.log('Adding Sync Status column at the end');
-        statusColumnIndex = headers.length;
-        headers.push('Sync Status');
-
-        // Clear the "force at end" flag after we've processed it
-        if (forceColumnAtEnd) {
-          scriptProperties.deleteProperty(twoWaySyncColumnAtEndKey);
-          Logger.log('Cleared the force-at-end flag after repositioning the Sync Status column');
-        }
-      } else {
-        // If not forcing at end, try to find existing column position
-        if (configuredTrackingColumn) {
-          // Find if there's already a "Sync Status" column in the existing sheet
-          const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(options.sheetName);
-          if (activeSheet && activeSheet.getLastRow() > 0) {
-            const existingHeaders = activeSheet.getRange(1, 1, 1, activeSheet.getLastColumn()).getValues()[0];
-
-            // Search for "Sync Status" in the existing headers
-            for (let i = 0; i < existingHeaders.length; i++) {
-              if (existingHeaders[i] === "Sync Status") {
-                // Use this exact position for our new status column
-                const exactColumnLetter = columnToLetter(i + 1);
-                Logger.log(`Found existing Sync Status column at position ${i + 1} (${exactColumnLetter})`);
-
-                // Update the tracking column in script properties
-                scriptProperties.setProperty(twoWaySyncTrackingColumnKey, exactColumnLetter);
-
-                // Ensure our headers array has enough elements
-                while (headers.length <= i) {
-                  headers.push('');
-                }
-
-                // Place "Sync Status" at the exact same position
-                statusColumnIndex = i;
-                headers[statusColumnIndex] = 'Sync Status';
-
-                break;
-              }
-            }
-          }
-
-          // If we didn't find an existing column, try using the configured index
-          if (statusColumnIndex === -1) {
-            const existingTrackingIndex = columnLetterToIndex(configuredTrackingColumn) - 1; // Convert to 0-based
-
-            // Always use the configured position, regardless of current headerRow length
-            Logger.log(`Using configured tracking column at position ${existingTrackingIndex + 1} (${configuredTrackingColumn})`);
-
-            // Ensure our headers array has enough elements
-            while (headers.length <= existingTrackingIndex) {
-              headers.push('');
-            }
-
-            // Place the Sync Status column at its original position
-            statusColumnIndex = existingTrackingIndex;
-            headers[statusColumnIndex] = 'Sync Status';
-          }
-        } else {
-          // No configured tracking column, add as the last column
-          Logger.log('No configured tracking column, adding as last column');
-          statusColumnIndex = headers.length;
-          headers.push('Sync Status');
-        }
-      }
-
-      if (configuredTrackingColumn && statusColumnIndex !== -1) {
-        const newTrackingColumn = columnToLetter(statusColumnIndex + 1);
-        if (newTrackingColumn !== configuredTrackingColumn) {
-          scriptProperties.setProperty(`PREVIOUS_TRACKING_COLUMN_${options.sheetName}`, configuredTrackingColumn);
-          Logger.log(`Stored previous tracking column ${configuredTrackingColumn} before moving to ${newTrackingColumn}`);
-        }
-      }
-      
-      // Save column letter for future reference
-      const statusColumn = columnToLetter(statusColumnIndex + 1);
-      scriptProperties.setProperty(twoWaySyncTrackingColumnKey, statusColumn);
-      Logger.log(`Added/maintained Sync Status column at position ${statusColumnIndex + 1} (${statusColumn})`);
+    // Check if two-way sync is enabled
+    const twoWaySyncEnabled = options.twoWaySyncEnabled || false;
+    
+    // Get script properties
+    const scriptProperties = PropertiesService.getScriptProperties();
+    
+    // Key for tracking column
+    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
+    
+    // Get current and previous tracking columns
+    const currentSyncColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey);
+    const previousSyncColumnKey = `PREVIOUS_TRACKING_COLUMN_${sheetName}`;
+    
+    // If two-way sync is enabled, store the previous column before any changes
+    if (twoWaySyncEnabled && currentSyncColumn) {
+      scriptProperties.setProperty(previousSyncColumnKey, currentSyncColumn);
+      Logger.log(`Stored previous sync column position: ${currentSyncColumn}`);
     }
     
-    // Set header row
+    // For preservation of status data - key is entity ID, value is status
+    let statusByIdMap = new Map();
+    let statusColumnIndex = -1;
+    
+    // Initialize the header row in the sheet
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
     
-    Logger.log(`Set up ${headers.length} headers in the sheet`);
+    // If two-way sync is enabled, add a "Sync Status" column
+    if (twoWaySyncEnabled) {
+      // Try to find existing Sync Status column
+      const lastColumn = headers.length;
+      const statusHeader = 'Sync Status';
+      statusColumnIndex = headers.indexOf(statusHeader);
+      
+      if (statusColumnIndex === -1) {
+        // Add Sync Status column at the end
+        statusColumnIndex = lastColumn;
+        headers.push(statusHeader);
+        sheet.getRange(1, lastColumn + 1).setValue(statusHeader);
+      }
+      
+      Logger.log(`Using Sync Status column at index ${statusColumnIndex}`);
+      
+      // Store status column position for cleanup and recreation
+      const statusColumnLetter = columnToLetter(statusColumnIndex + 1);
+      
+      // If this is a new position, record the change
+      if (statusColumnLetter !== currentSyncColumn) {
+        // Store the previous position for cleanup
+        if (currentSyncColumn) {
+          scriptProperties.setProperty(previousSyncColumnKey, currentSyncColumn);
+          Logger.log(`Column position changed from ${currentSyncColumn} to ${statusColumnLetter}`);
+        }
+        
+        // Store the new position
+        scriptProperties.setProperty(twoWaySyncTrackingColumnKey, statusColumnLetter);
+        Logger.log(`Set Sync Status column tracking to ${statusColumnLetter}`);
+        
+        // Clean up previous sync status columns
+        if (currentSyncColumn) {
+          cleanupPreviousSyncStatusColumn(sheet, statusColumnLetter);
+        }
+      }
+      
+      // Get current status values to preserve them - we already cleared the sheet
+      // but we can get these from properties storage
+      try {
+        // Get stored status data for this sheet
+        const statusDataKey = `SYNC_STATUS_DATA_${sheetName}`;
+        const storedStatusData = scriptProperties.getProperty(statusDataKey);
+        
+        if (storedStatusData) {
+          try {
+            const parsedStatus = JSON.parse(storedStatusData);
+            
+            // Populate the statusByIdMap from stored data
+            if (parsedStatus && typeof parsedStatus === 'object') {
+              Object.keys(parsedStatus).forEach(id => {
+                statusByIdMap.set(id, parsedStatus[id]);
+              });
+              
+              Logger.log(`Loaded ${statusByIdMap.size} stored status values`);
+            }
+          } catch (parseError) {
+            Logger.log(`Error parsing stored status data: ${parseError.message}`);
+          }
+        }
+      } catch (e) {
+        Logger.log(`Error loading stored status values: ${e.message}`);
+      }
+    }
     
-    // Create data rows
-    Logger.log(`Processing ${items.length} items to create data rows`);
+    // Process items and write data rows
     const dataRows = items.map(item => {
       // Create a row with empty values for all columns
       const row = Array(headers.length).fill('');
       
-      // For each column, extract and format the value from the Pipedrive item
+      // For each column, extract and format the value
       options.columns.forEach((column, index) => {
         // Skip if index is beyond our header count
         if (index >= headers.length) {
@@ -687,108 +632,113 @@ function writeDataToSheet(items, options) {
     }
     
     // If two-way sync is enabled, set up data validation and formatting for the status column
-    if (twoWaySyncEnabled && statusColumnIndex !== -1 && dataRows.length > 0) {
+    if (twoWaySyncEnabled && statusColumnIndex !== -1) {
       try {
-        // Clear any existing data validation from ALL cells in the sheet first
-        sheet.clearDataValidations();
-        
-        // Convert to 1-based column
-        const statusColumnPos = statusColumnIndex + 1;
-        
-        // Apply validation to each data row
-        for (let i = 0; i < dataRows.length; i++) {
-          const row = i + 2; // Data starts at row 2 (after header)
-          const statusCell = sheet.getRange(row, statusColumnPos);
-          
-          // Create dropdown validation
-          const rule = SpreadsheetApp.newDataValidation()
-            .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
-            .build();
-          statusCell.setDataValidation(rule);
-        }
-        
-        // Style the header
-        sheet.getRange(1, statusColumnPos)
+        // Style the header cell
+        const headerCell = sheet.getRange(1, statusColumnIndex + 1);
+        headerCell
+          .setValue('Sync Status')
           .setBackground('#E8F0FE')
           .setFontWeight('bold')
           .setNote('This column tracks changes for two-way sync with Pipedrive');
         
-        // Style the status column
-        const statusRange = sheet.getRange(2, statusColumnPos, dataRows.length, 1);
-        statusRange
-          .setBackground('#F8F9FA')
-          .setBorder(null, true, null, true, false, false, '#DADCE0', SpreadsheetApp.BorderStyle.SOLID);
-        
-        // Set up conditional formatting
-        const rules = sheet.getConditionalFormatRules();
-        
-        // Add rule for "Modified" status - red background
-        const modifiedRule = SpreadsheetApp.newConditionalFormatRule()
-          .whenTextEqualTo('Modified')
-          .setBackground('#FCE8E6')
-          .setFontColor('#D93025')
-          .setRanges([statusRange])
-          .build();
-        rules.push(modifiedRule);
-        
-        // Add rule for "Synced" status - green background
-        const syncedRule = SpreadsheetApp.newConditionalFormatRule()
-          .whenTextEqualTo('Synced')
-          .setBackground('#E6F4EA')
-          .setFontColor('#137333')
-          .setRanges([statusRange])
-          .build();
-        rules.push(syncedRule);
-        
-        // Add rule for "Error" status - yellow background
-        const errorRule = SpreadsheetApp.newConditionalFormatRule()
-          .whenTextEqualTo('Error')
-          .setBackground('#FEF7E0')
-          .setFontColor('#B06000')
-          .setRanges([statusRange])
-          .build();
-        rules.push(errorRule);
-        
-        sheet.setConditionalFormatRules(rules);
-      } catch (e) {
-        Logger.log(`Error setting up status column formatting: ${e.message}`);
-      }
-    }
-    
-    // Clean up any lingering formatting from previous Sync Status columns
-    if (twoWaySyncEnabled && statusColumnIndex !== -1) {
-      try {
-        Logger.log(`Performing aggressive column cleanup after sheet rebuild - current status column: ${statusColumnIndex}`);
-        
-        // The current status column letter
-        const currentStatusColLetter = columnToLetter(statusColumnIndex + 1);
-        
-        // Clean ALL columns in the sheet except the current Sync Status column
-        const lastCol = sheet.getLastColumn() + 5; // Add buffer for hidden columns
-        for (let i = 0; i < lastCol; i++) {
-          if (i !== statusColumnIndex) { // Skip the current status column
-            try {
-              const colLetter = columnToLetter(i + 1);
-              Logger.log(`Checking column ${colLetter} for cleanup`);
-              
-              // Check if this column has a 'Sync Status' header or sync-related note
-              const headerCell = sheet.getRange(1, i + 1);
-              const headerValue = headerCell.getValue();
-              const note = headerCell.getNote();
-              
-              if (headerValue === "Sync Status" || 
-                  (note && (note.includes('sync') || note.includes('track') || note.includes('Pipedrive')))) {
-                Logger.log(`Found Sync Status indicators in column ${colLetter}, cleaning up`);
-                cleanupColumnFormatting(sheet, colLetter);
-              }
-            } catch (e) {
-              Logger.log(`Error cleaning up column ${i}: ${e.message}`);
+        // Add data validation for all cells in the column
+        const lastRow = Math.max(sheet.getLastRow(), 2);
+        if (lastRow > 1) {
+          const dataRange = sheet.getRange(2, statusColumnIndex + 1, lastRow - 1, 1);
+          const rule = SpreadsheetApp.newDataValidation()
+            .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
+            .build();
+          dataRange.setDataValidation(rule);
+          
+          // Set default values for empty cells - force all cells to have default values
+          const values = dataRange.getValues();
+          const newValues = values.map(row => {
+            const currentValue = row[0];
+            if (!currentValue || 
+                (currentValue !== 'Modified' && 
+                 currentValue !== 'Not modified' && 
+                 currentValue !== 'Synced' && 
+                 currentValue !== 'Error')) {
+              return ['Not modified'];
             }
+            return [currentValue];
+          });
+          dataRange.setValues(newValues);
+          
+          // Style the status column
+          dataRange
+            .setBackground('#F8F9FA')
+            .setBorder(null, true, null, true, false, false, '#DADCE0', SpreadsheetApp.BorderStyle.SOLID);
+          
+          // Set up conditional formatting for the status column
+          const rules = sheet.getConditionalFormatRules();
+          
+          // Rule for "Modified" status - red background
+          const modifiedRule = SpreadsheetApp.newConditionalFormatRule()
+            .whenTextEqualTo('Modified')
+            .setBackground('#FCE8E6')
+            .setFontColor('#D93025')
+            .setRanges([dataRange])
+            .build();
+          
+          // Rule for "Synced" status - green background
+          const syncedRule = SpreadsheetApp.newConditionalFormatRule()
+            .whenTextEqualTo('Synced')
+            .setBackground('#E6F4EA')
+            .setFontColor('#137333')
+            .setRanges([dataRange])
+            .build();
+          
+          // Rule for "Error" status - orange background
+          const errorRule = SpreadsheetApp.newConditionalFormatRule()
+            .whenTextEqualTo('Error')
+            .setBackground('#FEF7E0')
+            .setFontColor('#EA8600')
+            .setRanges([dataRange])
+            .build();
+          
+          // Apply all rules
+          rules.push(modifiedRule);
+          rules.push(syncedRule);
+          rules.push(errorRule);
+          sheet.setConditionalFormatRules(rules);
+          
+          // Save current status values for future reference
+          try {
+            const statusData = {};
+            
+            // Save only rows with data in case of ID changes
+            for (let i = 0; i < dataRows.length; i++) {
+              const id = dataRows[i][0].toString();
+              const status = dataRows[i][statusColumnIndex];
+              
+              if (id && status) {
+                statusData[id] = status;
+              }
+            }
+            
+            // Store the status data in script properties
+            const statusDataKey = `SYNC_STATUS_DATA_${sheetName}`;
+            scriptProperties.setProperty(statusDataKey, JSON.stringify(statusData));
+            Logger.log(`Saved ${Object.keys(statusData).length} status values for future reference`);
+          } catch (storageError) {
+            Logger.log(`Error saving status data: ${storageError.message}`);
           }
         }
       } catch (e) {
-        Logger.log(`Error during column cleanup: ${e.message}`);
+        Logger.log(`Error setting up status column: ${e.message}`);
       }
+    }
+    
+    // Final cleanup: do a thorough scan for any remaining old Sync Status columns
+    if (twoWaySyncEnabled && statusColumnIndex !== -1) {
+      // Get the current status column letter for the final cleanup
+      const finalStatusColumnLetter = columnToLetter(statusColumnIndex + 1);
+      Logger.log(`Running final cleanup scan. Current Sync Status column: ${finalStatusColumnLetter}`);
+      
+      // This will find and clean any other columns with Sync Status headers
+      cleanupPreviousSyncStatusColumn(sheet, finalStatusColumnLetter);
     }
     
     // Auto-resize columns to fit content
@@ -1443,7 +1393,7 @@ function onEdit(e) {
             
             if (allMatch) {
               // All values in row match original - reset to Not modified
-              syncStatusCell.setValue("Not modified");
+        syncStatusCell.setValue("Not modified");
               Logger.log(`UNDO_DEBUG: Reset to Not modified for row ${row} - all values match original`);
               
               // Save new cell state with strong protection against toggling back
@@ -1470,17 +1420,17 @@ function onEdit(e) {
               }
               
               // Re-apply data validation
-              const rule = SpreadsheetApp.newDataValidation()
-                .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
-                .build();
-              syncStatusCell.setDataValidation(rule);
-              
-              // Reset formatting
-              syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
+        const rule = SpreadsheetApp.newDataValidation()
+          .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
+          .build();
+        syncStatusCell.setDataValidation(rule);
+        
+        // Reset formatting
+        syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
             }
             
-            return;
-          }
+        return;
+      }
           
           // Create a data object that mimics Pipedrive structure
           const dataObj = { id: id };
@@ -1603,11 +1553,11 @@ function onEdit(e) {
               }
               
               // Re-apply data validation
-              const rule = SpreadsheetApp.newDataValidation()
-                .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
-                .build();
-              syncStatusCell.setDataValidation(rule);
-              
+      const rule = SpreadsheetApp.newDataValidation()
+        .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
+        .build();
+      syncStatusCell.setDataValidation(rule);
+
               // Reset formatting
               syncStatusCell.setBackground('#F8F9FA').setFontColor('#000000');
             }
@@ -3286,1386 +3236,235 @@ function detectColumnShifts() {
  * Cleans up formatting in a column
  * @param {Sheet} sheet - The sheet containing the column
  * @param {string} columnLetter - The letter of the column to clean up
+ * @param {boolean} isCurrentColumn - Whether this is the current active Sync Status column
  */
-function cleanupColumnFormatting(sheet, columnLetter) {
+function cleanupColumnFormatting(sheet, columnLetter, isCurrentColumn = false) {
   try {
-    // Convert column letter to index (1-based for getRange)
-    const columnIndex = columnLetterToIndex(columnLetter);
+    Logger.log(`Cleaning up column ${columnLetter} (isCurrentColumn: ${isCurrentColumn})`);
     
-    // ALWAYS clean columns, even if they're beyond the current last column
-    Logger.log(`Cleaning up formatting for column ${columnLetter} (position ${columnIndex})`);
-
-    try {
-      // Clean up data validations for the ENTIRE column
-      const numRows = Math.max(sheet.getMaxRows(), 1000); // Use a large number to ensure all rows
-
-      // Try to clear data validations - may fail for columns beyond the edge
-      try {
-        sheet.getRange(1, columnIndex, numRows, 1).clearDataValidations();
-      } catch (e) {
-        Logger.log(`Could not clear validations for column ${columnLetter}: ${e.message}`);
+    // Convert column letter to index
+    const columnIndex = letterToColumn(columnLetter);
+    
+    // Get the data range to know the last row
+    const lastRow = Math.max(sheet.getLastRow(), 2);
+    
+    // Clean the header first - only if it's not the current column
+    if (!isCurrentColumn) {
+      const headerCell = sheet.getRange(1, columnIndex);
+      const headerValue = headerCell.getValue();
+      const note = headerCell.getNote();
+      
+      Logger.log(`Checking header in column ${columnLetter}: "${headerValue}"`);
+      
+      // Check if this column has 'Sync Status' header or sync-related note
+      if (headerValue === "Sync Status" || 
+          headerValue === "Sync Status (hidden)" || 
+          headerValue === "Status" ||
+          (note && (note.includes('sync') || note.includes('track') || note.includes('Pipedrive')))) {
+        
+        Logger.log(`Clearing Sync Status header in column ${columnLetter}`);
+        headerCell.setValue('');
+        headerCell.clearNote();
+        headerCell.clearFormat();
       }
-
-      // Clear header note - this should work even for "out of bounds" columns
-      try {
-        sheet.getRange(1, columnIndex).clearNote();
-        sheet.getRange(1, columnIndex).setNote(''); // Force clear
-      } catch (e) {
-        Logger.log(`Could not clear note for column ${columnLetter}: ${e.message}`);
-      }
-
-      // For columns within the sheet, we can do more thorough cleaning
-      if (columnIndex <= sheet.getLastColumn()) {
-        // Clear all formatting for the entire column (data rows only, not header)
-        if (sheet.getLastRow() > 1) {
-          try {
-            // Clear formatting for data rows (row 2 and below), preserving header
-            sheet.getRange(2, columnIndex, numRows - 1, 1).clear({
-              formatOnly: true,
-              contentsOnly: false,
-              validationsOnly: true
-            });
-          } catch (e) {
-            Logger.log(`Error clearing data rows: ${e.message}`);
-          }
-        }
-
-        // Clear formatting for header separately, preserving bold
-        try {
-          const headerCell = sheet.getRange(1, columnIndex);
-          const headerValue = headerCell.getValue();
-
-          // Reset all formatting except bold
-          headerCell.setBackground(null)
-            .setBorder(null, null, null, null, null, null)
-            .setFontColor(null);
-
-          // Ensure header is bold
-          headerCell.setFontWeight('bold');
-
-        } catch (e) {
-          Logger.log(`Error formatting header: ${e.message}`);
-        }
-
-        // Additionally clear specific formatting for data rows
-        try {
-          if (sheet.getLastRow() > 1) {
-            const dataRows = sheet.getRange(2, columnIndex, Math.max(sheet.getLastRow() - 1, 1), 1);
-            dataRows.setBackground(null);
-            dataRows.setBorder(null, null, null, null, null, null);
-            dataRows.setFontColor(null);
-            dataRows.setFontWeight(null);
-          }
-        } catch (e) {
-          Logger.log(`Error clearing specific formatting: ${e.message}`);
-        }
-
-        // Clear conditional formatting specifically for this column
-        const rules = sheet.getConditionalFormatRules();
-        let newRules = [];
-        let removedRules = 0;
-
-        for (const rule of rules) {
-          const ranges = rule.getRanges();
-          let shouldRemove = false;
-
-          // Check if any range in this rule applies to our column
-          for (const range of ranges) {
-            if (range.getColumn() === columnIndex) {
-              shouldRemove = true;
-              break;
-            }
-          }
-
-          if (!shouldRemove) {
-            newRules.push(rule);
+    }
+    
+    // Always clean data validations for the entire column (even for current column)
+    if (lastRow > 1) {
+      // Clear data validations in the entire column
+      sheet.getRange(2, columnIndex, lastRow - 1, 1).clearDataValidations();
+      
+      // For previous columns, thoroughly clean all sync-related values
+      if (!isCurrentColumn) {
+        // Get all values to check for specific sync status values
+        const values = sheet.getRange(2, columnIndex, lastRow - 1, 1).getValues();
+        const newValues = [];
+        let cleanedCount = 0;
+        
+        // Clear only cells containing specific sync status values
+        for (let i = 0; i < values.length; i++) {
+          const value = values[i][0];
+          
+          // Check if the value is a known sync status value
+          if (value === "Modified" || 
+              value === "Not modified" || 
+              value === "Synced" || 
+              value === "Error") {
+            newValues.push(['']); // Clear known status values
+            cleanedCount++;
           } else {
-            removedRules++;
+            newValues.push([value]); // Keep other values
           }
         }
-
-        if (removedRules > 0) {
-          sheet.setConditionalFormatRules(newRules);
-          Logger.log(`Removed ${removedRules} conditional formatting rules from column ${columnLetter}`);
-        }
-      } else {
-        Logger.log(`Column ${columnLetter} is beyond the sheet bounds (${sheet.getLastColumn()}), did minimal cleanup`);
+        
+        // Set the cleaned values back to the sheet
+        sheet.getRange(2, columnIndex + 1, values.length, 1).setValues(newValues);
+        Logger.log(`Cleared ${cleanedCount} sync status values in column ${columnLetter}`);
+        
+        // Remove conditional formatting for this column
+        removeConditionalFormattingForColumn(sheet, columnIndex);
       }
-
-      Logger.log(`Completed cleanup for column ${columnLetter}`);
-    } catch (innerError) {
-      Logger.log(`Error during column cleanup operations: ${innerError.message}`);
     }
+    
+    Logger.log(`Cleanup of column ${columnLetter} complete`);
   } catch (error) {
-    Logger.log(`Error cleaning up column ${columnLetter}: ${error.message}`);
+    Logger.log(`Error in cleanupColumnFormatting: ${error.message}`);
+    Logger.log(`Stack trace: ${error.stack}`);
   }
 }
 
-/**
- * Scans and cleans up all sync status columns except the current one
- * @param {Sheet} sheet - The sheet to scan
- * @param {string} currentColumnLetter - The letter of the current sync status column
- */
-function scanAndCleanupAllSyncColumns(sheet, currentColumnLetter) {
+// Function to identify and clean up previous Sync Status columns
+function cleanupPreviousSyncStatusColumn(sheet, currentSyncColumn) {
   try {
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const currentColumnIndex = currentColumnLetter ? columnLetterToIndex(currentColumnLetter) - 1 : -1; // Convert to 0-based
-    const columnsWithValidation = [];
-
-    // First check for data validation rules that match our Sync Status patterns
-    try {
+    Logger.log(`Looking for previous Sync Status columns to clean up (current: ${currentSyncColumn})`);
+    
+    // Get script properties
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const sheetName = sheet.getName();
+    const previousSyncColumnKey = `PREVIOUS_TRACKING_COLUMN_${sheetName}`;
+    const previousSyncColumn = scriptProperties.getProperty(previousSyncColumnKey);
+    
+    // Clean up the known previous column first if it exists and is different from current
+    if (previousSyncColumn && previousSyncColumn !== currentSyncColumn) {
+      Logger.log(`Cleaning up known previous Sync Status column: ${previousSyncColumn}`);
+      cleanupColumnFormatting(sheet, previousSyncColumn, false);
+      
+      // Force a complete clear of the previous column
+      const previousColumnIndex = letterToColumn(previousSyncColumn);
       const lastRow = Math.max(sheet.getLastRow(), 2);
-      const validations = sheet.getRange(1, 1, lastRow, headers.length).getDataValidations();
-
-      // Check each column for validation rules
-      for (let i = 0; i < headers.length; i++) {
-        // Skip the current tracking column
-        if (i === currentColumnIndex) {
-          continue;
+      
+      // Completely clear everything in the previous column if it's confirmed to be a Sync Status column
+      const headerCell = sheet.getRange(1, previousColumnIndex);
+      const headerValue = headerCell.getValue();
+      const headerNote = headerCell.getNote();
+      
+      if (headerValue === "Sync Status" || 
+          headerValue === "Sync Status (hidden)" || 
+          headerValue === "Status" ||
+          (headerNote && (headerNote.includes('sync') || headerNote.includes('track') || headerNote.includes('Pipedrive')))) {
+        
+        // Set all cells in the column to blank in a single batch operation
+        const range = sheet.getRange(1, previousColumnIndex, lastRow, 1);
+        const blankValues = Array(lastRow).fill(['']);
+        
+        Logger.log(`Force-clearing entire previous Sync Status column ${previousSyncColumn}`);
+        range.setValues(blankValues);
+        range.clearFormat();
+        if (lastRow > 0) {
+          range.clearDataValidations();
         }
-
-        try {
-          // Check validation rules in this column
-          for (let j = 0; j < validations.length; j++) {
-            if (validations[j][i] !== null) {
-              try {
-                const criteria = validations[j][i].getCriteriaType();
-                const values = validations[j][i].getCriteriaValues();
-
-                // Look for our specific validation values (Modified, Not modified, etc.)
-                if (values &&
-                    (values.join(',').includes('Modified') ||
-                     values.join(',').includes('Not modified') ||
-                     values.join(',').includes('Synced'))) {
-                  columnsWithValidation.push(i);
-                  Logger.log(`Found Sync Status validation at ${columnToLetter(i + 1)}`);
-                  break; // Found validation in this column, no need to check more cells
-                }
-              } catch (e) {
-                // Some validation types may not support getCriteriaValues
-                Logger.log(`Error checking validation criteria: ${e.message}`);
-              }
-            }
-          }
-        } catch (error) {
-          Logger.log(`Error checking column ${i} for validation: ${error.message}`);
-        }
+        range.clearNote();
       }
-    } catch (error) {
-      Logger.log(`Error checking for validations: ${error.message}`);
     }
-
-    // Check for columns with header notes that might be Sync Status columns
-    for (let i = 0; i < headers.length; i++) {
-      // Skip the current tracking column
-      if (i === currentColumnIndex) {
+    
+    // Now scan for any other columns that might be Sync Status columns
+    const lastColumn = sheet.getLastColumn();
+    
+    for (let i = 1; i <= lastColumn; i++) {
+      const colLetter = columnToLetter(i);
+      
+      // Skip the current sync column
+      if (colLetter === currentSyncColumn) {
         continue;
       }
-
-      try {
-        const columnPos = i + 1; // 1-based for getRange
-        const headerCell = sheet.getRange(1, columnPos);
-        const note = headerCell.getNote();
-
-        if (note && (note.includes('sync') || note.includes('track') || note.includes('Pipedrive'))) {
-          Logger.log(`Found column with sync-related note at ${columnToLetter(columnPos)}: "${note}"`);
-          const columnToClean = columnToLetter(columnPos);
-          cleanupColumnFormatting(sheet, columnToClean);
+      
+      const headerCell = sheet.getRange(1, i);
+      const headerValue = headerCell.getValue();
+      const headerNote = headerCell.getNote();
+      
+      // Check if this column has sync status indicators
+      if (headerValue === "Sync Status" || 
+          headerValue === "Sync Status (hidden)" || 
+          headerValue === "Status" ||
+          (headerNote && (headerNote.includes('sync') || headerNote.includes('track') || headerNote.includes('Pipedrive')))) {
+        
+        Logger.log(`Found additional Sync Status column at ${colLetter}, cleaning up`);
+        cleanupColumnFormatting(sheet, colLetter, false);
+        
+        // Also do a thorough cleanup of the entire column
+        const lastRow = Math.max(sheet.getLastRow(), 2);
+        const range = sheet.getRange(1, i, lastRow, 1);
+        const blankValues = Array(lastRow).fill(['']);
+        
+        Logger.log(`Force-clearing entire additional Sync Status column ${colLetter}`);
+        range.setValues(blankValues);
+        range.clearFormat();
+        if (lastRow > 0) {
+          range.clearDataValidations();
         }
-      } catch (error) {
-        Logger.log(`Error checking column ${i} header note: ${error.message}`);
+        range.clearNote();
       }
     }
-
-    // Look for columns with "Sync Status" header
-    for (let i = 0; i < headers.length; i++) {
-      const headerValue = headers[i];
-
-      // Skip the current tracking column
-      if (i === currentColumnIndex) {
-        continue;
-      }
-
-      // If we find a "Sync Status" header in a different column, clean it up
-      if (headerValue === "Sync Status") {
-        const columnToClean = columnToLetter(i + 1);
-        Logger.log(`Found orphaned Sync Status column at ${columnToClean}, cleaning up`);
-        cleanupColumnFormatting(sheet, columnToClean);
-      }
-    }
-
-    // Clean up any columns with validation that aren't the current column
-    for (const columnIndex of columnsWithValidation) {
-      const columnToClean = columnToLetter(columnIndex + 1);
-      Logger.log(`Found column with validation at ${columnToClean}, cleaning up`);
-      cleanupColumnFormatting(sheet, columnToClean);
-    }
-
-    // Scan for orphaned formatting that matches Sync Status patterns
-    const dataRange = sheet.getDataRange();
-    const numRows = Math.min(dataRange.getNumRows(), 10); // Check first 10 rows for formatting
-    const numCols = dataRange.getNumColumns();
-
-    // Look at ALL columns for specific background colors
-    for (let col = 1; col <= numCols; col++) {
-      // Skip current column (1-based)
-      if (col === currentColumnIndex + 1) continue;
-
-      let foundSyncStatusFormatting = false;
-
-      try {
-        // Check for Sync Status cell colors in first few rows
-        for (let row = 2; row <= numRows; row++) {
-          const cell = sheet.getRange(row, col);
-          const background = cell.getBackground();
-
-          // Check for our specific Sync Status background colors
-          if (background === '#FCE8E6' || // Error/Modified 
-              background === '#E6F4EA' || // Synced
-              background === '#F8F9FA') { // Default
-            foundSyncStatusFormatting = true;
-            break;
-          }
-        }
-
-        if (foundSyncStatusFormatting) {
-          const colLetter = columnToLetter(col);
-          Logger.log(`Found column with Sync Status formatting at ${colLetter}, cleaning up`);
-          cleanupColumnFormatting(sheet, colLetter);
-        }
-      } catch (error) {
-        Logger.log(`Error checking column ${col} for formatting: ${error.message}`);
-      }
-    }
-
-    // Additionally check for specific formatting that matches Sync Status patterns
-    cleanupOrphanedConditionalFormatting(sheet, currentColumnIndex);
+    
+    // Clear the previous column tracking since we've cleaned it up
+    scriptProperties.deleteProperty(previousSyncColumnKey);
+    Logger.log(`Cleanup of previous Sync Status columns complete`);
   } catch (error) {
-    Logger.log(`Error in scanAndCleanupAllSyncColumns: ${error.message}`);
+    Logger.log(`Error in cleanupPreviousSyncStatusColumn: ${error.message}`);
+    Logger.log(`Stack trace: ${error.stack}`);
   }
 }
 
-/**
- * Cleans up orphaned conditional formatting rules
- * @param {Sheet} sheet - The sheet to clean up
- * @param {number} currentColumnIndex - The index of the current Sync Status column (0-based)
- */
-function cleanupOrphanedConditionalFormatting(sheet, currentColumnIndex) {
+// Function to remove conditional formatting rules for a specific column
+function removeConditionalFormattingForColumn(sheet, columnIndex) {
   try {
     const rules = sheet.getConditionalFormatRules();
+    const colA1Notation = columnToLetter(columnIndex + 1);
     const newRules = [];
-    let removedRules = 0;
-
-    for (const rule of rules) {
+    
+    // Only keep rules that don't apply to this column
+    for (let i = 0; i < rules.length; i++) {
+      const rule = rules[i];
       const ranges = rule.getRanges();
       let keepRule = true;
-
-      // Check if this rule applies to columns other than our current one
-      // and has formatting that matches our Sync Status patterns
-      for (const range of ranges) {
-        const column = range.getColumn();
-
-        // Skip our current column (currentColumnIndex is 0-based, column is 1-based)
-        if (column === (currentColumnIndex + 1)) {
-          continue;
-        }
-
-        // Check if this rule's formatting matches our Sync Status patterns
-        const bgColor = rule.getBold() || rule.getBackground();
-        if (bgColor) {
-          const background = rule.getBackground();
-          // If background matches our Sync Status colors, this is likely an orphaned rule
-          if (background === '#FCE8E6' || background === '#E6F4EA' || background === '#F8F9FA') {
-            keepRule = false;
-            Logger.log(`Found orphaned conditional formatting at column ${columnToLetter(column)}`);
-            break;
-          }
+      
+      // Check if this rule applies to the column we're cleaning
+      for (let j = 0; j < ranges.length; j++) {
+        const range = ranges[j];
+        const a1Notation = range.getA1Notation();
+        
+        // If the rule includes this column, don't keep it
+        if (a1Notation.includes(colA1Notation)) {
+          keepRule = false;
+          break;
         }
       }
-
+      
       if (keepRule) {
         newRules.push(rule);
-      } else {
-        removedRules++;
       }
     }
-
-    if (removedRules > 0) {
-      sheet.setConditionalFormatRules(newRules);
-      Logger.log(`Removed ${removedRules} orphaned conditional formatting rules`);
-    }
+    
+    // Update the conditional formatting rules
+    sheet.setConditionalFormatRules(newRules);
+    Logger.log(`Removed conditional formatting rules for column ${columnToLetter(columnIndex + 1)}`);
   } catch (error) {
-    Logger.log(`Error cleaning up orphaned conditional formatting: ${error.message}`);
+    Logger.log(`Error removing conditional formatting: ${error.message}`);
   }
 }
 
-/**
- * Converts a column index to letter (e.g., 1 -> A, 27 -> AA)
- * @param {number} columnIndex - The 1-based column index
- * @return {string} The column letter
- */
-function columnToLetter(columnIndex) {
-  let temp;
-  let letter = '';
-  let col = columnIndex;
-  
-  while (col > 0) {
-    temp = (col - 1) % 26;
-    letter = String.fromCharCode(temp + 65) + letter;
-    col = (col - temp - 1) / 26;
-  }
-  
-  return letter;
-}
-
-/**
- * Converts a column letter to index (e.g., A -> 1, AA -> 27)
- * @param {string} columnLetter - The column letter
- * @return {number} The 1-based column index
- */
-function columnLetterToIndex(columnLetter) {
+// Utility function to convert a column letter to a column index (1-based)
+function letterToColumn(letter) {
   let column = 0;
-  const length = columnLetter.length;
+  const length = letter.length;
   
   for (let i = 0; i < length; i++) {
-    column += (columnLetter.charCodeAt(i) - 64) * Math.pow(26, length - i - 1);
+    column += (letter.charCodeAt(i) - 64) * Math.pow(26, length - i - 1);
   }
   
   return column;
 }
 
-/**
- * Writes data to the Google Sheet with columns matching the filter
- */
-SyncService.writeDataToSheet = function(items, options) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  // Get sheet name from options or properties
-  const sheetName = options.sheetName ||
-    PropertiesService.getScriptProperties().getProperty('SHEET_NAME') ||
-    DEFAULT_SHEET_NAME;
-
-  let sheet = ss.getSheetByName(sheetName);
-
-  // Create the sheet if it doesn't exist
-  if (!sheet) {
-    sheet = ss.insertSheet(sheetName);
-  }
-
-  // IMPORTANT: Clean up previous sync status column before writing new data
-  SyncService.cleanupPreviousSyncStatusColumn(sheet, sheetName);
-
-  // Check if two-way sync is enabled for this sheet
-  const scriptProperties = PropertiesService.getScriptProperties();
-  const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
-  const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
-  const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
-
-  // For preservation of status data - key is entity ID, value is status
-  let statusByIdMap = new Map();
-  let configuredTrackingColumn = '';
-  let statusColumnIndex = -1;
-
-  // ... rest of existing writeDataToSheet code ...
-
-  // CRITICAL: Clean up any lingering formatting from previous Sync Status columns
-  // This needs to happen AFTER the sheet is rebuilt
-  if (twoWaySyncEnabled && statusColumnIndex !== -1) {
-    try {
-      Logger.log(`Performing aggressive column cleanup after sheet rebuild - current status column: ${statusColumnIndex}`);
-
-      // The current status column letter
-      const currentStatusColLetter = SyncService.columnToLetter(statusColumnIndex + 1);
-
-      // Clean ALL columns in the sheet except the current Sync Status column
-      const lastCol = sheet.getLastColumn() + 5; // Add buffer for hidden columns
-      for (let i = 0; i < lastCol; i++) {
-        if (i !== statusColumnIndex) { // Skip the current status column
-          try {
-            const colLetter = SyncService.columnToLetter(i + 1);
-            Logger.log(`Checking column ${colLetter} for cleanup`);
-
-            // Check if this column has a 'Sync Status' header or sync-related note
-            const headerCell = sheet.getRange(1, i + 1);
-            const headerValue = headerCell.getValue();
-            const note = headerCell.getNote();
-
-            if (headerValue === "Sync Status" ||
-              (note && (note.includes('sync') || note.includes('track') || note.includes('Pipedrive')))) {
-              Logger.log(`Found Sync Status indicators in column ${colLetter}, cleaning up`);
-              SyncService.cleanupColumnFormatting(sheet, colLetter);
-            }
-          } catch (e) {
-            Logger.log(`Error checking column ${colLetter}: ${e.message}`);
-          }
-        }
-      }
-    } catch (error) {
-      Logger.log(`Error in aggressive column cleanup: ${error.message}`);
-    }
-  }
-};
-
-/**
- * Cleans up previous Sync Status column formatting
- * @param {Sheet} sheet - The sheet containing the column
- * @param {string} sheetName - The name of the sheet
- */
-SyncService.cleanupPreviousSyncStatusColumn = function(sheet, sheetName) {
-  try {
-    const scriptProperties = PropertiesService.getScriptProperties();
-    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
-    const previousColumnKey = `PREVIOUS_TRACKING_COLUMN_${sheetName}`;
-    const currentColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey) || '';
-    const previousColumn = scriptProperties.getProperty(previousColumnKey) || '';
-
-    // Clean up the specifically tracked previous column
-    if (previousColumn && previousColumn !== currentColumn) {
-      SyncService.cleanupColumnFormatting(sheet, previousColumn);
-      scriptProperties.deleteProperty(previousColumnKey);
-    }
-
-    // NEW: Store current column positions for future comparison
-    // This helps when columns are deleted and the position shifts
-    const currentColumnIndex = currentColumn ? SyncService.columnLetterToIndex(currentColumn) : -1;
-    if (currentColumnIndex >= 0) {
-      scriptProperties.setProperty(`CURRENT_SYNCSTATUS_POS_${sheetName}`, currentColumnIndex.toString());
-    }
-
-    // IMPORTANT: Scan ALL columns for "Sync Status" headers and validation patterns
-    SyncService.scanAndCleanupAllSyncColumns(sheet, currentColumn);
-  } catch (error) {
-    Logger.log(`Error in cleanupPreviousSyncStatusColumn: ${error.message}`);
-  }
-};
-
-// Export functions to the SyncService namespace
-SyncService.syncFromPipedrive = syncFromPipedrive;
-SyncService.syncPipedriveDataToSheet = syncPipedriveDataToSheet;
-SyncService.isSyncRunning = isSyncRunning;
-SyncService.setSyncRunning = setSyncRunning;
-SyncService.updateSyncStatus = updateSyncStatus;
-SyncService.showSyncStatus = showSyncStatus;
-SyncService.getSyncStatus = getSyncStatus;
-SyncService.formatEntityTypeName = formatEntityTypeName;
-SyncService.cleanupColumnFormatting = cleanupColumnFormatting;
-SyncService.scanAndCleanupAllSyncColumns = scanAndCleanupAllSyncColumns;
-SyncService.columnToLetter = columnToLetter;
-SyncService.columnLetterToIndex = columnLetterToIndex;
-
-/**
- * Saves the two-way sync settings for a sheet and sets up the tracking column
- * @param {boolean} enableTwoWaySync Whether to enable two-way sync
- * @param {string} trackingColumn The column letter to use for tracking changes
- */
-function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
-  try {
-    // Get the active sheet
-    const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    const activeSheetName = activeSheet.getName();
-
-    // Get script properties
-    const scriptProperties = PropertiesService.getScriptProperties();
-    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
-    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
-    
-    // Store the previous tracking column if it exists (for cleanup purposes)
-    const previousTrackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey) || '';
-
-    // Save the enabled setting
-    scriptProperties.setProperty(twoWaySyncEnabledKey, enableTwoWaySync.toString());
-    
-    // If enabling two-way sync
-    if (enableTwoWaySync) {
-      // Set up the onEdit trigger
-      setupOnEditTrigger();
-
-      // Determine which column to use for tracking
-      let trackingColumnIndex;
-      if (trackingColumn) {
-        // Convert column letter to index (1-based)
-        trackingColumnIndex = columnLetterToIndex(trackingColumn);
-      } else {
-        // Use the last column + 1 (to add a new column at the end)
-        trackingColumnIndex = activeSheet.getLastColumn() + 1;
-      }
-
-      // Set up the tracking column header
-      const headerRow = 1; // Assuming first row is header
-      const trackingHeader = "Sync Status";
-
-      // Check if there's already a Sync Status column
-      const headers = activeSheet.getRange(1, 1, 1, activeSheet.getLastColumn()).getValues()[0];
-      let existingSyncStatusCol = -1;
-      
-      for (let i = 0; i < headers.length; i++) {
-        if (headers[i] === trackingHeader) {
-          existingSyncStatusCol = i + 1; // Convert to 1-based
-          break;
-        }
-      }
-      
-      // If a Sync Status column already exists, use that instead
-      if (existingSyncStatusCol !== -1) {
-        trackingColumnIndex = existingSyncStatusCol;
-        
-        // Update the tracking column property
-        trackingColumn = columnToLetter(trackingColumnIndex);
-        scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
-        
-        Logger.log(`Found existing Sync Status column at ${trackingColumn} (${trackingColumnIndex})`);
-      } else {
-        // No existing column, create a new one
-        activeSheet.getRange(headerRow, trackingColumnIndex).setValue(trackingHeader);
-        
-        // Update the tracking column property
-        trackingColumn = columnToLetter(trackingColumnIndex);
-        scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
-        
-        Logger.log(`Created new Sync Status column at ${trackingColumn} (${trackingColumnIndex})`);
-      }
-
-      // Style the header cell
-      const headerCell = activeSheet.getRange(headerRow, trackingColumnIndex);
-      headerCell
-        .setBackground('#E8F0FE')
-        .setFontWeight('bold')
-        .setNote('This column tracks changes for two-way sync with Pipedrive');
-
-      // Add data validation for all cells in the column
-      const lastRow = Math.max(activeSheet.getLastRow(), 2);
-      if (lastRow > 1) {
-        const dataRange = activeSheet.getRange(2, trackingColumnIndex, lastRow - 1, 1);
-        const rule = SpreadsheetApp.newDataValidation()
-          .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
-          .build();
-        dataRange.setDataValidation(rule);
-
-        // Set default values for empty cells
-        const values = dataRange.getValues();
-        const newValues = values.map(row => {
-          return [row[0] || 'Not modified'];
-        });
-        dataRange.setValues(newValues);
-
-        // Style the status column
-        dataRange
-          .setBackground('#F8F9FA')
-          .setBorder(null, true, null, true, false, false, '#DADCE0', SpreadsheetApp.BorderStyle.SOLID);
-
-        // Set up conditional formatting
-        const rules = activeSheet.getConditionalFormatRules();
-
-        // Add rule for "Modified" status - red background
-        const modifiedRule = SpreadsheetApp.newConditionalFormatRule()
-          .whenTextEqualTo('Modified')
-          .setBackground('#FCE8E6')
-          .setFontColor('#D93025')
-          .setRanges([dataRange])
-          .build();
-        rules.push(modifiedRule);
-
-        // Add rule for "Synced" status - green background
-        const syncedRule = SpreadsheetApp.newConditionalFormatRule()
-          .whenTextEqualTo('Synced')
-          .setBackground('#E6F4EA')
-          .setFontColor('#137333')
-          .setRanges([dataRange])
-          .build();
-        rules.push(syncedRule);
-
-        // Add rule for "Error" status - yellow background
-        const errorRule = SpreadsheetApp.newConditionalFormatRule()
-          .whenTextEqualTo('Error')
-          .setBackground('#FEF7E0')
-          .setFontColor('#B06000')
-          .setRanges([dataRange])
-          .build();
-        rules.push(errorRule);
-
-        activeSheet.setConditionalFormatRules(rules);
-      }
-      
-      // Store the current column position for comparison during cleanup
-      scriptProperties.setProperty(`CURRENT_SYNCSTATUS_POS_${activeSheetName}`, (trackingColumnIndex - 1).toString());
-      
-      // If this is a different column than before, store the previous one for cleanup
-      if (previousTrackingColumn && previousTrackingColumn !== trackingColumn) {
-        scriptProperties.setProperty(`PREVIOUS_TRACKING_COLUMN_${activeSheetName}`, previousTrackingColumn);
-      }
-    } else {
-      // If disabling two-way sync, remove the trigger
-      removeOnEditTrigger();
-
-      // Clean up the tracking column if it exists
-      if (previousTrackingColumn) {
-        cleanupColumnFormatting(activeSheet, previousTrackingColumn);
-      }
-    }
-
-    // Return success
-    return true;
-  } catch (error) {
-    Logger.log(`Error in saveTwoWaySyncSettings: ${error.message}`);
-    return false;
-  }
-}
-
-/**
- * Stores original data from Pipedrive for later comparison
- * @param {Array} items - The data items from Pipedrive
- * @param {Object} options - Options including sheet name
- */
-function storeOriginalData(items, options) {
-  try {
-    if (!items || !options || !options.sheetName) return;
-    
-    const scriptProperties = PropertiesService.getScriptProperties();
-    const originalDataKey = `ORIGINAL_DATA_${options.sheetName}`;
-    
-    // Create a map of original values keyed by record ID
-    const originalData = {};
-    
-    Logger.log(`STORE_DEBUG: Storing original data for ${items.length} items`);
-    
-    items.forEach(item => {
-      // Get the item ID (should be the first column)
-      const id = item.id;
-      if (!id) return;
-      
-      // Extract values for this item
-      const rowData = {};
-      
-      // Extract values for all configured columns
-      options.columns.forEach((column, index) => {
-        const columnKey = typeof column === 'object' ? column.key : column;
-        const columnName = options.headerRow[index];
-        
-        if (columnName) {
-          let rawValue;
-          try {
-            // Get the raw value from the item using the column key
-            rawValue = getValueByPath(item, columnKey);
-            
-            // For certain field types, we need to preserve the complex structure
-            const isStructuralField = 
-              columnKey.startsWith('phone.') || 
-              columnKey.startsWith('email.') || 
-              columnKey.startsWith('custom_fields.') ||
-              columnKey.includes('.value');
-            
-            if (isStructuralField) {
-              // For structural fields, store an object with the key and original structure
-              // This helps with complex nested fields during comparison
-              Logger.log(`STORE_DEBUG: Storing structural field ${columnName} with key ${columnKey}`);
-              
-              // Create a subobject for handling in onEdit
-              const structureType = columnKey.split('.')[0];
-              
-              if (structureType === 'phone' || structureType === 'email') {
-                // Store the whole array/object for phone/email fields
-                if (item[structureType]) {
-                  rowData[columnName] = {
-                    __isStructural: true,
-                    __key: columnKey,
-                    __value: item[structureType],
-                    __normalized: getNormalizedFieldValue(item, columnKey)
-                  };
-                  Logger.log(`STORE_DEBUG: Stored complex ${structureType} structure for column ${columnName}`);
-                } else {
-                  rowData[columnName] = formatValue(rawValue, columnKey, options.optionMappings);
-                }
-              } else if (structureType === 'custom_fields') {
-                // Store custom field structure
-                if (item.custom_fields) {
-                  const parts = columnKey.split('.');
-                  const fieldKey = parts[1];
-                  
-                  rowData[columnName] = {
-                    __isStructural: true,
-                    __key: columnKey,
-                    __value: item.custom_fields[fieldKey],
-                    __normalized: getNormalizedFieldValue(item, columnKey)
-                  };
-                  Logger.log(`STORE_DEBUG: Stored complex custom_field structure for column ${columnName}`);
-                } else {
-                  rowData[columnName] = formatValue(rawValue, columnKey, options.optionMappings);
-                }
-              } else {
-                // Handle other nested structures
-                try {
-                  rowData[columnName] = {
-                    __isStructural: true,
-                    __key: columnKey,
-                    __value: rawValue,
-                    __normalized: getNormalizedFieldValue(item, columnKey)
-                  };
-                  Logger.log(`STORE_DEBUG: Stored complex nested structure for column ${columnName}`);
-                } catch (e) {
-                  rowData[columnName] = formatValue(rawValue, columnKey, options.optionMappings);
-                }
-              }
-            } else {
-              // For regular fields, just store the formatted value
-              rowData[columnName] = formatValue(rawValue, columnKey, options.optionMappings);
-            }
-          } catch (valueError) {
-            Logger.log(`STORE_DEBUG: Error getting value for column ${columnName}: ${valueError.message}`);
-            rowData[columnName] = null;
-          }
-        }
-      });
-      
-      // Store this row's data
-      originalData[id.toString()] = rowData;
-    });
-    
-    // Store the original data in script properties
-    scriptProperties.setProperty(originalDataKey, JSON.stringify(originalData));
-    Logger.log(`Stored original data for ${items.length} records in sheet ${options.sheetName}`);
-  } catch (error) {
-    Logger.log(`Error in storeOriginalData: ${error.message}`);
-  }
-}
-
-// Export the onEdit function to the global scope for the trigger to work correctly
-this.onEdit = onEdit;
-
-// Export the trigger functions to the SyncService namespace
-SyncService.setupOnEditTrigger = setupOnEditTrigger;
-SyncService.removeOnEditTrigger = removeOnEditTrigger;
-
-/**
- * Gets the normalized value from a field regardless of its structure
- * This is crucial for handling different ways data is structured in Pipedrive
- * @param {Object} data - The data object containing the field
- * @param {string} key - The key or path to the field
- * @return {string} The normalized value for comparison
- */
-function getNormalizedFieldValue(data, key) {
-  try {
-    Logger.log(`FIELD_DEBUG: Starting field normalization for key "${key}"`);
-    
-    if (!data || !key) {
-      Logger.log(`FIELD_DEBUG: Empty data or key`);
-      return '';
-    }
-    
-    // If key is already a value, normalize it based on type
-    if (typeof key !== 'string') {
-      Logger.log(`FIELD_DEBUG: Key is a value of type ${typeof key}, normalizing directly`);
-      return normalizeValueByType(key);
-    }
-    
-    // Dump what we received for detailed debugging
-    try {
-      Logger.log(`FIELD_DEBUG: Data object keys: ${Object.keys(data)}`);
-      
-      // If the key has a period, log what we find at each level
-      if (key.includes('.')) {
-        const parts = key.split('.');
-        let partData = data;
-        
-        for (let i = 0; i < parts.length; i++) {
-          const part = parts[i];
-          if (partData && typeof partData === 'object') {
-            Logger.log(`FIELD_DEBUG: At level ${i}, part "${part}", found keys: ${Object.keys(partData)}`);
-            if (partData[part] !== undefined) {
-              Logger.log(`FIELD_DEBUG: Found value at level ${i}: ${typeof partData[part]}`);
-              partData = partData[part];
-            } else {
-              Logger.log(`FIELD_DEBUG: No value found at level ${i}`);
-              break;
-            }
-          } else {
-            Logger.log(`FIELD_DEBUG: At level ${i}, partData is not an object`);
-            break;
-          }
-        }
-      } else if (data[key] !== undefined) {
-        Logger.log(`FIELD_DEBUG: Direct key lookup found type: ${typeof data[key]}`);
-      }
-    } catch (debugError) {
-      Logger.log(`FIELD_DEBUG: Error in debug logging: ${debugError.message}`);
-    }
-    
-    // First try to get the value using standard path lookup
-    let value;
-    try {
-      value = getValueByPath(data, key);
-      Logger.log(`FIELD_DEBUG: getValueByPath returned: ${JSON.stringify(value)}`);
-    } catch (e) {
-      Logger.log(`FIELD_DEBUG: Error getting value by path: ${e.message}`);
-      // Continue with specialized handling
-    }
-    
-    // Special case for phone fields - we want to handle them specially to ignore formatting
-    // Check if this is a phone field based on the key name
-    const isPhoneField = 
-      key === 'phone' || 
-      key.startsWith('phone.') ||
-      (typeof key === 'string' && 
-        (key.toLowerCase().includes('phone') || 
-         key.toLowerCase().includes('mobile') || 
-         key.toLowerCase().includes('cell')));
-    
-    if (isPhoneField) {
-      // For phone fields, use phone number normalization regardless of path format
-      let phoneValue;
-      if (key.includes('.')) {
-        // It's a nested path, use the getPhoneNumberFromField function
-        phoneValue = getPhoneNumberFromField(data, key);
-      } else {
-        // It's a simple field, just normalize the value
-        phoneValue = normalizePhoneNumber(value || data[key]);
-      }
-      Logger.log(`FIELD_DEBUG: Phone field handling returned: "${phoneValue}"`);
-      return phoneValue;
-    }
-    
-    // Check if this is an email field
-    const isEmailField = 
-      key === 'email' || 
-      key.startsWith('email.') ||
-      (typeof key === 'string' && key.toLowerCase().includes('email'));
-    
-    if (isEmailField) {
-      // Special handling for email fields - always lowercase and trim
-      let emailValue;
-      if (key.includes('.')) {
-        // Handle nested email paths
-        if (key.startsWith('email.')) {
-          // Try to extract using standard email handling
-          const parts = key.split('.');
-          const label = parts[1];
-          
-          if (Array.isArray(data.email)) {
-            // Try to find email with matching label
-            const match = data.email.find(e => 
-              e && e.label && e.label.toLowerCase() === label.toLowerCase()
-            );
-            
-            if (match && match.value) {
-              emailValue = match.value;
-            } else if (label === 'primary' || label === 'main') {
-              // Try to find primary email
-              const primary = data.email.find(e => e && e.primary);
-              if (primary && primary.value) {
-                emailValue = primary.value;
-              }
-            }
-            
-            // Fallback to first email if available
-            if (!emailValue && data.email.length > 0) {
-              if (data.email[0].value) {
-                emailValue = data.email[0].value;
-              } else if (typeof data.email[0] === 'string') {
-                emailValue = data.email[0];
-              }
-            }
-          }
-        } else {
-          // Try to extract using general path lookup
-          emailValue = value;
-        }
-      } else {
-        // Simple email field
-        emailValue = value;
-        
-        // Handle array of email objects
-        if (Array.isArray(emailValue) && emailValue.length > 0) {
-          if (emailValue[0].value) {
-            // Find primary or use first
-            const primary = emailValue.find(e => e && e.primary);
-            emailValue = primary ? primary.value : emailValue[0].value;
-          } else if (typeof emailValue[0] === 'string') {
-            emailValue = emailValue[0];
-          }
-        } else if (emailValue && typeof emailValue === 'object' && emailValue.value) {
-          emailValue = emailValue.value;
-        }
-      }
-      
-      // Ensure we have a string
-      emailValue = String(emailValue || '');
-      
-      // Enhanced email normalization:
-      // 1. Lowercase
-      // 2. Trim whitespace
-      // 3. Handle common email domain typos
-      let normalizedEmail = emailValue.toLowerCase().trim();
-      
-      // Extract the domain part for better comparison
-      if (normalizedEmail.includes('@')) {
-        const parts = normalizedEmail.split('@');
-        const username = parts[0];
-        let domain = parts[1];
-        
-        // Fix common domain typos
-        if (domain === 'gmail.comm') domain = 'gmail.com';
-        if (domain === 'gmail.con') domain = 'gmail.com';
-        if (domain === 'gmial.com') domain = 'gmail.com';
-        if (domain === 'hotmail.comm') domain = 'hotmail.com';
-        if (domain === 'hotmail.con') domain = 'hotmail.com';
-        if (domain === 'yahoo.comm') domain = 'yahoo.com';
-        if (domain === 'yahoo.con') domain = 'yahoo.com';
-        
-        // Reassemble the normalized email
-        normalizedEmail = username + '@' + domain;
-      }
-      
-      Logger.log(`FIELD_DEBUG: Email field enhanced normalization from "${emailValue}" to "${normalizedEmail}"`);
-      return normalizedEmail;
-    }
-    
-    // Add special handling for name fields with common typos
-    const isNameField = 
-      key === 'name' || 
-      key.toLowerCase().includes('name') || 
-      key.toLowerCase() === 'person' || 
-      key.toLowerCase() === 'contact';
-    
-    if (isNameField) {
-      Logger.log(`FIELD_DEBUG: Handling name field normalization for key "${key}"`);
-      let nameValue = getValueByPath(data, key);
-      
-      // Ensure we have a string
-      nameValue = nameValue !== null && nameValue !== undefined ? String(nameValue) : '';
-      
-      // If it's an object with a name property, extract it
-      if (typeof nameValue === 'object' && nameValue !== null && nameValue.name) {
-        nameValue = nameValue.name;
-      }
-      
-      // Trim the name
-      let normalizedName = nameValue.trim();
-      
-      // Handle common name typos like extra character at end
-      if (normalizedName.length > 3) {
-        // Check for common pattern where a name might have an extra character at the end
-        // For example "Simpson" vs "Simpsonm" or "John" vs "Johnn"
-        const lastChar = normalizedName.charAt(normalizedName.length - 1);
-        const secondLastChar = normalizedName.charAt(normalizedName.length - 2);
-        
-        // If the last character is the same as the second-to-last character,
-        // it might be a typo (double letter at end)
-        if (lastChar === secondLastChar) {
-          normalizedName = normalizedName.substring(0, normalizedName.length - 1);
-          Logger.log(`FIELD_DEBUG: Fixed double character typo from "${nameValue}" to "${normalizedName}"`);
-        }
-        // If the last character is 'm' and it's a common name ending with "son",
-        // it might be a typo like "Simpson" vs "Simpsonm"
-        else if (lastChar === 'm' && normalizedName.toLowerCase().includes('son')) {
-          normalizedName = normalizedName.substring(0, normalizedName.length - 1);
-          Logger.log(`FIELD_DEBUG: Fixed common 'm' typo from "${nameValue}" to "${normalizedName}"`);
-        }
-        // Check for other common typos based on patterns observed in your data
-        else if ((lastChar === 'n' || lastChar === 'm') && 
-                 normalizedName.toLowerCase().endsWith('mann') || 
-                 normalizedName.toLowerCase().endsWith('manm') ||
-                 normalizedName.toLowerCase().endsWith('sonn') ||
-                 normalizedName.toLowerCase().endsWith('sonm')) {
-          // Normalize common surname endings
-          normalizedName = normalizedName.substring(0, normalizedName.length - 1);
-          Logger.log(`FIELD_DEBUG: Fixed common name ending typo from "${nameValue}" to "${normalizedName}"`);
-        }
-      }
-      
-      Logger.log(`FIELD_DEBUG: Name field normalized from "${nameValue}" to "${normalizedName}"`);
-      return normalizedName;
-    }
-    
-    // CASE 3: CUSTOM FIELDS
-    if (key.startsWith('custom_fields.')) {
-      const parts = key.split('.');
-      const fieldKey = parts[1];
-      Logger.log(`FIELD_DEBUG: Handling custom field: "${fieldKey}"`);
-      
-      if (data.custom_fields && data.custom_fields[fieldKey] !== undefined) {
-        const customValue = data.custom_fields[fieldKey];
-        Logger.log(`FIELD_DEBUG: Custom field value type: ${typeof customValue}, ${Array.isArray(customValue) ? 'array' : 'not array'}`);
-        
-        // Object with value and currency (money field)
-        if (customValue && typeof customValue === 'object' && customValue.value !== undefined) {
-          if (customValue.currency !== undefined) {
-            // Money field
-            const result = `${customValue.value}_${customValue.currency}`;
-            Logger.log(`FIELD_DEBUG: Currency field, normalized to: "${result}"`);
-            return result;
-          } else if (customValue.formatted_address !== undefined) {
-            // Address field
-            Logger.log(`FIELD_DEBUG: Address field, normalized to: "${customValue.formatted_address}"`);
-            return customValue.formatted_address;
-          } else {
-            // Other field with value property
-            const result = normalizeValueByType(customValue.value);
-            Logger.log(`FIELD_DEBUG: Generic field with value property, normalized to: "${result}"`);
-            return result;
-          }
-        }
-        
-        // Multi-select fields (array of option IDs)
-        if (Array.isArray(customValue)) {
-          const result = customValue.join(',');
-          Logger.log(`FIELD_DEBUG: Array custom field, normalized to: "${result}"`);
-          return result;
-        }
-        
-        // Regular value
-        const result = normalizeValueByType(customValue);
-        Logger.log(`FIELD_DEBUG: Basic custom field, normalized to: "${result}"`);
-        return result;
-      }
-    }
-    
-    // CASE 4: PERSON, ORG, DEAL references
-    const entityFields = ['person_id', 'org_id', 'deal_id', 'organization', 'person', 'deal', 'creator', 'owner'];
-    if (entityFields.includes(key) || 
-        key.endsWith('_name') || 
-        key.endsWith('_id') ||
-        (value && typeof value === 'object' && value.name !== undefined)) {
-      
-      Logger.log(`FIELD_DEBUG: Handling entity reference field`);
-      
-      // If it's a direct entity reference with name
-      if (value && typeof value === 'object') {
-        if (value.name) {
-          Logger.log(`FIELD_DEBUG: Entity with name, using: "${value.name}"`);
-          return value.name;
-        } else if (value.id) {
-          Logger.log(`FIELD_DEBUG: Entity with ID only, using: "${value.id.toString()}"`);
-          return value.id.toString();
-        }
-      }
-    }
-    
-    // CASE 5: General nested hierarchies not covered in specific cases above
-    if (key.includes('.') && !key.startsWith('phone.') && !key.startsWith('email.') && !key.startsWith('custom_fields.')) {
-      Logger.log(`FIELD_DEBUG: Handling general nested field with key: "${key}"`);
-      
-      // Try to get the value using the specialized method first
-      try {
-        if (value !== undefined) {
-          const result = normalizeValueByType(value);
-          Logger.log(`FIELD_DEBUG: General nested field normalized to: "${result}"`);
-          return result;
-        }
-      } catch (e) {
-        Logger.log(`FIELD_DEBUG: Error normalizing nested field: ${e.message}`);
-      }
-      
-      // Try a different approach - manual traversal
-      try {
-        const parts = key.split('.');
-        let current = data;
-        
-        for (let i = 0; i < parts.length; i++) {
-          if (current === undefined || current === null) {
-            Logger.log(`FIELD_DEBUG: Path traversal failed at part ${i}`);
-            break;
-          }
-          
-          // Handle array indices in the path
-          if (!isNaN(parseInt(parts[i])) && Array.isArray(current)) {
-            current = current[parseInt(parts[i])];
-          } else {
-            current = current[parts[i]];
-          }
-          
-          Logger.log(`FIELD_DEBUG: Traversed to path part ${i} (${parts[i]}), got ${typeof current}`);
-        }
-        
-        if (current !== undefined) {
-          const result = normalizeValueByType(current);
-          Logger.log(`FIELD_DEBUG: Manual traversal result: "${result}"`);
-          return result;
-        }
-      } catch (e) {
-        Logger.log(`FIELD_DEBUG: Error in manual path traversal: ${e.message}`);
-      }
-    }
-    
-    // For all other cases, normalize the value we got from getValueByPath
-    const result = normalizeValueByType(value);
-    Logger.log(`FIELD_DEBUG: Using standard normalization, result: "${result}"`);
-    return result;
-  } catch (e) {
-    Logger.log(`FIELD_DEBUG: Error in getNormalizedFieldValue for ${key}: ${e.message}`);
-    return '';
-  }
-}
-
-/**
- * Normalizes a value based on its type for consistent comparison
- * @param {*} value - The value to normalize
- * @return {string} Normalized value
- */
-function normalizeValueByType(value) {
-  // Handle null/undefined
-  if (value === null || value === undefined) {
-    return '';
+// Utility function to convert a column index to a letter (A, B, C, ..., Z, AA, AB, ...)
+function columnToLetter(column) {
+  let temp;
+  let letter = '';
+  
+  while (column > 0) {
+    temp = (column - 1) % 26;
+    letter = String.fromCharCode(temp + 65) + letter;
+    column = (column - temp - 1) / 26;
   }
   
-  // Handle arrays
-  if (Array.isArray(value)) {
-    // If array of objects with value property
-    if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
-      if (value[0].value !== undefined) {
-        // Array of objects with value properties
-        return value.map(item => normalizeValueByType(item.value)).join(',');
-      } else if (value[0].name !== undefined) {
-        // Array of objects with names
-        return value.map(item => item.name).join(',');
-      }
-    }
-    // Simple array - join with commas
-    return value.join(',');
-  }
-  
-  // Handle objects
-  if (typeof value === 'object') {
-    // Object with value property
-    if (value.value !== undefined) {
-      return normalizeValueByType(value.value);
-    }
-    // Object with name property (common for entity references)
-    if (value.name !== undefined) {
-      return value.name;
-    }
-    // Object with id property
-    if (value.id !== undefined) {
-      return value.id.toString();
-    }
-    // Last resort - stringify
-    return JSON.stringify(value);
-  }
-  
-  // Handle dates
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-  
-  // Handle booleans
-  if (typeof value === 'boolean') {
-    return value ? 'true' : 'false';
-  }
-  
-  // Handle numbers and scientific notation
-  if (typeof value === 'number' || 
-      (typeof value === 'string' && value.includes('E'))) {
-    try {
-      // Try to parse as number to handle scientific notation
-      const numValue = Number(value);
-      if (!isNaN(numValue)) {
-        // For integers, use fixed notation with no decimals
-        if (Number.isInteger(numValue)) {
-          return numValue.toFixed(0);
-        }
-        // Preserve exact decimal places for better comparisons
-        if (typeof value === 'string' && value.includes('.')) {
-          // Get the decimal places from the original string representation
-          const parts = value.split('.');
-          if (parts.length > 1) {
-            const decimalPlaces = parts[1].replace(/E.*$/, '').length;
-            return numValue.toFixed(decimalPlaces);
-          }
-        }
-        // For decimal numbers, convert to string directly ensuring consistent formatting
-        return numValue.toString();
-      }
-    } catch (e) {
-      // If parsing fails, continue with string handling
-      Logger.log(`Error handling numeric value: ${e.message}`);
-    }
-  }
-  
-  // For ordinary strings
-  if (typeof value === 'string') {
-    // Check if it looks like a phone number
-    if (/^[\d\+\-\(\)\s\.]+$/.test(value)) {
-      // It only contains digits, plus signs, parentheses, spaces, etc.
-      return normalizePhoneNumber(value);
-    }
-    
-    // Check if it looks like an email
-    if (value.includes('@') && value.includes('.')) {
-      return value.toLowerCase().trim();
-    }
-    
-    // Regular string
-    return value;
-  }
-  
-  // Numbers and other values
-  return value.toString();
-}
-
-/**
- * Helper function to check if all edited values in a row match their original values
- * @param {Sheet} sheet - The sheet containing the row
- * @param {number} row - The row number to check
- * @param {Array} headers - The column headers
- * @param {Object} originalValues - The original values for the row, keyed by header name
- * @return {boolean} True if all values match original, false otherwise
- */
-function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
-  try {
-    // If no original values stored, can't verify
-    if (!originalValues || Object.keys(originalValues).length === 0) {
-      Logger.log('No original values stored to compare against');
-      return false;
-    }
-    
-    // Get current values for the entire row
-    const rowValues = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
-    
-    // Get the first value (ID) to use for retrieving the original data
-    const id = rowValues[0];
-    
-    // Create a data object that mimics Pipedrive structure for nested field handling
-    const dataObj = { id: id };
-    
-    // Populate the data object with values from the row
-    headers.forEach((header, index) => {
-      if (index < rowValues.length) {
-        // Use dot notation to create nested objects
-        if (header.includes('.')) {
-          const parts = header.split('.');
-          
-          // Common nested structures to handle specially
-          if (['phone', 'email'].includes(parts[0])) {
-            // Handle phone/email specially
-            if (!dataObj[parts[0]]) {
-              dataObj[parts[0]] = [];
-            }
-            
-            // If it's a label-based path (e.g., phone.mobile)
-            if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
-              dataObj[parts[0]].push({
-                label: parts[1],
-                value: rowValues[index]
-              });
-            } 
-            // If it's an array index path (e.g., phone.0.value)
-            else if (parts.length === 3 && parts[2] === 'value') {
-              const idx = parseInt(parts[1]);
-              while (dataObj[parts[0]].length <= idx) {
-                dataObj[parts[0]].push({});
-              }
-              dataObj[parts[0]][idx].value = rowValues[index];
-            }
-          }
-          // Custom fields
-          else if (parts[0] === 'custom_fields') {
-            if (!dataObj.custom_fields) {
-              dataObj.custom_fields = {};
-            }
-            
-            if (parts.length === 2) {
-              // Simple custom field
-              dataObj.custom_fields[parts[1]] = rowValues[index];
-            } 
-            else if (parts.length > 2) {
-              // Nested custom field
-              if (!dataObj.custom_fields[parts[1]]) {
-                dataObj.custom_fields[parts[1]] = {};
-              }
-              // Handle complex types like address
-              if (parts[2] === 'formatted_address') {
-                dataObj.custom_fields[parts[1]].formatted_address = rowValues[index];
-              } 
-              else if (parts[2] === 'currency') {
-                dataObj.custom_fields[parts[1]].currency = rowValues[index];
-              }
-              else {
-                dataObj.custom_fields[parts[1]][parts[2]] = rowValues[index];
-              }
-            }
-          } else {
-            // Other nested paths - build the structure
-            let current = dataObj;
-            for (let i = 0; i < parts.length - 1; i++) {
-              if (current[parts[i]] === undefined) {
-                // If part is numeric, create an array
-                if (!isNaN(parseInt(parts[i+1]))) {
-                  current[parts[i]] = [];
-                } else {
-                  current[parts[i]] = {};
-                }
-              }
-              current = current[parts[i]];
-            }
-            
-            // Set the value at the final level
-            current[parts[parts.length - 1]] = rowValues[index];
-          }
-        } else {
-          // Regular top-level field
-          dataObj[header] = rowValues[index];
-        }
-      }
-    });
-    
-    // Debug log
-    Logger.log(`Checking ${Object.keys(originalValues).length} fields for original value match`);
-    
-    // Check each column that has a stored original value
-    for (const headerName in originalValues) {
-      // Find the column index for this header
-      const colIndex = headers.indexOf(headerName);
-      if (colIndex === -1) {
-        Logger.log(`Header ${headerName} not found in current headers`);
-        continue; // Header not found
-      }
-      
-      const originalValue = originalValues[headerName];
-      const currentValue = rowValues[colIndex];
-      
-      // Special handling for null/empty values
-      if ((originalValue === null || originalValue === "") && 
-          (currentValue === null || currentValue === "")) {
-        Logger.log(`Both values are empty for ${headerName}, treating as match`);
-        continue; // Both empty, consider a match
-      }
-      
-      // NEW: Check if this is a structural field with complex nested structure
-      if (originalValue && typeof originalValue === 'object' && originalValue.__isStructural) {
-        Logger.log(`Found structural field ${headerName} with key ${originalValue.__key}`);
-        
-        // Use the pre-computed normalized value for comparison
-        const normalizedOriginal = originalValue.__normalized || '';
-        const normalizedCurrent = getNormalizedFieldValue(dataObj, originalValue.__key);
-        
-        Logger.log(`Structural field comparison for ${headerName}: Original="${normalizedOriginal}", Current="${normalizedCurrent}"`);
-        
-        // If the normalized values don't match, return false
-        if (normalizedOriginal !== normalizedCurrent) {
-          Logger.log(`Structural field mismatch found for ${headerName}`);
-          return false;
-        }
-        
-        // Skip to the next field
-        continue;
-      }
-      
-      // Use the generalized field value normalization for regular fields
-      const normalizedOriginal = getNormalizedFieldValue({ [headerName]: originalValue }, headerName);
-      const normalizedCurrent = getNormalizedFieldValue(dataObj, headerName);
-      
-      Logger.log(`Field comparison for ${headerName}: Original="${normalizedOriginal}", Current="${normalizedCurrent}"`);
-      
-      // If the normalized values don't match, return false
-      if (normalizedOriginal !== normalizedCurrent) {
-        Logger.log(`Mismatch found for ${headerName}`);
-        return false;
-      }
-    }
-    
-    // If we reach here, all values with stored originals match
-    Logger.log('All values match original values');
-    return true;
-  } catch (error) {
-    Logger.log(`Error in checkAllValuesMatchOriginal: ${error.message}`);
-    return false;
-  }
+  return letter;
 }
