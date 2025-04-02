@@ -16,18 +16,32 @@ TeamManagerUI.getStyles = function() {
   return `
     :root {
       --primary-color: #4285f4;
+      --primary-hover: #5294ff;
       --primary-dark: #3367d6;
+      --primary-light: #e8f0fe;
       --success-color: #0f9d58;
+      --success-light: #e6f4ea;
       --warning-color: #f4b400;
-      --error-color: #db4437;
+      --warning-light: #fef7e0;
+      --error-color: #ea4335;
+      --error-hover: #d93025;
+      --error-light: #fce8e6;
       --text-dark: #202124;
-      --text-light: #5f6368;
+      --text-medium: #5f6368;
+      --text-light: #80868b;
       --bg-light: #f8f9fa;
+      --bg-white: #ffffff;
       --border-color: #dadce0;
+      --border-light: #f1f3f4;
       --section-bg: #f8f9fa;
-      --shadow: 0 1px 3px rgba(60,64,67,0.15);
-      --shadow-hover: 0 4px 8px rgba(60,64,67,0.2);
-      --transition: all 0.2s ease;
+      --shadow-small: 0 1px 2px rgba(60,64,67,0.1), 0 1px 3px rgba(60,64,67,0.12);
+      --shadow-medium: 0 2px 6px rgba(60,64,67,0.15), 0 1px 2px rgba(60,64,67,0.2);
+      --shadow-large: 0 4px 8px rgba(60,64,67,0.2), 0 2px 4px rgba(60,64,67,0.15);
+      --transition-fast: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      --transition-medium: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      --border-radius-small: 4px;
+      --border-radius-medium: 8px;
+      --border-radius-large: 12px;
     }
     
     * {
@@ -41,15 +55,59 @@ TeamManagerUI.getStyles = function() {
       color: var(--text-dark);
       line-height: 1.5;
       margin: 0;
-      padding: 16px;
+      padding: 0;
       font-size: 14px;
+      background-color: var(--bg-light);
+    }
+    
+    #main-container {
+      max-width: 100%;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    
+    .header {
+      padding: 16px 20px 0;
+    }
+    
+    .footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border-color);
+      margin-top: auto;
+      text-align: right;
     }
     
     h3 {
-      font-size: 18px;
+      font-size: 20px;
       font-weight: 500;
       margin-bottom: 16px;
       color: var(--text-dark);
+    }
+    
+    h4 {
+      font-size: 16px;
+      font-weight: 500;
+      margin: 0;
+      color: var(--text-dark);
+    }
+    
+    h5 {
+      font-size: 14px;
+      font-weight: 500;
+      margin: 0;
+      color: var(--text-dark);
+    }
+    
+    p {
+      margin-bottom: 16px;
+      color: var(--text-medium);
+    }
+
+    .material-icons {
+      font-size: 20px;
+      vertical-align: middle;
     }
 
     @keyframes spin {
@@ -57,18 +115,26 @@ TeamManagerUI.getStyles = function() {
       100% { transform: rotate(360deg); }
     }
 
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes scaleIn {
+      from { transform: scale(0.95); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
     .loading-spinner {
       display: inline-block;
-      width: 12px;
-      height: 12px;
+      width: 16px;
+      height: 16px;
       border: 2px solid rgba(255,255,255,0.5);
       border-radius: 50%;
       border-top-color: white;
-      animation: spin 0.8s linear infinite;
-      margin-right: 5px;
+      animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      margin-right: 8px;
       vertical-align: middle;
-      position: relative;
-      top: -1px;
     }
 
     .button-text {
@@ -77,19 +143,27 @@ TeamManagerUI.getStyles = function() {
     }
 
     .button-loading {
-      background-color: #6B9AE7 !important;
-      cursor: wait !important;
+      background-color: var(--primary-hover) !important;
+      cursor: not-allowed !important;
       opacity: 0.85;
-      transition: all 0.2s ease;
+      transition: var(--transition-fast);
     }
     
-    .section-title {
-      font-size: 15px;
-      font-weight: 500;
-      color: var(--text-dark);
+    .section {
+      margin-bottom: 24px;
+    }
+    
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       margin-bottom: 12px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-light);
+    }
+    
+    .section-header .material-icons {
+      color: var(--primary-color);
     }
     
     .form-container {
@@ -97,27 +171,58 @@ TeamManagerUI.getStyles = function() {
     }
     
     .user-info {
-      background-color: var(--bg-light);
-      padding: 10px 14px;
-      border-radius: 6px;
-      margin-bottom: 16px;
-      border-left: 4px solid var(--primary-color);
+      background-color: var(--primary-light);
+      padding: 12px 16px;
+      border-radius: var(--border-radius-medium);
+      margin-bottom: 20px;
       display: flex;
       align-items: center;
       font-size: 13px;
+      box-shadow: var(--shadow-small);
+      animation: scaleIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     
-    .user-info svg {
+    .user-info .material-icons {
       margin-right: 12px;
-      fill: var(--primary-color);
+      color: var(--primary-color);
+      font-size: 24px;
     }
     
-    .section {
-      background-color: var(--section-bg);
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 16px;
-      border: 1px solid var(--border-color);
+    .card {
+      background-color: var(--bg-white);
+      border-radius: var(--border-radius-medium);
+      margin-bottom: 20px;
+      overflow: hidden;
+      box-shadow: var(--shadow-small);
+      transition: var(--transition-medium);
+      animation: scaleIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .card:hover {
+      box-shadow: var(--shadow-medium);
+    }
+    
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      background-color: var(--primary-light);
+      border-bottom: 1px solid var(--border-light);
+    }
+    
+    .card-header .material-icons {
+      color: var(--primary-color);
+      margin-right: 8px;
+      font-size: 24px;
+    }
+    
+    .card-header h4 {
+      color: var(--primary-dark);
+    }
+    
+    .card-body {
+      padding: 20px;
     }
     
     .form-row {
@@ -127,7 +232,7 @@ TeamManagerUI.getStyles = function() {
     }
     
     .form-group {
-      margin-bottom: 16px;
+      margin-bottom: 20px;
       flex: 1;
     }
     
@@ -135,21 +240,34 @@ TeamManagerUI.getStyles = function() {
       margin-bottom: 0;
     }
     
-    label {
-      display: block;
+    .label {
       font-weight: 500;
       margin-bottom: 6px;
-      color: var(--text-dark);
+      color: var(--text-medium);
       font-size: 13px;
+    }
+    
+    .input-container {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    
+    .input-icon {
+      position: absolute;
+      left: 10px;
+      color: var(--text-light);
+      font-size: 18px;
     }
     
     input, select {
       width: 100%;
-      padding: 8px 12px;
+      padding: 10px 12px 10px 36px;
       border: 1px solid var(--border-color);
-      border-radius: 4px;
+      border-radius: var(--border-radius-small);
       font-size: 14px;
-      transition: var(--transition);
+      transition: var(--transition-fast);
+      background-color: var(--bg-white);
     }
     
     input:focus, select:focus {
@@ -160,9 +278,9 @@ TeamManagerUI.getStyles = function() {
     
     .tooltip {
       display: block;
-      font-size: 11px;
+      font-size: 12px;
       color: var(--text-light);
-      margin-top: 4px;
+      margin-top: 6px;
     }
     
     .button-container {
@@ -171,38 +289,43 @@ TeamManagerUI.getStyles = function() {
       margin-top: 20px;
     }
     
-    .button-primary {
-      background-color: var(--primary-color);
-      color: white;
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
       border: none;
-      padding: 8px 20px;
-      border-radius: 4px;
+      border-radius: var(--border-radius-small);
       font-size: 14px;
       font-weight: 500;
       cursor: pointer;
-      transition: var(--transition);
+      transition: var(--transition-fast);
+      padding: 10px 20px;
+      min-height: 36px;
+    }
+    
+    button .material-icons {
+      font-size: 18px;
+    }
+    
+    .button-primary {
+      background-color: var(--primary-color);
+      color: white;
     }
     
     .button-primary:hover {
-      background-color: var(--primary-dark);
-      box-shadow: var(--shadow-hover);
+      background-color: var(--primary-hover);
+      box-shadow: var(--shadow-medium);
     }
     
     .button-secondary {
       background-color: transparent;
       color: var(--primary-color);
       border: 1px solid var(--primary-color);
-      padding: 7px 14px;
-      margin-right: 12px;
-      border-radius: 4px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: var(--transition);
     }
     
     .button-secondary:hover {
-      background-color: rgba(66, 133, 244, 0.04);
+      background-color: var(--primary-light);
     }
     
     .button-danger {
@@ -211,185 +334,214 @@ TeamManagerUI.getStyles = function() {
     }
     
     .button-danger:hover {
-      background-color: #c53929;
+      background-color: var(--error-hover);
+      box-shadow: var(--shadow-medium);
+    }
+    
+    .icon-button {
+      background-color: transparent;
+      color: var(--text-medium);
+      padding: 4px;
+      min-height: unset;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+    }
+    
+    .icon-button:hover {
+      background-color: var(--bg-light);
+      color: var(--primary-color);
+    }
+    
+    .icon-button.promote-member:hover {
+      background-color: var(--success-light);
+      color: var(--success-color);
+    }
+    
+    .icon-button.demote-member:hover, 
+    .icon-button.remove-member:hover {
+      background-color: var(--error-light);
+      color: var(--error-color);
     }
     
     .tab-container {
-      margin-bottom: 20px;
+      flex: 1;
+      padding: 0 20px;
     }
     
     .tabs {
       display: flex;
       border-bottom: 1px solid var(--border-color);
+      margin-bottom: 16px;
     }
     
     .tab {
-      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
       cursor: pointer;
       font-weight: 500;
-      color: var(--text-light);
+      color: var(--text-medium);
       border-bottom: 2px solid transparent;
-      transition: var(--transition);
+      transition: var(--transition-fast);
+      border-top-left-radius: var(--border-radius-small);
+      border-top-right-radius: var(--border-radius-small);
     }
     
     .tab:hover {
       color: var(--primary-color);
+      background-color: var(--primary-light);
     }
     
     .tab.active {
       color: var(--primary-color);
       border-bottom-color: var(--primary-color);
+      background-color: var(--primary-light);
     }
     
     .tab-content {
       padding: 16px 0;
       display: none;
+      animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     
     .tab-content.active {
       display: block;
     }
     
-    .team-card {
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 16px;
-      background-color: white;
-      transition: var(--transition);
+    .team-dashboard {
+      animation: scaleIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     
-    .team-card:hover {
-      box-shadow: var(--shadow);
-    }
-    
-    .team-header {
+    .team-name-container {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      margin-bottom: 12px;
     }
     
-    .team-name {
-      font-size: 16px;
-      font-weight: 500;
+    .team-id-section {
+      background-color: var(--bg-light);
+      padding: 12px 16px;
+      border-radius: var(--border-radius-small);
+      margin-bottom: 20px;
+      border-left: 3px solid var(--primary-color);
     }
-
-    button {
-      padding: 6px 12px;
-      border-radius: 4px;
-      border: none;
-      background-color: var(--primary-color);
-      color: white;
-      cursor: pointer;
-      font-weight: 500;
-      transition: background-color 0.2s ease;
-      display: inline-flex;
+    
+    .team-id-display-container {
+      display: flex;
       align-items: center;
-      justify-content: center;
-      min-height: 32px;
-    }
-
-    button:hover {
-      background-color: var(--primary-dark);
-    }
-
-    .remove-member {
-      background-color: var(--error-color);
-      min-width: 80px;
-    }
-
-    .remove-member:hover {
-      background-color: #c53929;
-      color: white !important;
+      gap: 8px;
+      margin: 6px 0;
     }
     
     .badge {
       font-size: 11px;
-      padding: 2px 8px;
+      padding: 2px 10px;
       border-radius: 12px;
       background-color: var(--bg-light);
-      color: var(--text-light);
+      color: var(--text-medium);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
     }
     
     .badge.admin {
-      background-color: #e8f0fe;
+      background-color: var(--primary-light);
       color: var(--primary-color);
     }
     
+    .badge .material-icons {
+      font-size: 14px;
+    }
+    
     .team-members {
-      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
     
     .team-member {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 6px 0;
-      border-bottom: 1px solid var(--border-color);
+      padding: 10px 12px;
+      border-radius: var(--border-radius-small);
+      background-color: var(--bg-light);
+      transition: var(--transition-fast);
     }
     
-    .team-member:last-child {
-      border-bottom: none;
+    .team-member:hover {
+      background-color: var(--primary-light);
+      box-shadow: var(--shadow-small);
     }
     
     .member-info {
       display: flex;
       align-items: center;
+      gap: 12px;
       flex: 1;
     }
     
+    .member-info .material-icons {
+      color: var(--text-medium);
+    }
+    
     .member-email {
-      flex: 1;
+      font-weight: 500;
+      margin-bottom: 2px;
     }
     
     .member-actions {
       display: flex;
-      gap: 8px;
-    }
-    
-    .member-action {
-      font-size: 12px;
-      padding: 2px 8px;
-      min-height: 24px;
+      gap: 4px;
     }
     
     .add-member-form {
-      margin-top: 16px;
       display: flex;
-      gap: 8px;
+      gap: 12px;
+      align-items: center;
     }
     
-    .add-member-input {
+    .add-member-form .input-container {
       flex: 1;
     }
     
+    .team-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-light);
+    }
+    
     .status-message {
-      margin-top: 16px;
-      padding: 12px;
-      border-radius: 4px;
+      margin: 0 20px 16px;
+      padding: 12px 16px;
+      border-radius: var(--border-radius-small);
       font-size: 13px;
       display: none;
+      animation: scaleIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     
     .status-success {
-      background-color: #e6f4ea;
+      background-color: var(--success-light);
       color: var(--success-color);
-      border: 1px solid #ceead6;
+      border-left: 3px solid var(--success-color);
       display: block;
     }
     
     .status-error {
-      background-color: #fce8e6;
+      background-color: var(--error-light);
       color: var(--error-color);
-      border: 1px solid #f8ccc9;
+      border-left: 3px solid var(--error-color);
       display: block;
     }
     
     .status-info {
-      background-color: #e8f0fe;
+      background-color: var(--primary-light);
       color: var(--primary-color);
-      border: 1px solid #c4dafc;
+      border-left: 3px solid var(--primary-color);
       display: block;
     }
     
@@ -404,6 +556,26 @@ TeamManagerUI.getStyles = function() {
       justify-content: center;
       align-items: center;
       z-index: 9999;
+      backdrop-filter: blur(3px);
+      transition: var(--transition-medium);
+      opacity: 1;
+    }
+    
+    .loading.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    
+    .spinner-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 80px;
+      height: 80px;
+      background-color: var(--bg-white);
+      border-radius: 50%;
+      box-shadow: var(--shadow-large);
+      animation: scaleIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     
     .spinner {
@@ -412,7 +584,7 @@ TeamManagerUI.getStyles = function() {
       border-top: 4px solid var(--primary-color);
       width: 40px;
       height: 40px;
-      animation: spin 0.8s linear infinite;
+      animation: spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
     }
     
     .hidden {
@@ -459,7 +631,10 @@ TeamManagerUI.getScripts = function() {
       // Auto-dismiss success messages after 5 seconds
       if (type === 'success') {
         setTimeout(() => {
-          statusEl.remove();
+          statusEl.classList.add('hidden');
+          setTimeout(() => {
+            statusEl.remove();
+          }, 300);
         }, 5000);
       }
     }
@@ -483,6 +658,11 @@ TeamManagerUI.getScripts = function() {
         if (!button.querySelector('.loading-spinner')) {
           const spinner = document.createElement('span');
           spinner.className = 'loading-spinner';
+          
+          // If the button has an icon, hide it during loading
+          const icon = button.querySelector('.material-icons');
+          if (icon) icon.style.display = 'none';
+          
           button.insertBefore(spinner, button.firstChild);
         }
         
@@ -496,6 +676,10 @@ TeamManagerUI.getScripts = function() {
           spinner.remove();
         }
         
+        // If the button has an icon, show it again
+        const icon = button.querySelector('.material-icons');
+        if (icon) icon.style.display = '';
+        
         button.disabled = false;
       }
     }
@@ -506,6 +690,7 @@ TeamManagerUI.getScripts = function() {
         const teamId = document.getElementById('team-id-input').value.trim();
         if (!teamId) {
           showStatus('Please enter a team ID', 'error');
+          document.getElementById('team-id-input').focus();
           return;
         }
         
@@ -544,6 +729,7 @@ TeamManagerUI.getScripts = function() {
         const teamName = document.getElementById('team-name-input').value.trim();
         if (!teamName) {
           showStatus('Please enter a team name', 'error');
+          document.getElementById('team-name-input').focus();
           return;
         }
         
@@ -673,6 +859,13 @@ TeamManagerUI.getScripts = function() {
         const email = document.getElementById('new-member-email').value.trim();
         if (!email) {
           showStatus('Please enter an email address', 'error');
+          document.getElementById('new-member-email').focus();
+          return;
+        }
+        
+        if (!email.includes('@')) {
+          showStatus('Please enter a valid email address', 'error');
+          document.getElementById('new-member-email').focus();
           return;
         }
         
@@ -720,6 +913,7 @@ TeamManagerUI.getScripts = function() {
         google.script.run
           .withSuccessHandler(function(result) {
             hideLoading();
+            setButtonLoading(button, false);
             
             if (result.success) {
               showStatus('Member promoted to admin successfully.', 'success');
@@ -735,6 +929,7 @@ TeamManagerUI.getScripts = function() {
           })
           .withFailureHandler(function(error) {
             hideLoading();
+            setButtonLoading(button, false);
             showStatus('Error: ' + error.message, 'error');
           })
           .promoteTeamMember(email);
@@ -755,6 +950,7 @@ TeamManagerUI.getScripts = function() {
         google.script.run
           .withSuccessHandler(function(result) {
             hideLoading();
+            setButtonLoading(button, false);
             
             if (result.success) {
               showStatus('Admin privileges removed successfully.', 'success');
@@ -770,6 +966,7 @@ TeamManagerUI.getScripts = function() {
           })
           .withFailureHandler(function(error) {
             hideLoading();
+            setButtonLoading(button, false);
             showStatus('Error: ' + error.message, 'error');
           })
           .demoteTeamMember(email);
@@ -790,6 +987,7 @@ TeamManagerUI.getScripts = function() {
         google.script.run
           .withSuccessHandler(function(result) {
             hideLoading();
+            setButtonLoading(button, false);
             
             if (result.success) {
               showStatus('Member removed successfully.', 'success');
@@ -805,6 +1003,7 @@ TeamManagerUI.getScripts = function() {
           })
           .withFailureHandler(function(error) {
             hideLoading();
+            setButtonLoading(button, false);
             showStatus('Error: ' + error.message, 'error');
           })
           .removeTeamMember(email);
@@ -816,8 +1015,80 @@ TeamManagerUI.getScripts = function() {
       google.script.host.close();
     });
     
+    // Add keyboard event listener for Enter key on input fields
+    document.querySelectorAll('input').forEach(input => {
+      input.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          
+          // Find the submit button in the current tab and click it
+          const tabContent = this.closest('.tab-content');
+          if (tabContent) {
+            const submitButton = tabContent.querySelector('.button-primary');
+            if (submitButton) {
+              submitButton.click();
+            }
+          }
+        }
+      });
+    });
+    
     // Hide loading indicator on initial load
     hideLoading();
+    
+    // Initialize tooltip hover behavior for icon buttons
+    document.querySelectorAll('[title]').forEach(el => {
+      el.addEventListener('mouseover', function() {
+        const title = this.getAttribute('title');
+        if (!title) return;
+        
+        // Create tooltip element
+        const tooltip = document.createElement('div');
+        tooltip.className = 'tooltip-popup';
+        tooltip.textContent = title;
+        
+        // Add styles
+        tooltip.style.position = 'absolute';
+        tooltip.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        tooltip.style.color = 'white';
+        tooltip.style.padding = '4px 8px';
+        tooltip.style.borderRadius = '4px';
+        tooltip.style.fontSize = '12px';
+        tooltip.style.zIndex = '10000';
+        tooltip.style.transition = 'opacity 0.2s';
+        tooltip.style.opacity = '0';
+        
+        // Position the tooltip
+        document.body.appendChild(tooltip);
+        
+        // Position based on the element's position
+        const rect = this.getBoundingClientRect();
+        tooltip.style.top = (rect.bottom + 5) + 'px';
+        tooltip.style.left = (rect.left + rect.width/2 - tooltip.offsetWidth/2) + 'px';
+        
+        // Show the tooltip
+        setTimeout(() => {
+          tooltip.style.opacity = '1';
+        }, 10);
+        
+        // Remove the original title to prevent default tooltip
+        this.setAttribute('data-original-title', title);
+        this.removeAttribute('title');
+        
+        // Remove tooltip when mouse leaves
+        this.addEventListener('mouseout', function mouseOutHandler() {
+          this.setAttribute('title', this.getAttribute('data-original-title'));
+          this.removeAttribute('data-original-title');
+          tooltip.style.opacity = '0';
+          setTimeout(() => {
+            if (tooltip.parentNode) {
+              document.body.removeChild(tooltip);
+            }
+          }, 200);
+          this.removeEventListener('mouseout', mouseOutHandler);
+        });
+      });
+    });
   `;
 };
 
