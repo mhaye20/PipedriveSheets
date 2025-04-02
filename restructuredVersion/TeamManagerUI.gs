@@ -841,9 +841,9 @@ TeamManagerUI.getScripts = function() {
             if (result.success) {
               showStatus('You have left the team.', 'success');
               
-              // Wait a moment, then reload
+              // Wait a moment, then reload with the join tab active
               setTimeout(function() {
-                google.script.run.showTeamManager();
+                google.script.run.showTeamManager(true); // Pass true to show join tab
                 google.script.host.close();
               }, 2000);
             } else {
