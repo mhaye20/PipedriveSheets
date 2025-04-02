@@ -1,177 +1,268 @@
 <style>
   body {
     font-family: 'Roboto', sans-serif;
-    color: #333;
+    color: #3c4043;
     margin: 0;
     padding: 0;
-    font-size: 13px;
+    font-size: 14px;
+    line-height: 1.5;
+    background-color: #f8f9fa;
   }
   
   .container {
-    padding: 16px;
+    padding: 20px;
     max-width: 100%;
     box-sizing: border-box;
+    background-color: #fff;
+    box-shadow: 0 1px 3px rgba(60,64,67,0.12);
+    border-radius: 8px;
   }
   
   h3 {
     margin-top: 0;
-    color: #4285f4;
+    margin-bottom: 20px;
+    color: #1a73e8;
     font-weight: 500;
+    font-size: 20px;
+    letter-spacing: 0.25px;
+    border-bottom: 1px solid #e8eaed;
+    padding-bottom: 12px;
   }
   
   h4 {
-    margin-top: 20px;
-    margin-bottom: 10px;
+    margin-top: 24px;
+    margin-bottom: 16px;
     font-weight: 500;
-    color: #555;
+    color: #202124;
+    font-size: 16px;
+    letter-spacing: 0.1px;
   }
   
   .sheet-info, .two-way-sync-notice {
     display: flex;
     align-items: center;
-    background: #f5f5f5;
-    padding: 12px;
-    border-radius: 4px;
-    margin-bottom: 16px;
+    background: #f1f3f4;
+    padding: 14px 16px;
+    border-radius: 8px;
+    margin-bottom: 24px;
+    transition: background-color 0.2s;
+  }
+  
+  .sheet-info {
+    border-left: 4px solid #1a73e8;
   }
   
   .two-way-sync-notice {
     background: #e8f0fe;
-    color: #174ea6;
+    color: #1967d2;
+    border-left: 4px solid #1967d2;
   }
   
   .sheet-info svg, .two-way-sync-notice svg {
-    margin-right: 8px;
+    margin-right: 12px;
     fill: currentColor;
+    flex-shrink: 0;
   }
   
   .triggers-table {
     width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 16px;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 2px rgba(60,64,67,0.1);
+    border-radius: 8px;
+    overflow: hidden;
   }
   
   .triggers-table th {
     text-align: left;
-    padding: 8px;
-    background: #f1f1f1;
+    padding: 12px 16px;
+    background: #f1f3f4;
     font-weight: 500;
+    color: #5f6368;
+    font-size: 13px;
+    letter-spacing: 0.1px;
+    text-transform: uppercase;
   }
   
   .triggers-table td {
-    padding: 10px 8px;
-    border-bottom: 1px solid #eee;
+    padding: 14px 16px;
+    border-bottom: 1px solid #e8eaed;
+    vertical-align: middle;
+    transition: background-color 0.2s;
+  }
+  
+  .triggers-table tr:last-child td {
+    border-bottom: none;
+  }
+  
+  .triggers-table tr:hover td {
+    background-color: #f8f9fa;
   }
   
   .form-group {
-    margin-bottom: 16px;
+    margin-bottom: 20px;
   }
   
   label {
     display: block;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
     font-weight: 500;
-    color: #555;
-  }
-  
-  select, button {
-    padding: 8px 12px;
-    border-radius: 4px;
-    border: 1px solid #ddd;
-    background: white;
-    font-size: 13px;
-    min-height: 36px;
+    color: #3c4043;
+    font-size: 14px;
   }
   
   select {
-    min-width: 150px;
+    padding: 10px 14px;
+    border-radius: 4px;
+    border: 1px solid #dadce0;
+    background: white;
+    font-size: 14px;
+    width: 100%;
+    max-width: 300px;
+    appearance: none;
+    background-image: url('data:image/svg+xml;utf8,<svg fill="%235F6368" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/><path d="M0 0h24v24H0z" fill="none"/></svg>');
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  
+  select:focus {
+    outline: none;
+    border-color: #1a73e8;
+    box-shadow: 0 0 0 2px rgba(26,115,232,0.2);
+  }
+  
+  button {
+    cursor: pointer;
+    font-family: 'Roboto', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 4px;
+    padding: 10px 24px;
+    transition: all 0.2s;
   }
   
   .time-inputs {
     display: flex;
-    gap: 10px;
+    gap: 16px;
+    align-items: flex-end;
+  }
+  
+  .time-inputs > div {
+    flex: 1;
+    max-width: 142px;
   }
   
   .button-container {
     display: flex;
     justify-content: flex-end;
     align-items: center;
-    margin-top: 24px;
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid #e8eaed;
   }
   
   .primary-btn {
-    background: #4285f4;
+    background: #1a73e8;
     color: white;
     border: none;
-    padding: 8px 24px;
-    font-weight: 500;
-    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(60,64,67,0.3);
   }
   
   .primary-btn:hover {
-    background: #1a73e8;
+    background: #1967d2;
+    box-shadow: 0 2px 4px rgba(60,64,67,0.3);
+  }
+  
+  .primary-btn:active {
+    background: #185abc;
+    box-shadow: 0 1px 2px rgba(60,64,67,0.3);
+  }
+  
+  .primary-btn:disabled {
+    background: #c2d7f8;
+    box-shadow: none;
+    cursor: not-allowed;
   }
   
   .secondary-btn {
     border: 1px solid #dadce0;
     background: white;
-    color: #5f6368;
-    padding: 8px 24px;
+    color: #1a73e8;
     margin-right: 12px;
-    cursor: pointer;
   }
   
   .secondary-btn:hover {
-    background: #f1f3f4;
-    color: #202124;
+    background: #f8f9fa;
+    color: #174ea6;
+    border-color: #d2e3fc;
+  }
+  
+  .secondary-btn:disabled {
+    color: #9aa0a6;
+    border-color: #e8eaed;
+    cursor: not-allowed;
   }
   
   .delete-trigger {
-    color: #ea4335;
-    border: 1px solid #ea4335;
+    color: #d93025;
+    border: 1px solid rgba(217, 48, 37, 0.2);
     background: white;
-    cursor: pointer;
-    padding: 4px 12px;
-    font-size: 12px;
+    padding: 6px 16px;
+    font-size: 13px;
     min-height: auto;
+    font-weight: 500;
   }
   
   .delete-trigger:hover {
-    background: #fce8e6;
+    background: #fcece9;
+    border-color: #d93025;
   }
   
   .existing-triggers, .no-triggers {
-    margin: 20px 0;
+    margin: 24px 0;
+  }
+  
+  .no-triggers {
+    background-color: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px dashed #dadce0;
   }
   
   .no-triggers p {
     font-style: italic;
     color: #5f6368;
+    margin: 0;
   }
   
   .help-text {
     color: #5f6368;
     font-size: 12px;
-    margin-top: 4px;
+    margin-top: 6px;
     margin-bottom: 0;
   }
   
   .day-selection {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 6px;
+    gap: 8px;
+    margin-top: 8px;
   }
   
   .day-button {
     background: #f1f3f4;
     border: 1px solid #dadce0;
-    color: #5f6368;
+    color: #3c4043;
     border-radius: 16px;
-    padding: 4px 12px;
+    padding: 6px 16px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 13px;
     min-height: auto;
+    transition: all 0.2s;
+    font-weight: 400;
   }
   
   .day-button:hover {
@@ -179,26 +270,31 @@
   }
   
   .day-button.selected {
-    background: #e8f0fe;
-    border-color: #4285f4;
+    background: #d2e3fc;
+    border-color: #1a73e8;
     color: #1a73e8;
+    font-weight: 500;
   }
   
   .indicator {
-    padding: 10px;
-    border-radius: 4px;
-    margin-bottom: 16px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 20px;
     display: none;
+    font-weight: 500;
+    animation: fadeIn 0.3s;
   }
   
   .indicator.success {
     background-color: #e6f4ea;
     color: #137333;
+    border-left: 4px solid #0f9d58;
   }
   
   .indicator.error {
     background-color: #fce8e6;
     color: #c5221f;
+    border-left: 4px solid #d93025;
   }
   
   .loading, .mini-loading {
@@ -207,23 +303,35 @@
     justify-content: center;
   }
   
+  .loading {
+    margin-right: 12px;
+  }
+  
   .loader, .mini-loader {
-    border: 2px solid #f3f3f3;
-    border-top: 2px solid #4285f4;
+    border: 2px solid rgba(26,115,232,0.2);
+    border-top: 2px solid #1a73e8;
     border-radius: 50%;
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     animation: spin 1s linear infinite;
   }
   
   .mini-loader {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
+    border-top-color: #d93025;
+    border-color: rgba(217, 48, 37, 0.2);
+    border-top-color: #d93025;
   }
   
   @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
   }
   
   .fade-out {
@@ -232,16 +340,11 @@
   }
   
   @keyframes fadeOut {
-    from { opacity: 1; }
-    to { opacity: 0; }
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(10px); }
   }
   
   .fade-in {
     animation: fadeIn 0.5s;
-  }
-  
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
   }
 </style> 

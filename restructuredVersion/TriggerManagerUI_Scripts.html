@@ -3,29 +3,93 @@
   function updateFormVisibility() {
     const frequency = document.getElementById('frequency').value;
     
-    // Hide all specific groups first
-    document.getElementById('hourlyGroup').style.display = 'none';
-    document.getElementById('weeklyGroup').style.display = 'none';
-    document.getElementById('monthlyGroup').style.display = 'none';
-    document.getElementById('timeGroup').style.display = 'none';
-    
-    // Show relevant groups based on selection
-    if (frequency === 'hourly') {
-      document.getElementById('hourlyGroup').style.display = 'block';
-    } else {
-      document.getElementById('timeGroup').style.display = 'block';
-      
-      if (frequency === 'weekly') {
-        document.getElementById('weeklyGroup').style.display = 'block';
-      } else if (frequency === 'monthly') {
-        document.getElementById('monthlyGroup').style.display = 'block';
+    // Add transition for smoother UI changes
+    const allGroups = ['hourlyGroup', 'weeklyGroup', 'monthlyGroup', 'timeGroup'];
+    allGroups.forEach(id => {
+      const element = document.getElementById(id);
+      if (element) {
+        element.style.transition = 'opacity 0.3s, max-height 0.3s';
+        element.style.overflow = 'hidden';
       }
-    }
+    });
+    
+    // Hide all specific groups first
+    document.getElementById('hourlyGroup').style.opacity = '0';
+    document.getElementById('hourlyGroup').style.maxHeight = '0';
+    document.getElementById('weeklyGroup').style.opacity = '0';
+    document.getElementById('weeklyGroup').style.maxHeight = '0';
+    document.getElementById('monthlyGroup').style.opacity = '0';
+    document.getElementById('monthlyGroup').style.maxHeight = '0';
+    document.getElementById('timeGroup').style.opacity = '0';
+    document.getElementById('timeGroup').style.maxHeight = '0';
+    
+    // Small delay for smoother transitions
+    setTimeout(() => {
+      document.getElementById('hourlyGroup').style.display = 'none';
+      document.getElementById('weeklyGroup').style.display = 'none';
+      document.getElementById('monthlyGroup').style.display = 'none';
+      document.getElementById('timeGroup').style.display = 'none';
+      
+      // Show relevant groups based on selection
+      if (frequency === 'hourly') {
+        const hourlyGroup = document.getElementById('hourlyGroup');
+        hourlyGroup.style.display = 'block';
+        // Small delay to ensure display change takes effect before animation
+        setTimeout(() => {
+          hourlyGroup.style.opacity = '1';
+          hourlyGroup.style.maxHeight = '200px';
+        }, 10);
+      } else {
+        const timeGroup = document.getElementById('timeGroup');
+        timeGroup.style.display = 'block';
+        
+        setTimeout(() => {
+          timeGroup.style.opacity = '1';
+          timeGroup.style.maxHeight = '200px';
+          
+          if (frequency === 'weekly') {
+            const weeklyGroup = document.getElementById('weeklyGroup');
+            weeklyGroup.style.display = 'block';
+            setTimeout(() => {
+              weeklyGroup.style.opacity = '1';
+              weeklyGroup.style.maxHeight = '200px';
+            }, 10);
+          } else if (frequency === 'monthly') {
+            const monthlyGroup = document.getElementById('monthlyGroup');
+            monthlyGroup.style.display = 'block';
+            setTimeout(() => {
+              monthlyGroup.style.opacity = '1';
+              monthlyGroup.style.maxHeight = '200px';
+            }, 10);
+          }
+        }, 10);
+      }
+    }, 300);
   }
   
-  // Toggle day button selection
+  // Toggle day button selection with ripple effect
   function toggleDay(button) {
+    // Add ripple effect
+    const ripple = document.createElement('span');
+    ripple.className = 'ripple';
+    
+    // Calculate position
+    const rect = button.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height);
+    
+    ripple.style.width = ripple.style.height = size + 'px';
+    ripple.style.left = (event.clientX - rect.left - size/2) + 'px';
+    ripple.style.top = (event.clientY - rect.top - size/2) + 'px';
+    
+    button.appendChild(ripple);
+    
+    // Toggle selected class
     button.classList.toggle('selected');
+    
+    // Remove ripple after animation completes
+    setTimeout(() => {
+      ripple.remove();
+    }, 600);
   }
   
   // Create a new trigger
@@ -55,6 +119,14 @@
         });
         
         if (selectedDays.length === 0) {
+          const weeklyGroup = document.getElementById('weeklyGroup');
+          weeklyGroup.style.animation = 'shake 0.5s';
+          
+          // Remove animation after it completes
+          setTimeout(() => {
+            weeklyGroup.style.animation = '';
+          }, 500);
+          
           showStatus('error', 'Please select at least one day of the week');
           isValid = false;
         }
@@ -69,77 +141,106 @@
     if (isValid) {
       // Show loading spinner and disable buttons
       document.getElementById('saveLoading').style.display = 'inline-flex';
-      document.getElementById('saveBtn').disabled = true;
-      document.getElementById('cancelBtn').disabled = true;
+      
+      const saveBtn = document.getElementById('saveBtn');
+      const cancelBtn = document.getElementById('cancelBtn');
+      
+      saveBtn.disabled = true;
+      cancelBtn.disabled = true;
+      
+      // Add loading state to button
+      saveBtn.classList.add('loading-state');
       
       google.script.run
         .withSuccessHandler(function(result) {
           if (result.success) {
             // Reset form state
             document.getElementById('saveLoading').style.display = 'none';
-            document.getElementById('saveBtn').disabled = false;
-            document.getElementById('cancelBtn').disabled = false;
+            saveBtn.disabled = false;
+            cancelBtn.disabled = false;
+            saveBtn.classList.remove('loading-state');
             
             // Show success message
             showStatus('success', 'Sync schedule created successfully!');
+            
+            // Play success sound if available
+            playSound('success');
             
             // Add the new trigger to the UI
             if (result.triggerInfo) {
               // Check if we need to replace the "no triggers" message
               const noTriggersMessage = document.querySelector('.no-triggers');
               if (noTriggersMessage) {
-                // Remove the "no triggers" message
-                noTriggersMessage.parentNode.removeChild(noTriggersMessage);
+                // Remove the "no triggers" message with fade-out
+                noTriggersMessage.classList.add('fade-out');
                 
-                // Create the table to hold triggers
-                const container = document.querySelector('.container');
-                const createHeading = document.querySelector('h4');
-                
-                const existingTriggersDiv = document.createElement('div');
-                existingTriggersDiv.className = 'existing-triggers';
-                existingTriggersDiv.innerHTML = `
-                  <h4>Existing Sync Schedules</h4>
-                  <table class="triggers-table">
-                    <thead>
-                      <tr>
-                        <th>Frequency</th>
-                        <th>Details</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody></tbody>
-                  </table>
-                `;
-                
-                container.insertBefore(existingTriggersDiv, createHeading);
+                setTimeout(() => {
+                  // Remove the "no triggers" message
+                  if (noTriggersMessage.parentNode) {
+                    noTriggersMessage.parentNode.removeChild(noTriggersMessage);
+                  }
+                  
+                  // Create the table to hold triggers
+                  const container = document.querySelector('.container');
+                  const createHeading = document.querySelector('h4');
+                  
+                  const existingTriggersDiv = document.createElement('div');
+                  existingTriggersDiv.className = 'existing-triggers fade-in';
+                  existingTriggersDiv.innerHTML = `
+                    <h4>Existing Sync Schedules</h4>
+                    <table class="triggers-table">
+                      <thead>
+                        <tr>
+                          <th>Frequency</th>
+                          <th>Details</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody></tbody>
+                    </table>
+                  `;
+                  
+                  container.insertBefore(existingTriggersDiv, createHeading);
+                }, 300);
               }
               
-              // Get the table body to add the new row
-              const tableBody = document.querySelector('.triggers-table tbody');
-              
-              // Create a new row for this trigger
-              const newRow = document.createElement('tr');
-              newRow.id = `trigger-row-${result.triggerInfo.id}`;
-              newRow.innerHTML = `
-                <td>${result.triggerInfo.type}</td>
-                <td>${result.triggerInfo.description}</td>
-                <td>
-                  <div id="remove-loading-${result.triggerInfo.id}" class="mini-loading" style="display:none;">
-                    <span class="mini-loader"></span>
-                  </div>
-                  <button type="button" id="remove-btn-${result.triggerInfo.id}" class="delete-trigger" 
-                    onclick="deleteTrigger('${result.triggerInfo.id}')">
-                    Remove
-                  </button>
-                </td>
-              `;
-              
-              // Add the row to the table with a fade-in effect
-              newRow.classList.add('fade-in');
-              tableBody.appendChild(newRow);
+              // Wait for the container to be ready
+              setTimeout(() => {
+                // Get the table body to add the new row
+                const tableBody = document.querySelector('.triggers-table tbody');
+                
+                if (tableBody) {
+                  // Create a new row for this trigger
+                  const newRow = document.createElement('tr');
+                  newRow.id = `trigger-row-${result.triggerInfo.id}`;
+                  newRow.innerHTML = `
+                    <td>${result.triggerInfo.type}</td>
+                    <td>${result.triggerInfo.description}</td>
+                    <td>
+                      <div id="remove-loading-${result.triggerInfo.id}" class="mini-loading" style="display:none;">
+                        <span class="mini-loader"></span>
+                      </div>
+                      <button type="button" id="remove-btn-${result.triggerInfo.id}" class="delete-trigger" 
+                        onclick="deleteTrigger('${result.triggerInfo.id}')">
+                        Remove
+                      </button>
+                    </td>
+                  `;
+                  
+                  // Add the row to the table with a fade-in effect
+                  newRow.classList.add('fade-in');
+                  tableBody.appendChild(newRow);
+                }
+              }, 400);
               
               // Reset form values
               document.getElementById('frequency').value = 'daily';
+              
+              // Reset day selections if any
+              document.querySelectorAll('.day-button.selected').forEach(button => {
+                button.classList.remove('selected');
+              });
+              
               updateFormVisibility();
             } else {
               // If we don't have trigger info, just do a full refresh
@@ -147,15 +248,25 @@
             }
           } else {
             document.getElementById('saveLoading').style.display = 'none';
-            document.getElementById('saveBtn').disabled = false;
-            document.getElementById('cancelBtn').disabled = false;
+            saveBtn.disabled = false;
+            cancelBtn.disabled = false;
+            saveBtn.classList.remove('loading-state');
+            
+            // Play error sound if available
+            playSound('error');
+            
             showStatus('error', 'Error: ' + result.error);
           }
         })
         .withFailureHandler(function(error) {
           document.getElementById('saveLoading').style.display = 'none';
-          document.getElementById('saveBtn').disabled = false;
-          document.getElementById('cancelBtn').disabled = false;
+          saveBtn.disabled = false;
+          cancelBtn.disabled = false;
+          saveBtn.classList.remove('loading-state');
+          
+          // Play error sound if available
+          playSound('error');
+          
           showStatus('error', 'Error: ' + error.message);
         })
         .createSyncTrigger(triggerData);
@@ -174,11 +285,16 @@
         buttonElement.style.display = 'none';
       }
       
+      // Highlight the row being deleted
+      const row = document.getElementById('trigger-row-' + triggerId);
+      if (row) {
+        row.style.backgroundColor = 'rgba(253, 237, 237, 0.6)';
+      }
+      
       google.script.run
         .withSuccessHandler(function(result) {
           if (result.success) {
             // Animation for removing the row
-            const row = document.getElementById('trigger-row-' + triggerId);
             if (row) {
               // Add fade-out class for animation
               row.classList.add('fade-out');
@@ -195,15 +311,30 @@
                 if (remainingRows.length === 0) {
                   const table = document.querySelector('.existing-triggers');
                   if (table) {
-                    table.style.display = 'none';
+                    // Fade out the table
+                    table.classList.add('fade-out');
                     
-                    // Show "no triggers" message
-                    const noTriggersDiv = document.createElement('div');
-                    noTriggersDiv.className = 'no-triggers';
-                    noTriggersDiv.innerHTML = '<p>No automatic sync schedules are set up for this sheet.</p>';
-                    table.parentNode.insertBefore(noTriggersDiv, table.nextSibling);
+                    setTimeout(() => {
+                      table.style.display = 'none';
+                      
+                      // Show "no triggers" message with fade-in
+                      const noTriggersDiv = document.createElement('div');
+                      noTriggersDiv.className = 'no-triggers';
+                      noTriggersDiv.style.opacity = '0';
+                      noTriggersDiv.innerHTML = '<p>No automatic sync schedules are set up for this sheet.</p>';
+                      table.parentNode.insertBefore(noTriggersDiv, table.nextSibling);
+                      
+                      // Fade in the no triggers message
+                      setTimeout(() => {
+                        noTriggersDiv.style.transition = 'opacity 0.5s';
+                        noTriggersDiv.style.opacity = '1';
+                      }, 10);
+                    }, 300);
                   }
                 }
+                
+                // Play success sound if available
+                playSound('success');
                 
                 // Show success message
                 showStatus('success', 'Sync schedule deleted successfully');
@@ -215,6 +346,15 @@
               loadingElement.style.display = 'none';
               buttonElement.style.display = 'inline-block';
             }
+            
+            // Reset row highlight
+            if (row) {
+              row.style.backgroundColor = '';
+            }
+            
+            // Play error sound if available
+            playSound('error');
+            
             showStatus('error', result.error || 'Error deleting trigger');
           }
         })
@@ -224,6 +364,15 @@
             loadingElement.style.display = 'none';
             buttonElement.style.display = 'inline-block';
           }
+          
+          // Reset row highlight
+          if (row) {
+            row.style.backgroundColor = '';
+          }
+          
+          // Play error sound if available
+          playSound('error');
+          
           showStatus('error', 'Error: ' + error.message);
         })
         .deleteTrigger(triggerId);
@@ -233,20 +382,93 @@
   // Show status message
   function showStatus(type, message) {
     const indicator = document.getElementById('statusIndicator');
-    indicator.className = 'indicator ' + type;
+    
+    // Remove existing classes and add new ones
+    indicator.className = 'indicator';
+    indicator.classList.add(type);
+    
     indicator.textContent = message;
     indicator.style.display = 'block';
     
     // Auto-hide success messages after a delay
     if (type === 'success') {
       setTimeout(function() {
-        indicator.style.display = 'none';
+        // Fade out the message
+        indicator.style.opacity = '0';
+        indicator.style.transform = 'translateY(-10px)';
+        indicator.style.transition = 'opacity 0.5s, transform 0.5s';
+        
+        // Hide after fade out completes
+        setTimeout(function() {
+          indicator.style.display = 'none';
+          // Reset styles for next time
+          indicator.style.opacity = '';
+          indicator.style.transform = '';
+          indicator.style.transition = '';
+        }, 500);
       }, 3000);
     }
   }
   
+  // Optional: Play sound for feedback
+  function playSound(type) {
+    // This is optional and would require adding audio elements to the HTML
+    // For now, we'll just log a message
+    console.log('Sound played: ' + type);
+  }
+  
+  // Add ripple effect styles
+  const style = document.createElement('style');
+  style.textContent = `
+    .ripple {
+      position: absolute;
+      background: rgba(255, 255, 255, 0.5);
+      border-radius: 50%;
+      transform: scale(0);
+      animation: ripple 0.6s;
+      pointer-events: none;
+    }
+    
+    @keyframes ripple {
+      to {
+        transform: scale(2);
+        opacity: 0;
+      }
+    }
+    
+    .loading-state {
+      background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.15) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.15) 75%, transparent 75%, transparent);
+      background-size: 40px 40px;
+      animation: progress-bar-stripes 1s linear infinite;
+    }
+    
+    @keyframes progress-bar-stripes {
+      from { background-position: 40px 0; }
+      to { background-position: 0 0; }
+    }
+    
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+      20%, 40%, 60%, 80% { transform: translateX(5px); }
+    }
+  `;
+  document.head.appendChild(style);
+  
   // Initial form setup
   document.addEventListener('DOMContentLoaded', function() {
     updateFormVisibility();
+    
+    // Add event listeners for better form experience
+    const selects = document.querySelectorAll('select');
+    selects.forEach(select => {
+      select.addEventListener('focus', function() {
+        this.parentElement.classList.add('focused');
+      });
+      
+      select.addEventListener('blur', function() {
+        this.parentElement.classList.remove('focused');
+      });
+    });
   });
 </script> 
