@@ -497,6 +497,12 @@ TeamManagerUI.getStyles = function() {
       color: var(--primary-color);
     }
     
+    .badge.owner {
+      background-color: var(--warning-light);
+      color: var(--warning-color);
+      margin-left: 6px;
+    }
+    
     .badge .material-icons {
       font-size: 14px;
     }
@@ -1716,6 +1722,7 @@ TeamManagerUI.showTeamManager = function(joinOnly = false) {
     var teamId = '';
     var teamMembers = [];
     var userRole = '';
+    var teamCreator = '';
 
     if (hasTeam) {
       var teamData = teamAccess.getUserTeamData(userEmail);
@@ -1723,6 +1730,16 @@ TeamManagerUI.showTeamManager = function(joinOnly = false) {
       teamId = teamData.id;
       teamMembers = teamAccess.getTeamMembers(teamId);
       userRole = teamData.role;
+      
+      // Get the team creator (script owner)
+      try {
+        var teamsData = getTeamsData();
+        if (teamsData && teamsData[teamId] && teamsData[teamId].createdBy) {
+          teamCreator = teamsData[teamId].createdBy;
+        }
+      } catch (e) {
+        Logger.log('Error getting team creator: ' + e.message);
+      }
     }
 
     // Create the HTML template
@@ -1736,6 +1753,7 @@ TeamManagerUI.showTeamManager = function(joinOnly = false) {
     template.teamMembers = teamMembers;
     template.userRole = userRole;
     template.isScriptOwner = isScriptOwner;
+    template.teamCreator = teamCreator;
     // For users without a team who are not script owners, default to join tab
     // Otherwise, respect the joinOnly parameter or use default tab logic
     template.initialTab = joinOnly ? 'join' : (hasTeam ? 'manage' : (isScriptOwner ? 'create' : 'join'));

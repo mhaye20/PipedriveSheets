@@ -131,6 +131,9 @@
                       <div>
                         <div class="member-email"><?= member.email ?></div>
                         <div class="badge <?= member.role === 'Admin' ? 'admin' : '' ?>"><?= member.role ?></div>
+                        <? if (member.email === teamCreator) { ?>
+                        <div class="badge owner">Owner</div>
+                        <? } ?>
                       </div>
                     </div>
                     <? if (userRole === 'Admin' && member.email !== userEmail) { ?>
@@ -139,7 +142,8 @@
                       <button class="icon-button promote-member" data-email="<?= member.email ?>" title="Make Admin">
                         <i class="material-icons">upgrade</i>
                       </button>
-                      <? } else { ?>
+                      <? } else if (member.email !== teamCreator) { ?>
+                      <!-- Only show demote button for admins who are not the team creator (script owner) -->
                       <button class="icon-button demote-member" data-email="<?= member.email ?>" title="Remove Admin">
                         <i class="material-icons">remove_moderator</i>
                       </button>

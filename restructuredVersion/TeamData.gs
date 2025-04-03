@@ -639,6 +639,36 @@ function demoteTeamMember(email) {
       return { success: false, message: 'Cannot demote the last admin of the team. Promote another member first.' };
     }
     
+    // Check if the target user is the script owner
+    // We'll use the team creator field as a proxy for script owner since the script owner is typically the team creator
+    if (team.createdBy && team.createdBy.toLowerCase() === email.toLowerCase()) {
+      return { 
+        success: false, 
+        message: 'Cannot demote the script owner/installer who created this team. This is a protected admin account.' 
+      };
+    }
+    
+    // Get the script owner status of the target user
+    try {
+      // If this is an attempt to demote another admin who's the script owner
+      let targetIsScriptOwner = false;
+      if (email.toLowerCase() !== userEmail.toLowerCase()) { // Not trying to demote self
+        // This call would need to run as the target user, which isn't possible
+        // However, we'll use the team creator field as a strong proxy
+        targetIsScriptOwner = (team.createdBy && team.createdBy.toLowerCase() === email.toLowerCase());
+      }
+      
+      if (targetIsScriptOwner) {
+        return { 
+          success: false, 
+          message: 'Cannot demote the script owner/installer. This is a protected admin account.' 
+        };
+      }
+    } catch (e) {
+      Logger.log(`Error checking script owner status for ${email}: ${e.message}`);
+      // Continue with the demotion since we couldn't verify
+    }
+    
     // Remove from admin list
     team.adminEmails = team.adminEmails.filter(e => e !== email);
     
@@ -691,6 +721,14 @@ function removeTeamMember(email) {
     const teamsData = getTeamsData();
     const teamId = userTeam.teamId;
     const team = teamsData[teamId];
+    
+    // Check if trying to remove the script owner/team creator
+    if (team.createdBy && team.createdBy.toLowerCase() === email.toLowerCase()) {
+      return { 
+        success: false, 
+        message: 'Cannot remove the script owner/installer who created this team. This is a protected account.' 
+      };
+    }
     
     // Check if member is in the team
     if (!team.memberEmails.includes(email)) {
