@@ -2924,6 +2924,9 @@ function refreshSyncStatusStyling() {
         return !ranges.some(range => range.getColumn() === columnPos);
       });
 
+      // Define statusRange for conditional formatting (was missing)
+      const statusRange = sheet.getRange(2, columnPos, lastRow - 1, 1);
+
       // Create conditional format for "Modified" status
       const modifiedRule = SpreadsheetApp.newConditionalFormatRule()
         .whenTextEqualTo('Modified')
