@@ -2555,6 +2555,10 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
           updateData.custom_fields = {};
         }
 
+        // Maps to store phone and email data for proper formatting
+        const phoneData = [];
+        const emailData = [];
+        
         // Map column values to API fields
         for (let j = 0; j < headers.length; j++) {
           // Skip the tracking column
@@ -2570,10 +2574,28 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
             continue;
           }
 
+          // Log all field mappings for debugging
+          Logger.log(`Processing field: ${header} with value: ${value} (type: ${typeof value}, isDate: ${value instanceof Date})`);
+          
           // Get the field key for this header - first try the stored column config
-          const fieldKey = headerToFieldKeyMap[header] || fieldMappings[header];
-
+          let fieldKey = headerToFieldKeyMap[header] || fieldMappings[header];
+          
+          // If no mapping found, try common field name variations
+          if (!fieldKey) {
+            // Handle common date field variations
+            const headerLower = header.toLowerCase();
+            if (headerLower === 'due date' || headerLower === 'duedate') {
+              fieldKey = 'due_date';
+              Logger.log(`Mapped "${header}" to Pipedrive field "due_date" using common field mapping`);
+            }
+            else if (headerLower === 'due time' || headerLower === 'duetime') {
+              fieldKey = 'due_time';
+              Logger.log(`Mapped "${header}" to Pipedrive field "due_time" using common field mapping`);
+            }
+          }
+          
           if (fieldKey) {
+            Logger.log(`Mapped to Pipedrive field: ${fieldKey}`);
             // Check if this is a multi-option field (this handles both custom and standard fields)
             if (isMultiOptionField(fieldKey, entityType)) {
               // Convert multi-option values (comma-separated in sheet) to array for API
@@ -2609,11 +2631,11 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
                 }
               }
             }
-            // Handle date fields (convert from sheet format to API format)
+            // Handle date/datetime fields
             else if (isDateField(fieldKey)) {
               if (value instanceof Date) {
-                // Convert to ISO format for API
-                const isoDate = value.toISOString().split('T')[0];
+                // Convert to UTC ISO format for API
+                const isoDate = value.toISOString();
                 
                 if (fieldKey.startsWith('custom_fields')) {
                   const customFieldKey = fieldKey.replace('custom_fields.', '');
@@ -2635,6 +2657,32 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
                 }
               }
             }
+            // Handle phone fields
+            else if (fieldKey === 'phone' || fieldKey.startsWith('phone.')) {
+              // Extract label if present (e.g., "phone.mobile" -> "mobile")
+              const parts = fieldKey.split('.');
+              const label = parts.length > 1 ? parts[1] : 'work'; // Default to work if no label
+              
+              // Add to phone data collection for later formatting
+              phoneData.push({
+                value: value,
+                label: label,
+                primary: phoneData.length === 0 // First one is primary
+              });
+            }
+            // Handle email fields
+            else if (fieldKey === 'email' || fieldKey.startsWith('email.')) {
+              // Extract label if present (e.g., "email.work" -> "work")
+              const parts = fieldKey.split('.');
+              const label = parts.length > 1 ? parts[1] : 'work'; // Default to work if no label
+              
+              // Add to email data collection for later formatting
+              emailData.push({
+                value: value,
+                label: label,
+                primary: emailData.length === 0 // First one is primary
+              });
+            }
             // All other fields
             else {
               if (fieldKey.startsWith('custom_fields')) {
@@ -2645,6 +2693,16 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
               }
             }
           }
+        }
+        
+        // Process collected phone data in Pipedrive format
+        if (phoneData.length > 0) {
+          updateData.phone = phoneData;
+        }
+        
+        // Process collected email data in Pipedrive format
+        if (emailData.length > 0) {
+          updateData.email = emailData;
         }
 
         // Only add rows with actual data to update
@@ -2710,15 +2768,251 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
         
         const scriptProperties = PropertiesService.getScriptProperties();
         const accessToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
+        const subdomain = scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') || DEFAULT_PIPEDRIVE_SUBDOMAIN;
         
-        // Set up the request URL based on entity type
-        let updateUrl = `${apiUrl}/${entityType}/${rowData.id}`;
-        let method = 'PUT';
+        // Build base URL without API version
+        const baseUrl = `https://${subdomain}.pipedrive.com`;
         
-        // Special case for activities which use a different endpoint for updates
-        if (entityType === ENTITY_TYPES.ACTIVITIES) {
-          updateUrl = `${apiUrl}/${entityType}/${rowData.id}`;
+        // Set up the request URL and method based on entity type
+        let updateUrl;
+        let method;
+        
+        // Configure API version, endpoint, and method based on entity type
+        switch(entityType) {
+          // API v2 endpoints using PATCH
+          case ENTITY_TYPES.ACTIVITIES:
+            updateUrl = `${baseUrl}/api/v2/activities/${rowData.id}`;
+            method = 'PATCH';
+            
+            // For activities, ensure subject field exists
+            if (!rowData.data.subject && rowData.data.note) {
+              // Use note as subject if available
+              rowData.data.subject = rowData.data.note.substring(0, 100); // Limit length
+            }
+            
+            // Remove ID from payload since it's in the URL
+            delete rowData.data.id;
+            
+            // Remove custom_fields - not allowed for activities in API v2
+            delete rowData.data.custom_fields;
+            
+            // Special handling for activity due_date - ensure ISO date format (YYYY-MM-DD)
+            if (rowData.data.due_date) {
+              if (rowData.data.due_date instanceof Date) {
+                // Format to YYYY-MM-DD without time component
+                const year = rowData.data.due_date.getFullYear();
+                const month = String(rowData.data.due_date.getMonth() + 1).padStart(2, '0');
+                const day = String(rowData.data.due_date.getDate()).padStart(2, '0');
+                rowData.data.due_date = `${year}-${month}-${day}`;
+              } else if (typeof rowData.data.due_date === 'string') {
+                // Try to parse the string as a date if it's not in ISO format
+                if (!rowData.data.due_date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                  try {
+                    const dateObj = new Date(rowData.data.due_date);
+                    const year = dateObj.getFullYear();
+                    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                    const day = String(dateObj.getDate()).padStart(2, '0');
+                    rowData.data.due_date = `${year}-${month}-${day}`;
+                  } catch (e) {
+                    Logger.log(`Error parsing due_date: ${e.message}`);
+                  }
+                }
+              }
+              
+              Logger.log(`Formatted due_date: ${rowData.data.due_date}`);
+            }
+            
+            // Handle due_time separately if it exists
+            if (rowData.data.due_time) {
+              if (rowData.data.due_time instanceof Date) {
+                // Format to HH:MM for API
+                const hours = String(rowData.data.due_time.getHours()).padStart(2, '0');
+                const minutes = String(rowData.data.due_time.getMinutes()).padStart(2, '0');
+                rowData.data.due_time = `${hours}:${minutes}`;
+              }
+              
+              Logger.log(`Formatted due_time: ${rowData.data.due_time}`);
+            }
+            
+            // Handle participants - person_id, org_id, and deal_id are read-only in API v2
+            // They must be set via participants array
+            const participants = [];
+            
+            // If person_id exists, add it as a participant
+            if (rowData.data.person_id) {
+              participants.push({
+                person_id: rowData.data.person_id,
+                primary: true
+              });
+              delete rowData.data.person_id;
+            }
+            
+            // Add organization as a participant if org_id exists
+            if (rowData.data.org_id) {
+              delete rowData.data.org_id;
+              // Note: org_id can't be directly added as participant, only indirectly via person
+            }
+            
+            // Deal can't be set as participant, remove it
+            if (rowData.data.deal_id) {
+              delete rowData.data.deal_id;
+              // Note: In API v2, deal association must be done differently
+            }
+            
+            // Only add participants if we have any
+            if (participants.length > 0) {
+              rowData.data.participants = participants;
+            }
+            
+            // Ensure type is set for activity if missing
+            if (!rowData.data.type) {
+              rowData.data.type = "task"; // Default type
+            }
+            break;
+            
+          case ENTITY_TYPES.DEALS:
+            updateUrl = `${baseUrl}/api/v2/deals/${rowData.id}`;
+            method = 'PATCH';
+            
+            // Remove ID from payload
+            delete rowData.data.id;
+            break;
+            
+          case ENTITY_TYPES.PERSONS:
+            updateUrl = `${baseUrl}/api/v2/persons/${rowData.id}`;
+            method = 'PATCH';
+            
+            // Remove ID from payload
+            delete rowData.data.id;
+            
+            // Format emails and phones correctly if present
+            if (rowData.data.email && !Array.isArray(rowData.data.email)) {
+              // If email exists but isn't an array, delete it (we'll use proper format below)
+              delete rowData.data.email;
+            }
+            
+            if (rowData.data.phone && !Array.isArray(rowData.data.phone)) {
+              // If phone exists but isn't an array, delete it (we'll use proper format below)
+              delete rowData.data.phone;
+            }
+            
+            // Use proper email and phone arrays for PATCH API v2
+            if (emailData.length > 0) {
+              rowData.data.emails = emailData.map(item => ({
+                label: item.label,
+                value: item.value,
+                primary: item.primary
+              }));
+              // Remove the old email field if it exists
+              delete rowData.data.email;
+            }
+            
+            if (phoneData.length > 0) {
+              rowData.data.phones = phoneData.map(item => ({
+                label: item.label,
+                value: item.value,
+                primary: item.primary
+              }));
+              // Remove the old phone field if it exists
+              delete rowData.data.phone;
+            }
+            break;
+            
+          case ENTITY_TYPES.ORGANIZATIONS:
+            updateUrl = `${baseUrl}/api/v2/organizations/${rowData.id}`;
+            method = 'PATCH';
+            
+            // Remove ID from payload
+            delete rowData.data.id;
+            break;
+            
+          case ENTITY_TYPES.PRODUCTS:
+            updateUrl = `${baseUrl}/api/v2/products/${rowData.id}`;
+            method = 'PATCH';
+            
+            // Remove ID from payload
+            delete rowData.data.id;
+            break;
+            
+          // API v1 endpoints
+          case ENTITY_TYPES.LEADS:
+            updateUrl = `${baseUrl}/v1/leads/${rowData.id}`;
+            method = 'PATCH';
+            
+            // Remove ID from payload
+            delete rowData.data.id;
+            break;
+            
+          // API v1 fields endpoints using PUT
+          case ENTITY_TYPES.DEAL_FIELDS:
+            updateUrl = `${baseUrl}/v1/dealFields/${rowData.id}`;
+            method = 'PUT';
+            break;
+            
+          case ENTITY_TYPES.PERSON_FIELDS:
+            updateUrl = `${baseUrl}/v1/personFields/${rowData.id}`;
+            method = 'PUT';
+            break;
+            
+          case ENTITY_TYPES.ORGANIZATION_FIELDS:
+            updateUrl = `${baseUrl}/v1/organizationFields/${rowData.id}`;
+            method = 'PUT';
+            break;
+            
+          case ENTITY_TYPES.PRODUCT_FIELDS:
+            updateUrl = `${baseUrl}/v1/productFields/${rowData.id}`;
+            method = 'PUT';
+            break;
+            
+          // Default fallback (should not happen if entity types are properly defined)
+          default:
+            // Use v1 API by default for unknown entity types
+            updateUrl = `${baseUrl}/v1/${entityType}/${rowData.id}`;
+            method = 'PUT';
+            Logger.log(`Warning: Unknown entity type ${entityType}, using default API endpoint`);
         }
+        
+        // Log the request we're making
+        Logger.log(`Updating ${entityType} with ID ${rowData.id}`);
+        Logger.log(`Request URL: ${updateUrl}`);
+        Logger.log(`Request method: ${method}`);
+        
+        // Log the complete data payload that will be sent
+        Logger.log(`Complete request data for ${entityType}: ${JSON.stringify(rowData.data, (key, value) => {
+          // Handle Date objects for clear logging
+          if (value instanceof Date) {
+            return `Date(${value.toISOString()})`;
+          }
+          return value;
+        }, 2)}`);
+
+        // For activities, manually check for due_date in the row data
+        if (entityType === ENTITY_TYPES.ACTIVITIES) {
+          try {
+            // Store the current row information for use in this function
+            // We'll use the rowIndex from rowData to look up the correct row
+            const thisRowIndex = rowData.rowIndex;
+            const thisRow = values[thisRowIndex]; // values is from the dataRange.getValues() call
+            
+            // Check if any "due date" or similar fields exist in the headers
+            const dueDateHeaders = headers.filter(h => 
+              h.toLowerCase().includes('due') || 
+              h.toLowerCase().includes('date') ||
+              h.toLowerCase().includes('deadline')
+            );
+            
+            if (dueDateHeaders.length > 0) {
+              Logger.log(`Found potential due date headers: ${dueDateHeaders.join(', ')}`);
+            } else {
+              Logger.log(`No potential due date headers found`);
+            }
+          } catch (e) {
+            // Just log the error but continue with the request
+            Logger.log(`Error checking date headers: ${e.message}`);
+          }
+        }
+        
+        Logger.log(`Request data: ${JSON.stringify(rowData.data)}`);
 
         // Make the API call with proper OAuth authentication
         const options = {
@@ -2734,6 +3028,11 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
         const response = UrlFetchApp.fetch(updateUrl, options);
         const statusCode = response.getResponseCode();
         const responseBody = response.getContentText();
+        
+        // Log response for debugging
+        Logger.log(`Response status: ${statusCode}`);
+        Logger.log(`Response body: ${responseBody}`);
+        
         const responseJson = JSON.parse(responseBody);
 
         if (statusCode >= 200 && statusCode < 300 && responseJson.success) {
@@ -2752,70 +3051,81 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
           // Update failed
           failureCount++;
           
-          // Set the sync status to "Error" with a note about the error
+          // Update the tracking column to "Error"
           activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setValue('Error');
-          activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setNote(
-            `API Error: ${statusCode} - ${responseJson.error || 'Unknown error'}`
-          );
           
-          // Track the failure
+          // Add error details to the cell note
+          let errorMessage = responseJson.error || 'Unknown error';
+          if (responseJson.errorCode) {
+            errorMessage += ` (${responseJson.errorCode})`;
+          }
+          
+          activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setNote(`Error: ${errorMessage}`);
+          
+          // Track the failure for summary
           failures.push({
             id: rowData.id,
-            error: responseJson.error || `Status code: ${statusCode}`
+            error: errorMessage
           });
         }
       } catch (error) {
-        // Handle exceptions
+        // Handle errors in the API call
         failureCount++;
-        Logger.log(`Error updating row ${rowData.rowIndex + 1}: ${error.message}`);
         
-        // Update the cell to show the error
+        // Update the tracking column to "Error"
         activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setValue('Error');
         activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setNote(`Error: ${error.message}`);
         
+        // Track the failure for summary
         failures.push({
           id: rowData.id,
           error: error.message
         });
+        
+        Logger.log(`Error updating row ${rowData.rowIndex}: ${error.message}`);
       }
     }
-
-    // Update formatting for the tracking column
+    
+    // Refresh status column styling
     refreshSyncStatusStyling();
-
-    // Update the last sync time
-    const now = new Date().toISOString();
-    scriptProperties.setProperty(`TWOWAY_SYNC_LAST_SYNC_${activeSheetName}`, now);
-
-    // Show a summary message
+    
+    // Show summary of results
     if (!isScheduledSync) {
-      let message = `Push complete: ${successCount} row(s) updated successfully`;
-      if (failureCount > 0) {
-        message += `, ${failureCount} failed. See notes in the "Sync Status" column for error details.`;
+      const ui = SpreadsheetApp.getUi();
+      
+      if (failureCount === 0) {
+        ui.alert(
+          'Sync Complete',
+          `Successfully updated ${successCount} record(s) in Pipedrive.`,
+          ui.ButtonSet.OK
+        );
       } else {
-        message += '.';
-      }
-
-      SpreadsheetApp.getActiveSpreadsheet().toast(message, 'Push to Pipedrive', 10);
-
-      if (failureCount > 0) {
-        // Show more details about failures
-        let failureDetails = 'The following records had errors:\n\n';
+        // Build error message
+        let errorMsg = `Updated ${successCount} record(s) successfully.\n\n`;
+        errorMsg += 'The following records had errors:\n\n';
+        
         failures.forEach(failure => {
-          failureDetails += `- ID ${failure.id}: ${failure.error}\n`;
+          errorMsg += `- ID ${failure.id}: ${failure.error}\n`;
         });
-
-        const ui = SpreadsheetApp.getUi();
-        ui.alert('Sync Errors', failureDetails, ui.ButtonSet.OK);
+        
+        ui.alert(
+          'Sync Errors',
+          errorMsg,
+          ui.ButtonSet.OK
+        );
       }
     }
   } catch (error) {
     Logger.log(`Error in pushChangesToPipedrive: ${error.message}`);
+    Logger.log(`Stack trace: ${error.stack}`);
     
-    // Show error message for manual syncs
     if (!isScheduledSync) {
       const ui = SpreadsheetApp.getUi();
-      ui.alert('Error', `Failed to push changes to Pipedrive: ${error.message}`, ui.ButtonSet.OK);
+      ui.alert(
+        'Sync Error',
+        `An error occurred during sync: ${error.message}`,
+        ui.ButtonSet.OK
+      );
     }
   }
 }
