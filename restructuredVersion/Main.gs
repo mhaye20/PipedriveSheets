@@ -32,11 +32,6 @@ if (typeof UI === 'undefined') {
 let VERIFIED_USERS = {};
 
 /**
- * Field definitions cache
- */
-const fieldDefinitionsCache = {};
-
-/**
  * Creates the menu when the spreadsheet opens
  */
 function onOpen() {

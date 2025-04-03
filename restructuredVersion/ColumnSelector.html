@@ -332,6 +332,202 @@
       @keyframes spin {
         to { transform: rotate(360deg); }
       }
+      
+      /* Address field styling */
+      .address-component {
+        position: relative;
+        padding-left: 4px;
+        border-left: 2px solid rgba(66, 133, 244, 0.2);
+      }
+      
+      .address-component::before {
+        content: '';
+        position: absolute;
+        left: -4px;
+        top: 50%;
+        width: 4px;
+        height: 1px;
+        background-color: rgba(66, 133, 244, 0.5);
+      }
+      
+      .address-label {
+        font-size: 11px;
+        padding: 1px 4px;
+        border-radius: 3px;
+        background-color: rgba(66, 133, 244, 0.1);
+        color: var(--primary-color);
+        margin-right: 4px;
+      }
+      
+      /* Read-only field styling */
+      .read-only {
+        position: relative;
+      }
+      
+      .read-only::after {
+        content: '🔒';
+        font-size: 11px;
+        margin-left: 5px;
+        opacity: 0.7;
+      }
+      
+      /* Editable field styling */
+      .editable::after {
+        content: '✏️';
+        font-size: 11px;
+        margin-left: 5px;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+      
+      .editable:hover::after {
+        opacity: 0.7;
+      }
+      
+      /* Info tooltip */
+      .info-tooltip {
+        padding: 10px 14px;
+        background-color: #fff8e1;
+        border-radius: 8px;
+        border-left: none;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+        margin-bottom: 12px;
+        font-size: 12px;
+        color: #5d4901;
+        display: flex;
+        align-items: flex-start;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.2s ease;
+      }
+      
+      .info-tooltip:hover {
+        box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+      }
+      
+      .info-tooltip::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background-color: var(--warning-color);
+      }
+      
+      .info-tooltip-icon {
+        margin-right: 10px;
+        flex-shrink: 0;
+        opacity: 0.9;
+        font-size: 14px;
+      }
+      
+      .info-tooltip-content {
+        margin: 0;
+        flex: 1;
+      }
+      
+      .info-tooltip-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 2px;
+      }
+      
+      .info-tooltip-title {
+        font-weight: 500;
+        font-size: 13px;
+        color: #33280b;
+      }
+      
+      .info-tooltip-toggle {
+        color: var(--primary-color);
+        font-weight: 500;
+        cursor: pointer;
+        font-size: 11px;
+        text-decoration: none;
+        margin-left: 8px;
+        white-space: nowrap;
+        opacity: 0.85;
+        transition: opacity 0.2s ease;
+        display: flex;
+        align-items: center;
+      }
+      
+      .info-tooltip-toggle:hover {
+        opacity: 1;
+      }
+      
+      .info-tooltip-toggle::after {
+        content: '▼';
+        font-size: 8px;
+        margin-left: 4px;
+        transition: transform 0.2s ease;
+      }
+      
+      .info-tooltip-toggle.expanded::after {
+        transform: rotate(180deg);
+      }
+      
+      .info-tooltip-description {
+        font-size: 12px;
+        opacity: 0.9;
+      }
+      
+      .info-tooltip-details {
+        display: none;
+        margin-top: 8px;
+        border-top: 1px solid rgba(95, 74, 0, 0.1);
+        padding-top: 8px;
+      }
+      
+      .info-tooltip-details.expanded {
+        display: block;
+        animation: fadeIn 0.3s ease;
+      }
+      
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-5px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      
+      .info-tooltip ul {
+        margin: 4px 0 0 18px;
+        padding: 0;
+      }
+      
+      .info-tooltip li {
+        margin-bottom: 4px;
+        font-size: 11px;
+        line-height: 1.4;
+      }
+      
+      .info-tooltip-icons {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 5px;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+      
+      .info-icon-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 8px;
+        border-radius: 20px;
+        background-color: rgba(255, 255, 255, 0.7);
+        font-size: 11px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      }
+      
+      /* Hide address component label on smaller screens */
+      @media (max-width: 600px) {
+        .address-label {
+          display: none;
+        }
+      }
     </style>
     
     <?!= dataScript ?>
@@ -356,6 +552,32 @@
       <p class="info">
         Select which Pipedrive data columns to display in your sheet. Drag items in the right panel to change their order.
       </p>
+      
+      <div class="info-tooltip">
+        <div class="info-tooltip-icon">⚠️</div>
+        <div class="info-tooltip-content">
+          <div class="info-tooltip-header">
+            <div class="info-tooltip-title">Field Editability in Pipedrive</div>
+            <span class="info-tooltip-toggle" id="apiDetailsToggle" onclick="toggleApiDetails()">Details</span>
+          </div>
+          <div class="info-tooltip-description">Fields marked with 🔒 are read-only and cannot be pushed back to Pipedrive.</div>
+          
+          <div class="info-tooltip-details" id="apiDetails">
+            <div class="info-tooltip-icons">
+              <span class="info-icon-item">🔒 Read-only fields</span>
+              <span class="info-icon-item">✏️ Editable fields</span>
+            </div>
+            
+            Read-only fields include:
+            <ul>
+              <li>Address components (street, city, etc.) - only full address is editable</li>
+              <li>System fields (timestamps, counts, creator info)</li>
+              <li>Calculated values (formatted values, weighted values)</li>
+              <li>Most ID fields except certain linkable references</li>
+            </ul>
+          </div>
+        </div>
+      </div>
     </div>
     
     <div class="container">
@@ -434,6 +656,18 @@
           if (!selectedColumns.some(selected => selected.key === col.key)) {
             availableCount++;
             
+            // Apply special formatting for address component names
+            if (col.key && (col.key.includes('sublocality') || col.key.includes('locality'))) {
+              // Make names match the display labels we want
+              if (col.key.includes('sublocality')) {
+                col.name = col.name.replace('District/sublocality', 'District/Borough');
+                col.name = col.name.replace('Neighborhood', 'District/Borough');
+              }
+              if (col.key.includes('locality') && !col.key.includes('sublocality')) {
+                col.name = col.name.replace('City/town/village/locality', 'City');
+              }
+            }
+            
             if (!searchTerm || col.name.toLowerCase().includes(searchTerm)) {
               if (!col.isNested) {
                 topLevel.push(col);
@@ -466,6 +700,13 @@
             const item = document.createElement('div');
             item.className = 'item';
             item.dataset.key = col.key;
+            
+            // Add read-only class for address components
+            if (isReadOnlyField(col.key, col)) {
+              item.classList.add('read-only');
+            } else {
+              item.classList.add('editable');
+            }
             
             const columnText = document.createElement('span');
             columnText.className = 'column-text';
@@ -502,6 +743,13 @@
               const item = document.createElement('div');
               item.className = 'item nested';
               item.dataset.key = col.key;
+              
+              // Add read-only class for address components
+              if (isReadOnlyField(col.key, col)) {
+                item.classList.add('read-only');
+              } else {
+                item.classList.add('editable');
+              }
               
               const columnText = document.createElement('span');
               columnText.className = 'column-text';
@@ -552,11 +800,36 @@
         }
         
         selectedColumns.forEach((col, index) => {
+          // Apply special formatting for address component names
+          if (col.key && (col.key.includes('sublocality') || col.key.includes('locality'))) {
+            // Make names match the display labels we want
+            if (col.key.includes('sublocality')) {
+              col.name = col.name.replace('District/sublocality', 'District/Borough');
+              col.name = col.name.replace('Neighborhood', 'District/Borough');
+              if (col.customName && col.customName.includes('District/sublocality')) {
+                col.customName = col.customName.replace('District/sublocality', 'District/Borough');
+              }
+            }
+            if (col.key.includes('locality') && !col.key.includes('sublocality')) {
+              col.name = col.name.replace('City/town/village/locality', 'City');
+              if (col.customName && col.customName.includes('City/town/village/locality')) {
+                col.customName = col.customName.replace('City/town/village/locality', 'City');
+              }
+            }
+          }
+          
           const item = document.createElement('div');
           item.className = 'item selected';
           item.dataset.key = col.key;
           item.dataset.index = index;
           item.draggable = true;
+          
+          // Add read-only class for address components
+          if (isReadOnlyField(col.key, col)) {
+            item.classList.add('read-only');
+          } else {
+            item.classList.add('editable');
+          }
           
           // Add drag handle
           const dragHandle = document.createElement('span');
@@ -566,7 +839,42 @@
           // Add column name
           const columnText = document.createElement('span');
           columnText.className = 'column-text';
-          columnText.textContent = col.customName || col.name;
+          
+          // Special handling for address components
+          if (col.key && (col.key.includes('address.') || col.key.includes('.subpremise'))) {
+            // Add special styling for address components
+            item.classList.add('address-component');
+            
+            // Extract the component type for display
+            let addressType = '';
+            if (col.key.includes('subpremise')) {
+              addressType = 'SUITE';
+            } else if (col.key.includes('street_number')) {
+              addressType = 'STREET#';
+            } else if (col.key.includes('route')) {
+              addressType = 'STREET';
+            } else if (col.key.includes('sublocality')) {
+              addressType = 'DISTRICT/BOROUGH';
+            } else if (col.key.includes('locality')) {
+              addressType = 'CITY';
+            } else if (col.key.includes('admin_area_level_1')) {
+              addressType = 'STATE';
+            } else if (col.key.includes('postal_code')) {
+              addressType = 'ZIP';
+            } else if (col.key.includes('country')) {
+              addressType = 'COUNTRY';
+            }
+            
+            // Only add the type label if we have a recognized type
+            if (addressType) {
+              const addressLabel = document.createElement('span');
+              addressLabel.className = 'address-label';
+              addressLabel.textContent = addressType;
+              columnText.appendChild(addressLabel);
+            }
+          }
+          
+          columnText.appendChild(document.createTextNode(col.customName || col.name));
           if (col.customName) {
             columnText.title = "Original field: " + col.name;
             columnText.style.fontStyle = 'italic';
@@ -657,7 +965,6 @@
           selectedColumns.push(JSON.parse(JSON.stringify(fullColumn)));
           renderAvailableList(searchBox.value);
           renderSelectedList();
-          showStatus('success', 'Column added: ' + fullColumn.name);
         }
       }
       
@@ -667,7 +974,6 @@
           selectedColumns.splice(index, 1);
           renderAvailableList(searchBox.value);
           renderSelectedList();
-          showStatus('success', 'Column removed: ' + column.name);
         }
       }
       
@@ -705,6 +1011,26 @@
         
         console.log('Save button clicked, sending data to server');
         console.log(`Sending ${selectedColumns.length} columns to save`);
+        
+        // Update any address component display names before saving
+        selectedColumns.forEach(col => {
+          if (col.key && (col.key.includes('sublocality') || col.key.includes('locality'))) {
+            // Make sure names match display labels
+            if (col.key.includes('sublocality')) {
+              col.name = col.name.replace('District/sublocality', 'District/Borough');
+              col.name = col.name.replace('Neighborhood', 'District/Borough');
+              if (col.customName && col.customName.includes('District/sublocality')) {
+                col.customName = col.customName.replace('District/sublocality', 'District/Borough');
+              }
+            }
+            if (col.key.includes('locality') && !col.key.includes('sublocality')) {
+              col.name = col.name.replace('City/town/village/locality', 'City');
+              if (col.customName && col.customName.includes('City/town/village/locality')) {
+                col.customName = col.customName.replace('City/town/village/locality', 'City');
+              }
+            }
+          }
+        });
         
         // Log email and phone columns specifically
         const emailColumns = selectedColumns.filter(col => col.key.startsWith('email.'));
@@ -767,6 +1093,124 @@
       // Initial render
       renderAvailableList();
       renderSelectedList();
+      
+      // Toggle API details
+      function toggleApiDetails() {
+        const details = document.getElementById('apiDetails');
+        const toggle = document.getElementById('apiDetailsToggle');
+        
+        if (details.classList.contains('expanded')) {
+          details.classList.remove('expanded');
+          toggle.classList.remove('expanded');
+          toggle.textContent = 'Details';
+        } else {
+          details.classList.add('expanded');
+          toggle.classList.add('expanded');
+          toggle.textContent = 'Hide';
+        }
+      }
+
+      // Add this helper function to check if a field is read-only
+      function isReadOnlyField(key, column) {
+        // Check if the column object has a readOnly property
+        if (column && column.readOnly === true) {
+          return true;
+        }
+        
+        // Check for address components - they are read-only according to Pipedrive API
+        if (key && 
+            (key.includes('.street_number') || 
+             key.includes('.route') || 
+             key.includes('.subpremise') || 
+             key.includes('.sublocality') || 
+             key.includes('.locality') || 
+             key.includes('.admin_area_level_1') || 
+             key.includes('.admin_area_level_2') || 
+             key.includes('.country') || 
+             key.includes('.postal_code') ||
+             key.includes('_street_number') || 
+             key.includes('_route') || 
+             key.includes('_subpremise') || 
+             key.includes('_sublocality') || 
+             key.includes('_locality') || 
+             key.includes('_admin_area_level_1') || 
+             key.includes('_admin_area_level_2') || 
+             key.includes('_country') || 
+             key.includes('_postal_code'))) {
+          return true;
+        }
+        
+        // Common read-only fields across all entity types
+        if (key && (
+            // ID fields (except the main ID used for identification)
+            (key !== 'id' && key.endsWith('_id') && key !== 'owner_id' && 
+             key !== 'person_id' && key !== 'org_id' && key !== 'organization_id' && 
+             key !== 'deal_id' && key !== 'lead_id' && key !== 'stage_id' && 
+             key !== 'pipeline_id' && key !== 'project_id' && key !== 'category') ||
+            
+            // System-generated fields
+            key === 'creator_user_id' || 
+            key === 'user_id' || 
+            key === 'followers_count' ||
+            key === 'participants_count' ||
+            key === 'activities_count' ||
+            key === 'done_activities_count' ||
+            key === 'undone_activities_count' ||
+            key === 'files_count' ||
+            key === 'notes_count' ||
+            key === 'email_messages_count' ||
+            key === 'people_count' ||
+            key === 'products_count' ||
+            
+            // Formatted or calculated fields
+            key === 'formatted_value' || 
+            key === 'weighted_value' || 
+            key === 'formatted_weighted_value' ||
+            key === 'weighted_value_currency' ||
+            key.startsWith('formatted_') ||
+            
+            // System fields
+            key === 'first_char' ||
+            key === 'active_flag' ||
+            key === 'cc_email' ||
+            key === 'next_activity_id' ||
+            key === 'last_activity_id' ||
+            key === 'last_incoming_mail_time' ||
+            key === 'last_outgoing_mail_time' ||
+            key === 'rotten_time' ||
+            key === 'next_activity_date' ||
+            key === 'next_activity_time' ||
+            key === 'next_activity_type' ||
+            key === 'next_activity_duration' ||
+            key === 'next_activity_note' ||
+            key === 'archive_time' ||
+            key === 'local_close_date' ||
+            key === 'local_won_date' ||
+            key === 'local_lost_date' ||
+            
+            // Label information (can only be modified via label_ids)
+            key === 'label' ||
+            
+            // Deal-specific read-only fields
+            key === 'stage_order_nr' ||
+            key === 'person_name' ||
+            key === 'org_name' ||
+            key === 'origin' ||
+            key === 'origin_id' ||
+            key === 'channel' ||
+            
+            // Person/Org specific
+            key === 'has_pic' ||
+            key === 'pic_hash' ||
+            key === 'owner_name' ||
+            key === 'org_hidden' ||
+            key === 'person_hidden'
+        )) {
+          return true;
+        }
+        
+        return false;
+      }
     </script>
   </body>
 </html> 

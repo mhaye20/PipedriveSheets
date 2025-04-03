@@ -7,6 +7,9 @@
  * - Helper functions for common operations
  */
 
+// Define a cache for field definitions to avoid repeated API calls
+var fieldDefinitionsCache = {};
+
 /**
  * Formats a column name for display in the UI
  * @param {string} name - Raw column name
@@ -36,6 +39,67 @@ function getValueByPath(obj, path) {
     path = path.key;
   }
 
+  // Special handling for address fields
+  if (path.startsWith('address.')) {
+    const parts = path.split('.');
+    const component = parts[1];
+    
+    Logger.log(`Getting address component: ${component} from object`);
+    
+    // First check if we have a special flattened format like org['address.subpremise']
+    if (obj[path] !== undefined) {
+      Logger.log(`Found address component as direct flattened field: ${path} = ${obj[path]}`);
+      return obj[path];
+    }
+    
+    // Check if the address exists as an object
+    if (obj.address && typeof obj.address === 'object') {
+      if (obj.address[component] !== undefined) {
+        Logger.log(`Found address component in address object: ${component} = ${obj.address[component]}`);
+        return obj.address[component];
+      } else {
+        Logger.log(`Address component ${component} not found in address object: ${JSON.stringify(obj.address)}`);
+      }
+    } else {
+      Logger.log(`Address object not found or not an object: ${JSON.stringify(obj.address)}`);
+    }
+    
+    // If we get here, we didn't find the address component
+    return undefined;
+  }
+  // Special handling for custom field address components
+  else if (path.includes('_subpremise') || path.includes('_locality') || 
+         path.includes('_sublocality') ||
+         path.includes('_formatted_address') || path.includes('_street_number') ||
+         path.includes('_route') || path.includes('_admin_area') || path.includes('_country') ||
+         path.includes('_postal_code')) {
+  
+    // Custom field address components are stored at the top level of the item
+    // They use the custom field ID + _ + component name pattern
+    if (obj[path] !== undefined) {
+      // Get component type for better logging
+      const componentType = path.split('_').slice(1).join('_');
+      Logger.log(`Found custom address component as direct field: ${path} = ${obj[path]} (${componentType})`);
+      return obj[path];
+    }
+    
+    // Special logging for locality vs sublocality to help debug
+    if (path.includes('_locality') || path.includes('_sublocality')) {
+      const componentType = path.split('_').slice(1).join('_');
+      Logger.log(`Address component ${componentType} not found directly at ${path}`);
+      
+      // Try to find if the component exists under a different path
+      if (componentType === 'locality' && path.replace('_locality', '_sublocality') in obj) {
+        Logger.log(`Note: Found sublocality where locality was requested`);
+      }
+      else if (componentType === 'sublocality' && path.replace('_sublocality', '_locality') in obj) {
+        Logger.log(`Note: Found locality where sublocality was requested`);
+      }
+    }
+    
+    return undefined;
+  }
+  
   // Special handling for email and phone fields 
   // These are arrays with label and value properties in Pipedrive
   if (typeof path === 'string' && (path.startsWith('email.') || path.startsWith('phone.'))) {
@@ -148,6 +212,32 @@ function formatValue(value, columnPath, optionMappings = {}) {
   // If columnPath is an object with a key property, use that key
   if (typeof columnPath === 'object' && columnPath.key) {
     columnPath = columnPath.key;
+  }
+
+  // Special handling for address fields
+  if (columnPath.startsWith('address.')) {
+    // The address component is the part after "address."
+    const addressComponent = columnPath.split('.')[1];
+    Logger.log(`Formatting address component: ${addressComponent} with value: ${value}`);
+    
+    // If the value is an object and has that component, extract it
+    if (typeof value === 'object' && value !== null && value[addressComponent] !== undefined) {
+      Logger.log(`Address component ${addressComponent} found in object: ${value[addressComponent]}`);
+      return value[addressComponent].toString();
+    }
+    
+    // Special handling for specific components to make them more readable
+    if (addressComponent === 'subpremise' && value) {
+      return `Apt/Suite: ${value}`;
+    }
+    
+    // For direct string values (already extracted)
+    if (value !== null && value !== undefined) {
+      return value.toString();
+    }
+    
+    // If we couldn't extract anything, return empty string
+    return '';
   }
 
   // Special handling for email and phone arrays

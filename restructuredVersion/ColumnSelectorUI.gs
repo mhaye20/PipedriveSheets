@@ -141,6 +141,37 @@ function showColumnSelectorUI() {
                   isNested: true,
                   parentKey: currentPath
                 });
+                
+                // Add individual address components for more detailed control
+                const addressComponents = [
+                  'street_number', 'route', 'subpremise', 'sublocality', 
+                  'locality', 'admin_area_level_1', 'admin_area_level_2',
+                  'country', 'postal_code'
+                ];
+                
+                addressComponents.forEach(component => {
+                  if (customFieldValue[component] !== undefined) {
+                    // Create a user-friendly display name
+                    let componentName = component;
+                    if (component === 'subpremise') componentName = 'Apartment/Suite';
+                    if (component === 'street_number') componentName = 'Street Number';
+                    if (component === 'route') componentName = 'Street';
+                    if (component === 'sublocality') componentName = 'District/Borough';
+                    if (component === 'locality') componentName = 'City';
+                    if (component === 'admin_area_level_1') componentName = 'State/Province';
+                    if (component === 'admin_area_level_2') componentName = 'County';
+                    if (component === 'postal_code') componentName = 'ZIP/Postal Code';
+                    
+                    // Use the same user-friendly name in display names that will show in the UI
+                    availableColumns.push({
+                      key: `${currentPath}.${component}`,
+                      name: `${displayName} (${componentName})`,
+                      isNested: true,
+                      parentKey: currentPath,
+                      readOnly: true // Address components are read-only
+                    });
+                  }
+                });
               }
               // For all other object types
               else {
@@ -593,6 +624,101 @@ function showColumnSelectorUI() {
     
     // Post-process column names for better display
     availableColumns.forEach(col => {
+      // Mark address components as read-only based on Pipedrive API docs
+      if (col.key && 
+          (col.key.includes('.street_number') || 
+           col.key.includes('.route') || 
+           col.key.includes('.subpremise') || 
+           col.key.includes('.sublocality') || 
+           col.key.includes('.locality') || 
+           col.key.includes('.admin_area_level_1') || 
+           col.key.includes('.admin_area_level_2') || 
+           col.key.includes('.country') || 
+           col.key.includes('.postal_code') ||
+           col.key.includes('_street_number') || 
+           col.key.includes('_route') || 
+           col.key.includes('_subpremise') || 
+           col.key.includes('_sublocality') || 
+           col.key.includes('_locality') || 
+           col.key.includes('_admin_area_level_1') || 
+           col.key.includes('_admin_area_level_2') || 
+           col.key.includes('_country') || 
+           col.key.includes('_postal_code'))) {
+        col.readOnly = true;
+      }
+      
+      // Mark read-only fields based on Pipedrive API documentation
+      // These fields are not included in the update endpoints or are system-generated
+      
+      // Common read-only fields across all entity types
+      if (col.key && (
+          // ID fields (except the main ID used for identification)
+          (col.key !== 'id' && col.key.endsWith('_id') && col.key !== 'owner_id' && 
+           col.key !== 'person_id' && col.key !== 'org_id' && col.key !== 'organization_id' && 
+           col.key !== 'deal_id' && col.key !== 'lead_id' && col.key !== 'stage_id' && 
+           col.key !== 'pipeline_id' && col.key !== 'project_id' && col.key !== 'category') ||
+          
+          // System-generated fields
+          col.key === 'creator_user_id' || 
+          col.key === 'user_id' || 
+          col.key === 'followers_count' ||
+          col.key === 'participants_count' ||
+          col.key === 'activities_count' ||
+          col.key === 'done_activities_count' ||
+          col.key === 'undone_activities_count' ||
+          col.key === 'files_count' ||
+          col.key === 'notes_count' ||
+          col.key === 'email_messages_count' ||
+          col.key === 'people_count' ||
+          col.key === 'products_count' ||
+          
+          // Formatted or calculated fields
+          col.key === 'formatted_value' || 
+          col.key === 'weighted_value' || 
+          col.key === 'formatted_weighted_value' ||
+          col.key === 'weighted_value_currency' ||
+          col.key.startsWith('formatted_') ||
+          
+          // System fields
+          col.key === 'first_char' ||
+          col.key === 'active_flag' ||
+          col.key === 'cc_email' ||
+          col.key === 'next_activity_id' ||
+          col.key === 'last_activity_id' ||
+          col.key === 'last_incoming_mail_time' ||
+          col.key === 'last_outgoing_mail_time' ||
+          col.key === 'rotten_time' ||
+          col.key === 'next_activity_date' ||
+          col.key === 'next_activity_time' ||
+          col.key === 'next_activity_type' ||
+          col.key === 'next_activity_duration' ||
+          col.key === 'next_activity_note' ||
+          col.key === 'archive_time' ||
+          col.key === 'local_close_date' ||
+          col.key === 'local_won_date' ||
+          col.key === 'local_lost_date' ||
+          
+          // Label information (can only be modified via label_ids)
+          col.key === 'label' ||
+          
+          // Deal-specific read-only fields
+          col.key === 'stage_order_nr' ||
+          col.key === 'person_name' ||
+          col.key === 'org_name' ||
+          col.key === 'origin' ||
+          col.key === 'origin_id' ||
+          col.key === 'channel' ||
+          
+          // Person/Org specific
+          col.key === 'has_pic' ||
+          col.key === 'pic_hash' ||
+          col.key === 'owner_name' ||
+          col.key === 'org_hidden' ||
+          col.key === 'person_hidden'
+      )) {
+        col.readOnly = true;
+      }
+      
       // Handle owner_id specially
       if (col.key === 'owner_id') {
         col.name = 'Owner';

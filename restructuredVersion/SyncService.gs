@@ -215,6 +215,67 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
         Logger.log("Phone field structure:");
         Logger.log(JSON.stringify(items[0].phone, null, 2));
       }
+      
+      // Log address fields for organizations
+      if (entityType === ENTITY_TYPES.ORGANIZATIONS && items[0].address) {
+        Logger.log("Address field structure:");
+        Logger.log(JSON.stringify(items[0].address, null, 2));
+      }
+    }
+    
+    // Special handling for address fields in organizations
+    if (entityType === ENTITY_TYPES.ORGANIZATIONS) {
+      Logger.log("Processing organization address fields...");
+      for (let i = 0; i < items.length; i++) {
+        const org = items[i];
+        
+        // Process address components for organizations
+        if (org.address) {
+          // Create explicit fields for each address component if they don't exist
+          if (typeof org.address === 'object') {
+            // Full address components (use dot notation to extract later)
+            if (org.address.street_number) {
+              org['address.street_number'] = org.address.street_number;
+            }
+            if (org.address.route) {
+              org['address.route'] = org.address.route;
+            }
+            if (org.address.sublocality) {
+              org['address.sublocality'] = org.address.sublocality;
+            }
+            if (org.address.locality) {
+              org['address.locality'] = org.address.locality;
+            }
+            if (org.address.admin_area_level_1) {
+              org['address.admin_area_level_1'] = org.address.admin_area_level_1;
+            }
+            if (org.address.admin_area_level_2) {
+              org['address.admin_area_level_2'] = org.address.admin_area_level_2;
+            }
+            if (org.address.country) {
+              org['address.country'] = org.address.country;
+            }
+            if (org.address.postal_code) {
+              org['address.postal_code'] = org.address.postal_code;
+            }
+            if (org.address.formatted_address) {
+              org['address.formatted_address'] = org.address.formatted_address;
+            }
+            // The "apartment" or "suite" is often in the subpremise field
+            if (org.address.subpremise) {
+              org['address.subpremise'] = org.address.subpremise;
+            }
+            
+            // Log the extracted address components
+            Logger.log(`Extracted address components for organization ${org.id || i}:`);
+            for (const key in org) {
+              if (key.startsWith('address.')) {
+                Logger.log(`  ${key}: ${org[key]}`);
+              }
+            }
+          }
+        }
+      }
     }
     
     // Check if we have any data
@@ -586,8 +647,109 @@ function writeDataToSheet(items, options) {
         }
         
         const columnKey = typeof column === 'object' ? column.key : column;
+        
+        // Add special logging for address fields
+        if (columnKey && (columnKey === 'address' || columnKey.startsWith('address.') ||
+            // Add this condition to catch custom field address components
+            columnKey.includes('_subpremise') || columnKey.includes('_locality') || 
+            columnKey.includes('_sublocality') || // Add explicit check for sublocality
+            columnKey.includes('_street_number') || columnKey.includes('_route') || 
+            columnKey.includes('_formatted_address'))) {
+          Logger.log(`Processing address field: ${columnKey}`);
+          
+          // For custom field address components (they have a hash ID pattern)
+          if (columnKey.includes('_')) {
+            const fieldBase = columnKey.split('_')[0]; // Get the base field ID
+            const componentType = columnKey.split('_').slice(1).join('_'); // Get the component type
+            
+            // Log friendly name for the component type
+            let friendlyComponentName = componentType;
+            if (componentType === 'subpremise') friendlyComponentName = 'Apartment/Suite';
+            if (componentType === 'street_number') friendlyComponentName = 'Street Number';
+            if (componentType === 'route') friendlyComponentName = 'Street';
+            if (componentType === 'sublocality') friendlyComponentName = 'District/Borough';
+            if (componentType === 'locality') friendlyComponentName = 'City';
+            if (componentType === 'admin_area_level_1') friendlyComponentName = 'State/Province';
+            if (componentType === 'admin_area_level_2') friendlyComponentName = 'County';
+            if (componentType === 'postal_code') friendlyComponentName = 'ZIP/Postal Code';
+            
+            Logger.log(`Processing address component: ${componentType} (${friendlyComponentName})`);
+            
+            // Direct access to these fields in the item - they're at the top level in API
+            if (item[columnKey] !== undefined) {
+              Logger.log(`Found custom address component directly: ${columnKey} = ${item[columnKey]}`);
+              Logger.log(`Component type: ${componentType} (${friendlyComponentName})`);
+              row[index] = formatValue(item[columnKey], columnKey, options.optionMappings);
+              return;
+            }
+            
+            // If this is sublocality or locality, make sure we're properly distinguishing between them
+            if (componentType === 'sublocality' || componentType === 'locality') {
+              Logger.log(`Processing special component type: ${componentType}`);
+              Logger.log(`Looking for value at item[${columnKey}]`);
+              
+              // Make sure we're correctly identifying both fields
+              if (item[`${fieldBase}_${componentType}`] !== undefined) {
+                const value = item[`${fieldBase}_${componentType}`];
+                Logger.log(`Found ${componentType} value directly: ${value}`);
+                row[index] = formatValue(value, columnKey, options.optionMappings);
+                return;
+              }
+            }
+          }
+          
+          // For address component fields
+          if (columnKey.startsWith('address.')) {
+            const addressComponent = columnKey.replace('address.', '');
+            Logger.log(`Looking for address component: ${addressComponent}`);
+            
+            if (item.address && typeof item.address === 'object') {
+              Logger.log(`Full address structure: ${JSON.stringify(item.address)}`);
+              
+              // Check if the address component exists
+              if (item.address[addressComponent] !== undefined) {
+                Logger.log(`Found address component ${addressComponent} with value: ${item.address[addressComponent]}`);
+                
+                // Store directly as flattened property
+                const value = item.address[addressComponent];
+                row[index] = formatValue(value, columnKey, options.optionMappings);
+                Logger.log(`Set row[${index}] (${headers[index]}) to value: ${row[index]}`);
+                
+                // Skip the standard processing for this field
+                return;
+              } else {
+                Logger.log(`Address component ${addressComponent} NOT FOUND in address structure`);
+                
+                // Check if this component exists as a direct field in the item
+                if (item[columnKey] !== undefined) {
+                  Logger.log(`Found address component as direct field: ${columnKey} = ${item[columnKey]}`);
+                  const value = item[columnKey];
+                  row[index] = formatValue(value, columnKey, options.optionMappings);
+                  Logger.log(`Set row[${index}] (${headers[index]}) to value: ${row[index]}`);
+                  return;
+                }
+              }
+            } else {
+              Logger.log(`No object address structure found, using fallback - address is: ${JSON.stringify(item.address)}`);
+              
+              // Try direct property
+              if (item[columnKey] !== undefined) {
+                Logger.log(`Found direct property ${columnKey} = ${item[columnKey]}`);
+                const value = item[columnKey];
+                row[index] = formatValue(value, columnKey, options.optionMappings);
+                Logger.log(`Set row[${index}] (${headers[index]}) to value: ${row[index]}`);
+                return;
+              }
+            }
+          }
+        }
+        
+        // Standard handling for non-address fields
         const value = getValueByPath(item, columnKey);
         row[index] = formatValue(value, columnKey, options.optionMappings);
+        
+        // Log the value for all fields
+        Logger.log(`Field: ${columnKey}, Value: ${row[index]}`);
       });
       
       // If two-way sync is enabled, add the status value in the last column
@@ -2558,7 +2720,7 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
         // Maps to store phone and email data for proper formatting
         const phoneData = [];
         const emailData = [];
-        
+
         // Map column values to API fields
         for (let j = 0; j < headers.length; j++) {
           // Skip the tracking column
@@ -2576,7 +2738,7 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
 
           // Log all field mappings for debugging
           Logger.log(`Processing field: ${header} with value: ${value} (type: ${typeof value}, isDate: ${value instanceof Date})`);
-          
+
           // Get the field key for this header - first try the stored column config
           let fieldKey = headerToFieldKeyMap[header] || fieldMappings[header];
           
@@ -2593,7 +2755,7 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
               Logger.log(`Mapped "${header}" to Pipedrive field "due_time" using common field mapping`);
             }
           }
-          
+
           if (fieldKey) {
             Logger.log(`Mapped to Pipedrive field: ${fieldKey}`);
             // Check if this is a multi-option field (this handles both custom and standard fields)
@@ -2924,6 +3086,42 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
             
             // Remove ID from payload
             delete rowData.data.id;
+            
+            // Special handling for address fields in organizations
+            const addressFields = [
+              'address', 'address_street_number', 'address_route', 
+              'address_sublocality', 'address_locality', 'address_admin_area_level_1',
+              'address_admin_area_level_2', 'address_country', 'address_postal_code',
+              'address_formatted_address'
+            ];
+            
+            // Check if we have any address-related fields
+            const hasAddressFields = addressFields.some(field => field in rowData.data);
+            
+            if (hasAddressFields) {
+              Logger.log(`Organization has address fields, ensuring proper structure`);
+              
+              // Handle the main address field
+              if (rowData.data.address) {
+                // Make sure it's a string
+                if (typeof rowData.data.address !== 'string') {
+                  rowData.data.address = String(rowData.data.address);
+                }
+                Logger.log(`Setting address: ${rowData.data.address}`);
+              }
+              
+              // Make sure address_country is separate from address
+              if (rowData.data.address_country) {
+                Logger.log(`Setting address_country: ${rowData.data.address_country}`);
+              }
+              
+              // For other address components, ensure they're included correctly
+              for (const field of addressFields) {
+                if (field !== 'address' && field !== 'address_country' && field in rowData.data) {
+                  Logger.log(`Including address component ${field}: ${rowData.data[field]}`);
+                }
+              }
+            }
             break;
             
           case ENTITY_TYPES.PRODUCTS:
@@ -3085,10 +3283,10 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
         Logger.log(`Error updating row ${rowData.rowIndex}: ${error.message}`);
       }
     }
-    
+
     // Refresh status column styling
     refreshSyncStatusStyling();
-    
+
     // Show summary of results
     if (!isScheduledSync) {
       const ui = SpreadsheetApp.getUi();
@@ -3103,7 +3301,7 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
         // Build error message
         let errorMsg = `Updated ${successCount} record(s) successfully.\n\n`;
         errorMsg += 'The following records had errors:\n\n';
-        
+
         failures.forEach(failure => {
           errorMsg += `- ID ${failure.id}: ${failure.error}\n`;
         });
@@ -4162,4 +4360,134 @@ function debugTwoWaySyncOriginalValues(sheetName) {
   } catch (error) {
     Logger.log(`Error in debugTwoWaySyncOriginalValues: ${error.message}`);
   }
+}
+
+// Find where data is written to the sheet in the syncPipedriveDataToSheet function
+// Add logging around where values are extracted from Pipedrive data and written to the sheet
+
+// Look for a section where it's processing each column and add logging for address fields:
+// ... existing code ...
+
+// Inside the item processing loop where it extracts values
+function getFieldValue(item, fieldKey) {
+  // Add logging for address-related fields
+  if (fieldKey && (fieldKey === 'address' || fieldKey.startsWith('address.'))) {
+    Logger.log(`Processing address field: ${fieldKey}`);
+    
+    // Log the full address structure if available
+    if (fieldKey === 'address' && item.address && typeof item.address === 'object') {
+      Logger.log(`Full address structure: ${JSON.stringify(item.address)}`);
+    }
+    
+    // Special handling for address subfields
+    if (fieldKey.startsWith('address.') && item.address) {
+      const addressComponent = fieldKey.replace('address.', '');
+      Logger.log(`Extracting address component: ${addressComponent}`);
+      
+      if (item.address[addressComponent] !== undefined) {
+        Logger.log(`Found value for ${addressComponent}: ${item.address[addressComponent]}`);
+        return item.address[addressComponent];
+      } else {
+        Logger.log(`No value found for address component: ${addressComponent}`);
+      }
+    }
+  }
+  
+  // Add special handling for custom field address components
+  if (fieldKey && (fieldKey.includes('_subpremise') || fieldKey.includes('_locality') || 
+      fieldKey.includes('_formatted_address') || fieldKey.includes('_street_number') ||
+      fieldKey.includes('_route') || fieldKey.includes('_admin_area') || 
+      fieldKey.includes('_postal_code') || fieldKey.includes('_country'))) {
+    
+    Logger.log(`Processing custom field address component: ${fieldKey}`);
+    
+    // Custom field address components are stored directly at the item's top level
+    if (item[fieldKey] !== undefined) {
+      Logger.log(`Found custom address component as direct field: ${fieldKey} = ${item[fieldKey]}`);
+      return item[fieldKey];
+    } else {
+      Logger.log(`Custom address component not found: ${fieldKey}`);
+    }
+  }
+  
+  // Original getFieldValue logic continues below
+  let value = null;
+  
+  try {
+    // Special handling for nested keys like "org_id.name"
+    if (fieldKey.includes('.')) {
+      // Split the key into parts
+      const keyParts = fieldKey.split('.');
+      let currentObj = item;
+      
+      // Navigate through the object hierarchy
+      for (let i = 0; i < keyParts.length; i++) {
+        const part = keyParts[i];
+        
+        // Special handling for email.work, phone.mobile etc.
+        if ((keyParts[0] === 'email' || keyParts[0] === 'phone') && i === 1 && isNaN(parseInt(part))) {
+          // This is a label-based lookup like email.work or phone.mobile
+          const itemArray = currentObj; // The array of email/phone objects
+          if (Array.isArray(itemArray)) {
+            // Find the item with the matching label
+            const foundItem = itemArray.find(item => 
+              item && item.label && item.label.toLowerCase() === part.toLowerCase()
+            );
+            
+            // If found, use its value
+            if (foundItem) {
+              currentObj = foundItem;
+              continue;
+            } else {
+              // If label not found, check if we're looking for primary
+              if (part.toLowerCase() === 'primary') {
+                const primaryItem = itemArray.find(item => item && item.primary);
+                if (primaryItem) {
+                  currentObj = primaryItem;
+                  continue;
+                }
+              }
+              // Fallback to first item if available
+              if (itemArray.length > 0) {
+                currentObj = itemArray[0];
+                continue;
+              }
+            }
+          }
+          // If we get here, we couldn't find a matching item
+          currentObj = null;
+          break;
+        }
+        
+        // Handle array access - check if part is a number
+        if (!isNaN(parseInt(part))) {
+          const index = parseInt(part);
+          if (Array.isArray(currentObj) && index < currentObj.length) {
+            currentObj = currentObj[index];
+          } else {
+            currentObj = null;
+            break;
+          }
+        } else {
+          // Regular object property access
+          if (currentObj && typeof currentObj === 'object' && currentObj[part] !== undefined) {
+            currentObj = currentObj[part];
+          } else {
+            currentObj = null;
+            break;
+          }
+        }
+      }
+      
+      value = currentObj;
+    } else {
+      // Direct property access
+      value = item[fieldKey];
+    }
+  } catch (error) {
+    Logger.log(`Error getting field value for ${fieldKey}: ${error.message}`);
+    value = null;
+  }
+  
+  return value;
 }

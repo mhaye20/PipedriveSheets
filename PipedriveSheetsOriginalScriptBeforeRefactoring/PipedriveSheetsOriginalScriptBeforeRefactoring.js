@@ -4654,14 +4654,12 @@ function showColumnSelectorUI(availableColumns, selectedColumns, entityType, she
         selectedColumns.push(column);
         renderAvailableList(searchBox.value);
         renderSelectedList();
-        showStatus('success', 'Column added: ' + column.name);
       }
       
       function removeColumn(column) {
         selectedColumns = selectedColumns.filter(col => col.key !== column.key);
         renderAvailableList(searchBox.value);
         renderSelectedList();
-        showStatus('success', 'Column removed: ' + column.name);
       }
 
       function renameColumn(columnIndex) {
