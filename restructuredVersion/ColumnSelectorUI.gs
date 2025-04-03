@@ -219,6 +219,22 @@ function showColumnSelectorUI() {
           continue;
         }
         
+        // Skip API-specific metadata fields that aren't useful
+        if (['first_char', 'label', 'labels', 'visible_to', 'visible_from', 'in_visible_list'].includes(key)) {
+          continue;
+        }
+        
+        // Skip redundant owner fields (use owner_id instead)
+        if (key === 'owner' && obj.hasOwnProperty('owner_id')) {
+          continue;
+        }
+        
+        // Skip duplicate name fields for owner/fields that will be handled by custom display names
+        if (key === 'name' && parentPath && 
+           (parentPath.endsWith('_id') || parentPath.includes('owner'))) {
+          continue;
+        }
+        
         const currentPath = parentPath ? parentPath + '.' + key : key;
         // Use field map for display name if available
         let displayName = parentName ? 
@@ -295,19 +311,73 @@ function showColumnSelectorUI() {
       
       // Create a record of already added custom fields to avoid duplicates
       const addedCustomFields = new Set();
+      const addedKeys = new Set();
+      
+      // Keep track of important keys that we've already processed
+      const processedTopLevelKeys = new Set();
       
       // First, build top-level column data
       Logger.log(`Building top-level columns first`);
+      
+      // Start with essential fields for every entity type
+      const essentialFields = ['id', 'name', 'owner_id'];
+      
+      // Add entity-specific essential fields
+      if (entityType === ENTITY_TYPES.DEALS) {
+        essentialFields.push('title', 'value', 'currency', 'status', 'pipeline_id', 'stage_id', 'expected_close_date');
+      } else if (entityType === ENTITY_TYPES.PERSONS) {
+        essentialFields.push('email', 'phone', 'org_id');
+      } else if (entityType === ENTITY_TYPES.ORGANIZATIONS) {
+        essentialFields.push('address', 'owner_id', 'web');
+      } else if (entityType === ENTITY_TYPES.ACTIVITIES) {
+        essentialFields.push('type', 'due_date', 'due_time', 'note', 'deal_id', 'person_id', 'org_id');
+      } else if (entityType === ENTITY_TYPES.PRODUCTS) {
+        essentialFields.push('code', 'description', 'unit', 'cost', 'prices');
+      }
+      
+      // Add common date fields for all entities
+      essentialFields.push('add_time', 'update_time', 'created_at', 'updated_at');
+      
+      // Add the essential fields first
+      for (const key of essentialFields) {
+        if (sampleItem.hasOwnProperty(key) && !processedTopLevelKeys.has(key)) {
+          processedTopLevelKeys.add(key);
+          addedKeys.add(key);
+          
+          const displayName = fieldMap[key] || formatColumnName(key);
+          
+          availableColumns.push({
+            key: key,
+            name: displayName,
+            isNested: false
+          });
+        }
+      }
+      
+      // Then process the rest of top-level fields
       for (const key in sampleItem) {
-        // Skip internal properties or functions
-        if (key.startsWith('_') || typeof sampleItem[key] === 'function') {
+        // Skip already processed keys, internal properties or functions
+        if (processedTopLevelKeys.has(key) || key.startsWith('_') || typeof sampleItem[key] === 'function') {
           continue;
         }
         
-        // Skip email and phone at top level - handled specially
-        if (key === 'email' || key === 'phone') {
+        // Skip problematic fields like "im", "lm", "first_char", etc.
+        if (['im', 'lm', 'first_char', 'label', 'labels', 'visible_to', 'visible_from'].includes(key)) {
           continue;
         }
+        
+        // Skip owner object if we have owner_id
+        if (key === 'owner' && sampleItem.hasOwnProperty('owner_id')) {
+          continue;
+        }
+        
+        // Skip email and phone at top level if they're objects - handled specially
+        if ((key === 'email' || key === 'phone') && typeof sampleItem[key] === 'object') {
+          continue;
+        }
+        
+        processedTopLevelKeys.add(key);
+        addedKeys.add(key);
         
         const displayName = fieldMap[key] || formatColumnName(key);
         
@@ -320,7 +390,7 @@ function showColumnSelectorUI() {
       }
       
       // Special handling for top-level email/phone fields
-      if (sampleItem.email) {
+      if (sampleItem.email && typeof sampleItem.email === 'object') {
         availableColumns.push({
           key: 'email',
           name: 'Email',
@@ -330,7 +400,7 @@ function showColumnSelectorUI() {
         extractFields(sampleItem.email, 'email', 'Email');
       }
       
-      if (sampleItem.phone) {
+      if (sampleItem.phone && typeof sampleItem.phone === 'object') {
         availableColumns.push({
           key: 'phone',
           name: 'Phone',
@@ -343,6 +413,11 @@ function showColumnSelectorUI() {
       // Then extract nested fields for all complex objects
       for (const key in sampleItem) {
         if (key.startsWith('_') || typeof sampleItem[key] === 'function') {
+          continue;
+        }
+        
+        // Skip problematic objects that cause clutter
+        if (['im', 'lm', 'owner', 'first_char', 'label', 'labels'].includes(key)) {
           continue;
         }
         
@@ -394,18 +469,85 @@ function showColumnSelectorUI() {
     // Filter out problematic fields
     availableColumns = availableColumns.filter(col => {
       // Remove problematic fields like "im" and "lm"
-      return !col.key.startsWith('im.') && 
-             !col.key.startsWith('lm.') &&
-             col.key !== 'im' && 
-             col.key !== 'lm';
+      if (col.key.startsWith('im.') || 
+          col.key.startsWith('lm.') ||
+          col.key === 'im' || 
+          col.key === 'lm' ||
+          col.key === 'first_char' ||
+          col.key === 'labels' ||
+          col.key === 'label') {
+        return false;
+      }
+      
+      // Skip fields that typically contain no useful data
+      if (['add_time', 'update_time'].includes(col.key) && 
+          availableColumns.some(c => c.key === 'created_at' || c.key === 'updated_at')) {
+        // Prefer created_at/updated_at over add_time/update_time
+        return false;
+      }
+      
+      // Handle duplicate organization fields - prefer org_id over org or organization
+      if ((col.key === 'org' || col.key === 'organization') && 
+          availableColumns.some(c => c.key === 'org_id')) {
+        return false;
+      }
+      
+      // Organization name duplicates
+      if ((col.key === 'org.name' || col.key === 'organization.name') && 
+          availableColumns.some(c => c.key === 'org_id.name')) {
+        return false;
+      }
+      
+      // Handle owner fields - only keep owner_id at top level and avoid duplicates
+      if (col.key === 'owner' && availableColumns.some(c => c.key === 'owner_id')) {
+        return false;
+      }
+      
+      // Remove duplicates of owner_id.name vs owner.name
+      if (col.key === 'owner.name' && availableColumns.some(c => c.key === 'owner_id.name')) {
+        return false;
+      }
+      
+      // Person duplicates - prefer person_id over person
+      if (col.key === 'person' && availableColumns.some(c => c.key === 'person_id')) {
+        return false;
+      }
+      
+      // Person name duplicates
+      if (col.key === 'person.name' && availableColumns.some(c => c.key === 'person_id.name')) {
+        return false;
+      }
+      
+      // Remove potentially confusing nested fields that duplicate info
+      if (col.key.includes('.') && col.key.includes('id') && 
+          col.key.endsWith('.id') && col.parentKey) {
+        const parentField = col.parentKey;
+        // If we have both parent.id and parent_id, keep parent_id
+        if (availableColumns.some(c => c.key === parentField + '_id')) {
+          return false;
+        }
+      }
+
+      return true;
     });
     
-    // Log the structure of email and phone fields if they exist
-    if (sampleItem.email) {
-      Logger.log(`Email field structure: ${JSON.stringify(sampleItem.email)}`);
+    // Additional pass to remove redundant org/organization fields
+    const orgKeys = availableColumns
+      .filter(col => col.key === 'org_id' || col.key === 'org' || col.key === 'organization')
+      .map(col => col.key);
+    
+    // If we have multiple org representations, keep only org_id
+    if (orgKeys.length > 1 && orgKeys.includes('org_id')) {
+      availableColumns = availableColumns.filter(col => 
+        col.key !== 'org' && col.key !== 'organization' || col.key === 'org_id');
     }
-    if (sampleItem.phone) {
-      Logger.log(`Phone field structure: ${JSON.stringify(sampleItem.phone)}`);
+
+    // Additional cleanup for organizations entity type
+    if (entityType === ENTITY_TYPES.ORGANIZATIONS) {
+      // When viewing organizations, remove redundant org/organization fields that reference self
+      availableColumns = availableColumns.filter(col => 
+        !(col.key.startsWith('org.') || col.key.startsWith('organization.') || 
+          col.key === 'org' || col.key === 'organization'));
     }
     
     // Sort columns to prioritize important fields
@@ -417,6 +559,20 @@ function showColumnSelectorUI() {
       // Then name
       if (a.key === 'name') return -1;
       if (b.key === 'name') return 1;
+      
+      // Then owner
+      if (a.key === 'owner_id') return -1;
+      if (b.key === 'owner_id') return 1;
+      
+      // Main commonly used fields next
+      const mainFields = ['title', 'status', 'value', 'currency', 'org_id', 'person_id', 'pipeline_id', 'stage_id'];
+      const aIsMainField = mainFields.includes(a.key);
+      const bIsMainField = mainFields.includes(b.key);
+      if (aIsMainField && !bIsMainField) return -1;
+      if (!aIsMainField && bIsMainField) return 1;
+      if (aIsMainField && bIsMainField) {
+        return mainFields.indexOf(a.key) - mainFields.indexOf(b.key);
+      }
       
       // Top-level fields before nested
       if (!a.isNested && b.isNested) return -1;
@@ -434,6 +590,97 @@ function showColumnSelectorUI() {
       // Then by display name
       return a.name.localeCompare(b.name);
     });
+    
+    // Post-process column names for better display
+    availableColumns.forEach(col => {
+      // Handle owner_id specially
+      if (col.key === 'owner_id') {
+        col.name = 'Owner';
+      } else if (col.key === 'owner_id.name') {
+        col.name = 'Owner Name';
+      } else if (col.key.startsWith('owner_id.')) {
+        const subfield = col.key.replace('owner_id.', '');
+        col.name = 'Owner ' + formatColumnName(subfield);
+      }
+      
+      // Handle organization fields
+      if (col.key === 'org_id') {
+        col.name = 'Organization';
+      } else if (col.key === 'org_id.name') {
+        col.name = 'Organization Name';
+      } else if (col.key.startsWith('org_id.')) {
+        const subfield = col.key.replace('org_id.', '');
+        col.name = 'Organization ' + formatColumnName(subfield);
+      }
+      
+      // Handle person fields
+      if (col.key === 'person_id') {
+        col.name = 'Person';
+      } else if (col.key === 'person_id.name') {
+        col.name = 'Person Name';
+      } else if (col.key.startsWith('person_id.')) {
+        const subfield = col.key.replace('person_id.', '');
+        col.name = 'Person ' + formatColumnName(subfield);
+      }
+      
+      // Handle deal fields
+      if (col.key === 'deal_id') {
+        col.name = 'Deal';
+      } else if (col.key === 'deal_id.name' || col.key === 'deal_id.title') {
+        col.name = 'Deal Title';
+      } else if (col.key.startsWith('deal_id.')) {
+        const subfield = col.key.replace('deal_id.', '');
+        col.name = 'Deal ' + formatColumnName(subfield);
+      }
+      
+      // Handle other IDs with better naming
+      if (col.key.endsWith('_id') && !col.key.includes('.') &&
+          !['owner_id', 'org_id', 'person_id', 'deal_id'].includes(col.key)) {
+        const baseName = col.key.replace('_id', '');
+        col.name = formatColumnName(baseName);
+      }
+      
+      // For person.name, org.name, etc., make them clearer
+      if (col.key.endsWith('.name')) {
+        const parentName = col.key.replace('.name', '');
+        if (['person', 'org', 'organization'].includes(parentName)) {
+          col.name = formatColumnName(parentName) + ' Name';
+        }
+      }
+    });
+    
+    // Additional pass to ensure primary entity name is clear
+    const entityNameMap = {
+      [ENTITY_TYPES.DEALS]: "Deal",
+      [ENTITY_TYPES.PERSONS]: "Person",
+      [ENTITY_TYPES.ORGANIZATIONS]: "Organization",
+      [ENTITY_TYPES.ACTIVITIES]: "Activity",
+      [ENTITY_TYPES.LEADS]: "Lead",
+      [ENTITY_TYPES.PRODUCTS]: "Product"
+    };
+
+    // Make the entity name field clearer based on current entity type
+    if (entityType && entityNameMap[entityType]) {
+      availableColumns.forEach(col => {
+        // Make "name" field explicit for the current entity type
+        if (col.key === 'name' && !col.isNested) {
+          col.name = `${entityNameMap[entityType]} Name`;
+        }
+        
+        // Make "title" field explicit for deals
+        if (entityType === ENTITY_TYPES.DEALS && col.key === 'title' && !col.isNested) {
+          col.name = 'Deal Title';
+        }
+      });
+    }
+    
+    // Log the structure of email and phone fields if they exist
+    if (sampleItem.email) {
+      Logger.log(`Email field structure: ${JSON.stringify(sampleItem.email)}`);
+    }
+    if (sampleItem.phone) {
+      Logger.log(`Phone field structure: ${JSON.stringify(sampleItem.phone)}`);
+    }
     
     // Log the first 10 available columns after sorting to see their structure
     Logger.log(`First 10 available columns after sorting:`);
