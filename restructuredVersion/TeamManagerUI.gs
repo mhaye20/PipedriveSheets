@@ -926,6 +926,46 @@ TeamManagerUI.getScripts = function() {
       });
     }
     
+    // Rename team handler (script owner only)
+    if (document.getElementById('rename-team-button')) {
+      document.getElementById('rename-team-button').addEventListener('click', function() {
+        var currentName = document.querySelector('.team-name-container h4').textContent;
+        var newName = prompt('Enter a new name for the team:', currentName);
+        
+        if (!newName || newName.trim() === '') {
+          return; // User cancelled or entered empty string
+        }
+        
+        if (newName === currentName) {
+          return; // Name unchanged
+        }
+        
+        setButtonLoading(this, true);
+        showLoading();
+        
+        google.script.run
+          .withSuccessHandler(function(result) {
+            hideLoading();
+            setButtonLoading(document.getElementById('rename-team-button'), false);
+            
+            if (result.success) {
+              showStatus('Team renamed successfully.', 'success');
+              
+              // Update the UI with the new name
+              document.querySelector('.team-name-container h4').textContent = newName;
+            } else {
+              showStatus(result.message || 'Error renaming team', 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            hideLoading();
+            setButtonLoading(document.getElementById('rename-team-button'), false);
+            showStatus('Error: ' + error.message, 'error');
+          })
+          .renameTeam(newName);
+      });
+    }
+    
     // Add member handler (admin only)
     if (document.getElementById('add-member-button')) {
       document.getElementById('add-member-button').addEventListener('click', function() {

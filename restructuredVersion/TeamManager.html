@@ -188,10 +188,22 @@
               
               <!-- Team Actions -->
               <div class="team-actions">
+                <? if (userEmail !== teamCreator) { ?>
+                <!-- Only show Leave Team button for non-script owners -->
                 <button id="leave-team-button" class="button-danger">
                   <i class="material-icons">exit_to_app</i>
                   <span class="button-text">Leave Team</span>
                 </button>
+                <? } ?>
+                
+                <? if (userEmail === teamCreator) { ?>
+                <!-- Only show Rename Team button for script owner -->
+                <button id="rename-team-button" class="button-primary">
+                  <i class="material-icons">edit</i>
+                  <span class="button-text">Rename Team</span>
+                </button>
+                <? } ?>
+                
                 <? if (userRole === 'Admin') { ?>
                 <button id="delete-team-button" class="button-danger">
                   <i class="material-icons">delete</i>

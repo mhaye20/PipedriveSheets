@@ -757,10 +757,62 @@ function removeTeamMember(email) {
   }
 }
 
+/**
+ * Renames a team (script owner/installer only)
+ * @param {string} newName The new name for the team
+ * @returns {Object} Result object with success status
+ */
+function renameTeam(newName) {
+  try {
+    if (!newName || newName.trim() === '') {
+      return { success: false, message: 'Team name is required.' };
+    }
+    
+    // Get current user
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return { success: false, message: 'Unable to determine your email. Please make sure you are logged in.' };
+    }
+    
+    // Get user's team
+    const userTeam = getUserTeam(userEmail);
+    if (!userTeam) {
+      return { success: false, message: 'You are not a member of any team.' };
+    }
+    
+    // Get teams data
+    const teamsData = getTeamsData();
+    const teamId = userTeam.teamId;
+    const team = teamsData[teamId];
+    
+    // Check if user is the script owner/team creator
+    if (!team.createdBy || team.createdBy.toLowerCase() !== userEmail.toLowerCase()) {
+      return { 
+        success: false, 
+        message: 'Only the script owner/installer who created this team can rename it.' 
+      };
+    }
+    
+    // Update the team name
+    team.name = newName.trim();
+    
+    // Save the teams data
+    if (saveTeamsData(teamsData)) {
+      return { success: true, message: 'Team renamed successfully.' };
+    } else {
+      return { success: false, message: 'Failed to update team data.' };
+    }
+  } catch (e) {
+    Logger.log(`Error in renameTeam: ${e.message}`);
+    return { success: false, message: e.message };
+  }
+}
+
 // Explicitly export these functions to ensure they're globally accessible
 this.addTeamMember = addTeamMember;
 this.deleteTeam = deleteTeam;
 this.promoteTeamMember = promoteTeamMember;
 this.demoteTeamMember = demoteTeamMember;
 this.removeTeamMember = removeTeamMember;
-this.joinTeam = joinTeam; 
+this.joinTeam = joinTeam;
+this.renameTeam = renameTeam; 
