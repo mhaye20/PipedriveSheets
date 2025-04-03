@@ -8,6 +8,11 @@
 
 var ColumnSelectorUI = ColumnSelectorUI || {};
 
+// Global variables
+  let availableColumns = [];
+  let selectedColumns = [];
+  let originalAvailableColumns = [];
+
 /**
  * Shows the column selector UI
  */
@@ -305,7 +310,7 @@ function showColumnSelectorUI() {
 
     // Sample data and field mapping are ready, extract available columns
     Logger.log(`Beginning field extraction from sample data`);
-    let availableColumns = [];
+    availableColumns = []; // Reset the global variable instead of redeclaring
     
     try {
       // Get field mappings for better display names
@@ -1293,12 +1298,35 @@ function saveColumnPreferences(entityType, sheetName, columns) {
       };
     });
     
-    // Generate key for saving the preferences - personalized for the current user
+    // Generate key for saving the preferences
     const userEmail = Session.getEffectiveUser().getEmail();
     Logger.log(`Saving preferences for user: ${userEmail}`);
     
+    // Instead of using user email, use team ID for shared preferences
+    let keyIdentifier = userEmail;
+    
+    // Try to get user's team ID
+    try {
+      // Check if the getUserTeam function is available
+      if (typeof getUserTeam === 'function') {
+        // Get the user's team information
+        const userTeam = getUserTeam(userEmail);
+        if (userTeam && userTeam.teamId) {
+          // Use team ID instead of email for shared preferences across team
+          keyIdentifier = `TEAM_${userTeam.teamId}`;
+          Logger.log(`User is part of team ${userTeam.name} (${userTeam.teamId}), using team-based storage`);
+        } else {
+          Logger.log(`User is not part of a team, using personal storage`);
+        }
+      } else {
+        Logger.log('getUserTeam function not available, defaulting to personal storage');
+      }
+    } catch (teamError) {
+      Logger.log(`Error getting team info: ${teamError.message}, defaulting to personal storage`);
+    }
+    
     // Store full column objects
-    const columnsKey = `COLUMNS_${sheetName}_${entityType}_${userEmail}`;
+    const columnsKey = `COLUMNS_${sheetName}_${entityType}_${keyIdentifier}`;
     const columnsJson = JSON.stringify(columnsToSave);
     
     Logger.log(`Saving with key: ${columnsKey}`);
@@ -1346,23 +1374,72 @@ function getColumnPreferences(entityType, sheetName) {
     // Get Script Properties
     const properties = PropertiesService.getScriptProperties();
     
-    // Generate key for retrieving the preferences - personalized for the current user
+    // Generate key for retrieving the preferences
     const userEmail = Session.getEffectiveUser().getEmail();
-    const columnsKey = `COLUMNS_${sheetName}_${entityType}_${userEmail}`;
     
-    Logger.log(`Looking for preferences with key: ${columnsKey}`);
+    // Try to get user's team ID first for team-shared preferences
+    let keyIdentifier = userEmail;
+    let columnsJson = null;
     
-    // Get from Script Properties
-    const columnsJson = properties.getProperty(columnsKey);
+    try {
+      // Check if the getUserTeam function is available
+      if (typeof getUserTeam === 'function') {
+        // Get the user's team information
+        const userTeam = getUserTeam(userEmail);
+        if (userTeam && userTeam.teamId) {
+          // Check for team-based preferences first
+          const teamKey = `COLUMNS_${sheetName}_${entityType}_TEAM_${userTeam.teamId}`;
+          Logger.log(`Looking for team preferences with key: ${teamKey}`);
+          
+          columnsJson = properties.getProperty(teamKey);
+          if (columnsJson) {
+            Logger.log(`Found team-based preferences for ${sheetName}`);
+            keyIdentifier = `TEAM_${userTeam.teamId}`;
+          } else {
+            // If no team preferences found, check for personal preferences 
+            // (for backward compatibility with users who already set up preferences)
+            const personalKey = `COLUMNS_${sheetName}_${entityType}_${userEmail}`;
+            Logger.log(`No team preferences, checking personal preferences with key: ${personalKey}`);
+            
+            const personalJson = properties.getProperty(personalKey);
+            if (personalJson) {
+              Logger.log(`Found personal preferences, will migrate to team preferences`);
+              columnsJson = personalJson;
+              
+              // Migrate personal preferences to team preferences
+              properties.setProperty(teamKey, personalJson);
+              Logger.log(`Migrated personal preferences to team preferences`);
+              
+              keyIdentifier = `TEAM_${userTeam.teamId}`;
+            }
+          }
+        } else {
+          Logger.log(`User is not part of a team, using personal storage`);
+        }
+      } else {
+        Logger.log('getUserTeam function not available, defaulting to personal storage');
+      }
+    } catch (teamError) {
+      Logger.log(`Error getting team info: ${teamError.message}, defaulting to personal storage`);
+    }
+    
+    // If we couldn't find team preferences or personal preferences to migrate, 
+    // fall back to personal preferences
+    if (!columnsJson) {
+      const personalKey = `COLUMNS_${sheetName}_${entityType}_${userEmail}`;
+      Logger.log(`Looking for personal preferences with key: ${personalKey}`);
+      
+      columnsJson = properties.getProperty(personalKey);
+    }
     
     if (!columnsJson) {
-      Logger.log(`No saved preferences found for key: ${columnsKey}`);
+      Logger.log(`No saved preferences found for key: ${keyIdentifier}`);
       return [];
     }
     
     try {
       const savedColumns = JSON.parse(columnsJson);
-      Logger.log(`Found ${savedColumns.length} saved columns`);
+      Logger.log(`Found ${savedColumns.length} saved columns using key identifier: ${keyIdentifier}`);
       
       // Log first few columns to help debug
       if (savedColumns.length > 0) {

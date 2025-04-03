@@ -3,6 +3,7 @@
   <head>
     <base target="_top">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
       :root {
         --primary-color: #4285f4;
@@ -240,48 +241,152 @@
         text-overflow: ellipsis;
       }
       
-      .add-btn, .remove-btn {
+      .add-btn, .remove-btn, .rename-btn {
         opacity: 0;
-        margin-left: 4px;
-        width: 20px;
-        height: 20px;
+        margin-left: 6px;
+        width: 28px;
+        height: 28px;
         display: flex;
         align-items: center;
         justify-content: center;
-        border-radius: 50%;
-        transition: var(--transition);
+        border-radius: 4px;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         flex-shrink: 0;
+        font-size: 14px;
+        cursor: pointer;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
       }
       
       .add-btn {
         color: var(--success-color);
-        background-color: rgba(15,157,88,0.1);
+        background-color: rgba(15,157,88,0.08);
+      }
+      
+      .add-btn:hover {
+        background-color: rgba(15,157,88,0.15);
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      
+      .add-btn:active {
+        transform: translateY(0);
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
       }
       
       .remove-btn {
         color: var(--error-color);
-        background-color: rgba(219,68,55,0.1);
+        background-color: rgba(219,68,55,0.08);
+      }
+      
+      .remove-btn:hover {
+        background-color: rgba(219,68,55,0.15);
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      
+      .remove-btn:active {
+        transform: translateY(0);
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
       }
       
       .rename-btn {
-        opacity: 0;
-        margin-left: 4px;
-        width: 20px;
-        height: 20px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 50%;
-        transition: var(--transition);
-        flex-shrink: 0;
         color: var(--primary-color);
-        background-color: rgba(66,133,244,0.1);
+        background-color: rgba(66,133,244,0.08);
       }
       
-      .item:hover .add-btn,
-      .item:hover .remove-btn,
-      .item:hover .rename-btn {
+      .rename-btn:hover {
+        background-color: rgba(66,133,244,0.15);
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      
+      .rename-btn:active {
+        transform: translateY(0);
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      }
+      
+      .item.selected {
+        position: relative;
+        padding-right: 8px;
+      }
+      
+      .selected .action-buttons {
+        display: flex;
+        align-items: center;
+        margin-left: auto;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+      
+      .selected:hover .action-buttons {
         opacity: 1;
+      }
+      
+      .selected .remove-btn,
+      .selected .rename-btn {
+        margin-left: 6px;
+        opacity: 1;
+      }
+      
+      .action-icon {
+        font-size: 14px;
+        line-height: 1;
+        position: relative;
+        top: 0px;
+      }
+      
+      .item:hover .add-btn {
+        opacity: 0.9;
+      }
+      
+      /* Styles for address components */
+      .address-component {
+        background-color: rgba(0, 0, 0, 0.02);
+        border-left: 3px solid var(--muted-color);
+        position: relative;
+      }
+      
+      .address-component::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 24px;
+        background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.02));
+        pointer-events: none;
+      }
+      
+      .address-label {
+        display: inline-block;
+        font-size: 9px;
+        background-color: var(--muted-color);
+        color: white;
+        padding: 1px 4px;
+        border-radius: 3px;
+        margin-right: 6px;
+        vertical-align: middle;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      }
+      
+      /* Visual indicator for read-only fields */
+      .read-only-indicator {
+        display: inline-flex;
+        align-items: center;
+        margin-left: 6px;
+        font-size: 10px;
+        color: var(--muted-color);
+        opacity: 0.8;
+        border-radius: 3px;
+        padding: 0 4px;
+        background-color: rgba(0, 0, 0, 0.03);
+      }
+      
+      .read-only-indicator i {
+        font-size: 12px;
+        margin-right: 3px;
       }
       
       .loading {
@@ -528,6 +633,60 @@
           display: none;
         }
       }
+      
+      /* Enhanced selected columns list */
+      #selectedList, #availableList {
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        background: #fcfcfc;
+        margin-bottom: 8px;
+        max-height: 550px;
+        overflow-y: auto;
+      }
+      
+      .list .item {
+        padding: 10px 12px;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background-color 0.15s ease;
+      }
+      
+      .list .item:last-child {
+        border-bottom: none;
+      }
+      
+      .list .item:hover {
+        background-color: rgba(66, 133, 244, 0.05);
+      }
+      
+      .list .item.selected {
+        background-color: rgba(66, 133, 244, 0.1);
+      }
+      
+      .column-text {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        word-break: break-word;
+        padding-right: 8px;
+      }
+      
+      /* Style for custom named columns */
+      .custom-named {
+        font-style: italic;
+        color: var(--primary-color);
+        position: relative;
+      }
+      
+      .column-count {
+        font-size: 12px;
+        background-color: #f5f5f5;
+        color: #666;
+        padding: 2px 8px;
+        border-radius: 12px;
+        margin-left: 8px;
+        font-weight: normal;
+      }
     </style>
     
     <?!= dataScript ?>
@@ -586,7 +745,7 @@
         <div class="column-header">
           Available Columns <span id="availableCount" class="column-count"></span>
         </div>
-        <div id="availableList" class="scrollable">
+        <div id="availableList" class="scrollable list">
           <!-- Available columns will be populated here by JavaScript -->
         </div>
       </div>
@@ -595,7 +754,7 @@
         <div class="column-header">
           Selected Columns <span id="selectedCount" class="column-count"></span>
         </div>
-        <div id="selectedList" class="scrollable">
+        <div id="selectedList" class="scrollable list">
           <!-- Selected columns will be populated here by JavaScript -->
         </div>
       </div>
@@ -615,6 +774,15 @@
     </div>
 
     <script>
+      /* 
+       * Using global variables from ColumnSelectorUI.gs:
+       * - availableColumns
+       * - selectedColumns
+       */
+      
+      // Define originalAvailableColumns locally if not already defined globally
+      var originalAvailableColumns = typeof originalAvailableColumns !== 'undefined' ? originalAvailableColumns : [];
+      
       // DOM elements
       const availableList = document.getElementById('availableList');
       const selectedList = document.getElementById('selectedList');
@@ -622,17 +790,20 @@
       const availableCountEl = document.getElementById('availableCount');
       const selectedCountEl = document.getElementById('selectedCount');
       
-      // Debug information
-      console.log("Working with availableColumns:", availableColumns ? availableColumns.length : "none");
-      if (!availableColumns || availableColumns.length === 0) {
-        console.error("No available columns found! This is a problem.");
-      } else {
-        console.log("First few available columns:", availableColumns.slice(0, 5));
-      }
-      
       // Create a deep copy of the original available columns to ensure we don't lose data
-      const originalAvailableColumns = availableColumns ? JSON.parse(JSON.stringify(availableColumns)) : [];
-      console.log("Original available columns copy created with length:", originalAvailableColumns.length);
+      function initializeColumns() {
+        // Debug information
+        console.log("Working with availableColumns:", availableColumns ? availableColumns.length : "none");
+        if (!availableColumns || availableColumns.length === 0) {
+          console.error("No available columns found! This is a problem.");
+        } else {
+          console.log("First few available columns:", availableColumns.slice(0, 5));
+        }
+        
+        // Initialize originalAvailableColumns as a window property to ensure it's globally accessible
+        window.originalAvailableColumns = availableColumns ? JSON.parse(JSON.stringify(availableColumns)) : [];
+        console.log("Original available columns copy created with length:", originalAvailableColumns.length);
+      }
       
       // Render the lists
       function renderAvailableList(searchTerm = '') {
@@ -713,10 +884,11 @@
             columnText.textContent = col.name;
             item.appendChild(columnText);
             
+            // Create add button
             const addBtn = document.createElement('span');
             addBtn.className = 'add-btn';
-            addBtn.innerHTML = '+';
             addBtn.title = 'Add column';
+            addBtn.innerHTML = '<i class="material-icons" style="font-size:18px">add</i>';
             addBtn.onclick = (e) => {
               e.stopPropagation();
               addColumn(col);
@@ -756,10 +928,11 @@
               columnText.textContent = col.name;
               item.appendChild(columnText);
               
+              // Create add button
               const addBtn = document.createElement('span');
               addBtn.className = 'add-btn';
-              addBtn.innerHTML = '+';
               addBtn.title = 'Add column';
+              addBtn.innerHTML = '<i class="material-icons" style="font-size:18px">add</i>';
               addBtn.onclick = (e) => {
                 e.stopPropagation();
                 addColumn(col);
@@ -871,6 +1044,13 @@
               addressLabel.className = 'address-label';
               addressLabel.textContent = addressType;
               columnText.appendChild(addressLabel);
+              
+              // Add read-only indicator for address components
+              const readOnlyIndicator = document.createElement('span');
+              readOnlyIndicator.className = 'read-only-indicator';
+              readOnlyIndicator.innerHTML = '<i class="material-icons" style="font-size:14px">lock</i> Read-only';
+              readOnlyIndicator.title = 'Address components from Pipedrive are read-only';
+              columnText.appendChild(readOnlyIndicator);
             }
           }
           
@@ -878,30 +1058,38 @@
           if (col.customName) {
             columnText.title = "Original field: " + col.name;
             columnText.style.fontStyle = 'italic';
+            columnText.classList.add('custom-named');
           }
           item.appendChild(columnText);
           
-          // Add remove button
-          const removeBtn = document.createElement('span');
-          removeBtn.className = 'remove-btn';
-          removeBtn.innerHTML = '❌';
-          removeBtn.title = 'Remove column';
-          removeBtn.onclick = (e) => {
-            e.stopPropagation();
-            removeColumn(col);
-          };
-          item.appendChild(removeBtn);
+          // Create container for action buttons
+          const actionButtons = document.createElement('div');
+          actionButtons.className = 'action-buttons';
           
           // Add rename button
           const renameBtn = document.createElement('span');
           renameBtn.className = 'rename-btn';
-          renameBtn.innerHTML = '✏️';
+          renameBtn.innerHTML = '<i class="material-icons" style="font-size:18px">edit</i>';
           renameBtn.title = 'Rename column';
           renameBtn.onclick = (e) => {
             e.stopPropagation();
             renameColumn(index);
           };
-          item.appendChild(renameBtn);
+          actionButtons.appendChild(renameBtn);
+          
+          // Add remove button
+          const removeBtn = document.createElement('span');
+          removeBtn.className = 'remove-btn';
+          removeBtn.innerHTML = '<i class="material-icons" style="font-size:18px">close</i>';
+          removeBtn.title = 'Remove column';
+          removeBtn.onclick = (e) => {
+            e.stopPropagation();
+            removeColumn(col);
+          };
+          actionButtons.appendChild(removeBtn);
+          
+          // Add the action buttons container to the item
+          item.appendChild(actionButtons);
           
           // Set up drag events
           item.ondragstart = handleDragStart;
@@ -1210,6 +1398,140 @@
         }
         
         return false;
+      }
+
+      function renderLists() {
+        renderSelectedList();
+        renderAvailableList();
+        
+        // Update column counts
+        selectedCountEl.textContent = selectedColumns.length;
+        availableCountEl.textContent = availableColumns.length;
+      }
+
+      // Initialize the application
+      function initApp() {
+        try {
+          console.log("Initializing column selector app...");
+          
+          // Make sure we have availableColumns
+          if (typeof availableColumns === 'undefined') {
+            console.warn("availableColumns is not defined, creating empty array");
+            window.availableColumns = [];
+          }
+          
+          // Make sure we have selectedColumns
+          if (typeof selectedColumns === 'undefined') {
+            console.warn("selectedColumns is not defined, creating empty array");
+            window.selectedColumns = [];
+          }
+          
+          // Load data from server
+          loadData();
+          
+          // Initialize the original columns array
+          initializeColumns();
+          
+          // Render the UI
+          renderLists();
+          
+          console.log("App initialized successfully.");
+        } catch (error) {
+          console.error("Error initializing app:", error);
+        }
+      }
+      
+      window.onload = function() {
+        // Initialize application first
+        initApp();
+        
+        // Set up event listeners
+        searchBox.addEventListener('input', function() {
+          filterAvailableList(this.value.toLowerCase());
+        });
+        
+        document.getElementById('saveBtn').addEventListener('click', function() {
+          saveColumns();
+        });
+        
+        document.getElementById('cancelBtn').addEventListener('click', function() {
+          google.script.host.close();
+        });
+        
+        document.getElementById('helpBtn').addEventListener('click', function() {
+          showHelp();
+        });
+        
+        document.getElementById('apiDetailsToggle').addEventListener('click', function() {
+          toggleApiDetails();
+        });
+      };
+      
+      function toggleApiDetails() {
+        const detailsElement = document.getElementById('apiDetails');
+        const toggleButton = document.getElementById('apiDetailsToggle');
+        
+        if (detailsElement.style.display === 'none' || !detailsElement.style.display) {
+          detailsElement.style.display = 'block';
+          toggleButton.textContent = 'Hide';
+        } else {
+          detailsElement.style.display = 'none';
+          toggleButton.textContent = 'Details';
+        }
+      }
+      
+      function loadData() {
+        try {
+          console.log("Attempting to load data from server...");
+          // Get the data passed from the server
+          const availableColumnsJson = '<?!= JSON.stringify(availableColumns) ?>';
+          const selectedColumnsJson = '<?!= JSON.stringify(selectedColumns) ?>';
+          
+          if (!availableColumnsJson || availableColumnsJson === '<?!= JSON.stringify(availableColumns) ?>') {
+            console.error('Server variables not properly processed. Using empty arrays as fallback.');
+            window.availableColumns = [];
+            window.selectedColumns = [];
+            return;
+          }
+          
+          // Parse the JSON data
+          try {
+            window.availableColumns = JSON.parse(availableColumnsJson);
+            window.selectedColumns = JSON.parse(selectedColumnsJson);
+            console.log('Data loaded successfully:', 
+              availableColumns.length + ' available columns, ' + 
+              selectedColumns.length + ' selected columns');
+          } catch (parseError) {
+            console.error('Error parsing data from server:', parseError);
+            console.log('Raw availableColumnsJson:', availableColumnsJson.substring(0, 100) + '...');
+            window.availableColumns = [];
+            window.selectedColumns = [];
+          }
+        } catch (error) {
+          console.error('Error in loadData function:', error);
+          // Initialize with empty arrays to prevent further errors
+          window.availableColumns = [];
+          window.selectedColumns = [];
+        }
+      }
+      
+      function filterAvailableList(query) {
+        const filteredColumns = availableColumns.filter(col => {
+          const name = col.name ? col.name.toLowerCase() : '';
+          const key = col.key ? col.key.toLowerCase() : '';
+          return name.includes(query) || key.includes(query);
+        });
+        
+        renderAvailableList(filteredColumns);
+      }
+      
+      function renderLists() {
+        renderSelectedList();
+        renderAvailableList();
+        
+        // Update column counts
+        selectedCountEl.textContent = selectedColumns.length;
+        availableCountEl.textContent = availableColumns.length;
       }
     </script>
   </body>
