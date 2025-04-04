@@ -3141,8 +3141,9 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
               throw new Error(`Organization ID must be numeric. Found: "${rowData.id}". Please ensure your sheet has a "Pipedrive ID" column with the correct Pipedrive organization IDs.`);
             }
             
-            updateUrl = `${baseUrl}/api/v2/organizations/${rowData.id}`;
-            method = 'PATCH';
+            // Use v1 API endpoint for organizations which handles address updates better
+            updateUrl = `${baseUrl}/api/v1/organizations/${rowData.id}`;
+            method = 'PUT';
             
             // Remove ID from payload
             delete rowData.data.id;
@@ -3150,140 +3151,62 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
             // Validate ID fields
             validateIdField(rowData.data, 'owner_id');
             
-            // Before we modify the address, let's get the current organization data
-            // to ensure we don't lose any existing address fields in Pipedrive
-            let preserveExistingAddress = false;
-            let existingAddressData = null;
-            
-            try {
-              // Fetch the current organization data
-              const orgUrl = `${baseUrl}/api/v2/organizations/${rowData.id}`;
-              const orgResponse = UrlFetchApp.fetch(orgUrl, {
-                method: 'GET',
-                headers: {
-                  'Authorization': `Bearer ${accessToken}`
-                },
-                muteHttpExceptions: true
-              });
-              
-              if (orgResponse.getResponseCode() === 200) {
-                const orgData = JSON.parse(orgResponse.getContentText());
-                if (orgData.success && orgData.data && orgData.data.address) {
-                  existingAddressData = orgData.data.address;
-                  preserveExistingAddress = true;
-                  Logger.log(`Found existing address data: ${JSON.stringify(existingAddressData)}`);
-                }
-              }
-            } catch (e) {
-              Logger.log(`Error fetching organization data: ${e.message}. Will proceed without existing address data.`);
-            }
-            
-            // Special handling for address fields in organizations
-            // Recent API change requires address to be formatted as an array
+            // Special handling for organization address to avoid losing address components
             if (rowData.data.address) {
-              const addressValue = rowData.data.address;
+              const newAddressValue = rowData.data.address;
               
-              Logger.log(`Converting address to array format for Pipedrive API: ${addressValue}`);
-              
-              // Check if it's already an array
-              if (Array.isArray(addressValue)) {
-                Logger.log(`Address is already formatted as an array: ${JSON.stringify(addressValue)}`);
-              } else {
-                try {
-                  // If we have existing address data
-                  if (preserveExistingAddress && existingAddressData) {
-                    // Create a proper address object based on what format we received
-                    let updatedAddress = [];
+              // Check if the address actually changed by getting current organization data
+              try {
+                const orgUrl = `${baseUrl}/api/v1/organizations/${rowData.id}`;
+                const orgResponse = UrlFetchApp.fetch(orgUrl, {
+                  method: 'GET',
+                  headers: {
+                    'Authorization': `Bearer ${accessToken}`
+                  },
+                  muteHttpExceptions: true
+                });
+                
+                if (orgResponse.getResponseCode() === 200) {
+                  const orgData = JSON.parse(orgResponse.getContentText());
+                  
+                  if (orgData.success && orgData.data) {
+                    const currentAddress = orgData.data.address;
+                    Logger.log(`Current organization address: ${currentAddress}`);
                     
-                    // Handle case where existingAddressData is an object (not an array)
-                    if (existingAddressData && !Array.isArray(existingAddressData) && typeof existingAddressData === 'object') {
-                      Logger.log(`Existing address is in object format: ${JSON.stringify(existingAddressData)}`);
-                      
-                      // Create an array with the existing object's properties
-                      const addressObj = {
-                        value: addressValue,
-                        primary: true,
-                        label: "work"
-                      };
-                      
-                      // Copy all the component fields from the existing address
-                      for (const key in existingAddressData) {
-                        if (key !== 'value') {
-                          addressObj[key] = existingAddressData[key];
-                        }
+                    // If the current address is the same as the new one, remove it from update
+                    // to prevent losing the address components
+                    if (typeof newAddressValue === 'string' && 
+                        typeof currentAddress === 'string' && 
+                        newAddressValue.trim() === currentAddress.trim()) {
+                      Logger.log(`Address unchanged, removing from update to preserve components`);
+                      delete rowData.data.address;
+                    } else {
+                      Logger.log(`Address changed, keeping in update: ${newAddressValue}`);
+                      // Use the string address value directly for API v1
+                      if (typeof newAddressValue === 'string') {
+                        rowData.data.address = newAddressValue;
+                      } else if (Array.isArray(newAddressValue) && newAddressValue.length > 0) {
+                        rowData.data.address = newAddressValue[0].value || String(newAddressValue[0]);
+                      } else if (typeof newAddressValue === 'object') {
+                        rowData.data.address = newAddressValue.value || String(newAddressValue);
+                      } else {
+                        rowData.data.address = String(newAddressValue);
                       }
-                      
-                      // If the street number is in the address, try to update it
-                      if (addressObj.street_number && typeof addressValue === 'string') {
-                        const parts = addressValue.split(' ');
-                        if (parts.length > 0 && !isNaN(parseInt(parts[0]))) {
-                          addressObj.street_number = parts[0];
-                        }
-                      }
-                      
-                      // Update formatted_address if it exists
-                      if (addressObj.formatted_address) {
-                        addressObj.formatted_address = addressValue;
-                      }
-                      
-                      updatedAddress = [addressObj];
-                      Logger.log(`Created address array from object: ${JSON.stringify(updatedAddress)}`);
                     }
-                    // Handle case where existingAddressData is an array
-                    else if (Array.isArray(existingAddressData) && existingAddressData.length > 0) {
-                      Logger.log(`Existing address is in array format: ${JSON.stringify(existingAddressData)}`);
-                      
-                      // Create a deep copy
-                      updatedAddress = JSON.parse(JSON.stringify(existingAddressData));
-                      
-                      // Update just the value in the first address
-                      updatedAddress[0].value = addressValue;
-                      
-                      // If the street number is in the address, try to update it
-                      if (updatedAddress[0].street_number && typeof addressValue === 'string') {
-                        const parts = addressValue.split(' ');
-                        if (parts.length > 0 && !isNaN(parseInt(parts[0]))) {
-                          updatedAddress[0].street_number = parts[0];
-                        }
-                      }
-                      
-                      // Update formatted_address if it exists
-                      if (updatedAddress[0].formatted_address) {
-                        updatedAddress[0].formatted_address = addressValue;
-                      }
-                      
-                      Logger.log(`Updated existing address array: ${JSON.stringify(updatedAddress)}`);
-                    }
-                    // Handle case where we don't have valid existing address data
-                    else {
-                      Logger.log(`No valid existing address data found, creating new array`);
-                      updatedAddress = [{
-                        value: addressValue,
-                        primary: true,
-                        label: "work"
-                      }];
-                    }
-                    
-                    // Update the rowData with our properly formatted address
-                    rowData.data.address = updatedAddress;
-                    Logger.log(`Final address format: ${JSON.stringify(updatedAddress)}`);
-                  } else {
-                    // No existing data or preserveExistingAddress is false
-                    rowData.data.address = [{
-                      value: addressValue,
-                      primary: true,
-                      label: "work"
-                    }];
-                    Logger.log(`Formatted address as new array: ${JSON.stringify(rowData.data.address)}`);
                   }
-  } catch (e) {
-                  Logger.log(`Error formatting address: ${e.message}. Will try simple format.`);
-                  // Fallback to simple format
-                  rowData.data.address = [{
-                    value: addressValue,
-                    primary: true,
-                    label: "work"
-                  }];
+                }
+              } catch (e) {
+                Logger.log(`Error checking organization address: ${e.message}`);
+                
+                // If we encounter an error, just use the new address as a string
+                if (typeof newAddressValue === 'string') {
+                  rowData.data.address = newAddressValue;
+                } else if (Array.isArray(newAddressValue) && newAddressValue.length > 0) {
+                  rowData.data.address = newAddressValue[0].value || String(newAddressValue[0]);
+                } else if (typeof newAddressValue === 'object') {
+                  rowData.data.address = newAddressValue.value || String(newAddressValue);
+                } else {
+                  rowData.data.address = String(newAddressValue);
                 }
               }
             }
