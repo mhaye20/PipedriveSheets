@@ -4296,3 +4296,229 @@ function validateIdField(data, fieldName) {
     }
   }
 }
+
+/**
+ * Saves settings to script properties
+ */
+function saveSettings(apiKey, entityType, filterId, subdomain, sheetName) {
+  const scriptProperties = PropertiesService.getScriptProperties();
+  
+  // Save global settings (only if provided)
+  if (apiKey) scriptProperties.setProperty('PIPEDRIVE_API_KEY', apiKey);
+  if (subdomain) scriptProperties.setProperty('PIPEDRIVE_SUBDOMAIN', subdomain);
+  
+  // Save sheet-specific settings
+  const sheetFilterIdKey = `FILTER_ID_${sheetName}`;
+  const sheetEntityTypeKey = `ENTITY_TYPE_${sheetName}`;
+  
+  scriptProperties.setProperty(sheetFilterIdKey, filterId);
+  scriptProperties.setProperty(sheetEntityTypeKey, entityType);
+  scriptProperties.setProperty('SHEET_NAME', sheetName);
+}
+
+/**
+ * Sets up the onEdit trigger to track changes for two-way sync
+ */
+function setupOnEditTrigger() {
+  try {
+    // First, remove any existing onEdit triggers to avoid duplicates
+    removeOnEditTrigger();
+    
+    // Then create a new trigger
+    ScriptApp.newTrigger('onEdit')
+      .forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet())
+      .onEdit()
+      .create();
+    Logger.log('onEdit trigger created');
+  } catch (e) {
+    Logger.log(`Error setting up onEdit trigger: ${e.message}`);
+  }
+}
+
+/**
+ * Removes the onEdit trigger
+ */
+function removeOnEditTrigger() {
+  try {
+    // Get all triggers
+    const triggers = ScriptApp.getProjectTriggers();
+    
+    // Find and delete the onEdit trigger
+    for (let i = 0; i < triggers.length; i++) {
+      const trigger = triggers[i];
+      if (trigger.getHandlerFunction() === 'onEdit') {
+        ScriptApp.deleteTrigger(trigger);
+        Logger.log('onEdit trigger deleted');
+        return;
+      }
+    }
+    
+    Logger.log('No onEdit trigger found to delete');
+  } catch (e) {
+    Logger.log(`Error removing onEdit trigger: ${e.message}`);
+  }
+}
+
+/**
+ * Logs debug information about the Pipedrive data
+ */
+function logDebugInfo() {
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const sheetName = scriptProperties.getProperty('SHEET_NAME') || DEFAULT_SHEET_NAME;
+  
+  // Get sheet-specific settings
+  const sheetFilterIdKey = `FILTER_ID_${sheetName}`;
+  const sheetEntityTypeKey = `ENTITY_TYPE_${sheetName}`;
+  
+  const filterId = scriptProperties.getProperty(sheetFilterIdKey) || '';
+  const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
+  
+  // Show which column selections are available for the current entity type and sheet
+  const columnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
+  const savedColumnsJson = scriptProperties.getProperty(columnSettingsKey);
+  
+  if (savedColumnsJson) {
+    Logger.log(`\n===== COLUMN SETTINGS FOR ${sheetName} - ${entityType} =====`);
+    try {
+      const selectedColumns = JSON.parse(savedColumnsJson);
+      Logger.log(`Number of selected columns: ${selectedColumns.length}`);
+      Logger.log(JSON.stringify(selectedColumns, null, 2));
+    } catch (e) {
+      Logger.log(`Error parsing column settings: ${e.message}`);
+    }
+  } else {
+    Logger.log(`\n===== NO COLUMN SETTINGS FOUND FOR ${sheetName} - ${entityType} =====`);
+  }
+  
+  // Get a sample item to see what data is available
+  let sampleData = [];
+  switch (entityType) {
+    case ENTITY_TYPES.DEALS:
+      sampleData = getDealsWithFilter(filterId, 1);
+      break;
+    case ENTITY_TYPES.PERSONS:
+      sampleData = getPersonsWithFilter(filterId, 1);
+      break;
+    case ENTITY_TYPES.ORGANIZATIONS:
+      sampleData = getOrganizationsWithFilter(filterId, 1);
+      break;
+    case ENTITY_TYPES.ACTIVITIES:
+      sampleData = getActivitiesWithFilter(filterId, 1);
+      break;
+    case ENTITY_TYPES.LEADS:
+      sampleData = getLeadsWithFilter(filterId, 1);
+      break;
+  }
+  
+  if (sampleData && sampleData.length > 0) {
+    const sampleItem = sampleData[0];
+    
+    // Log filter ID and entity type
+    Logger.log('===== DEBUG INFORMATION =====');
+    Logger.log(`Entity Type: ${entityType}`);
+    Logger.log(`Filter ID: ${filterId}`);
+    Logger.log(`Sheet Name: ${sheetName}`);
+    
+    // Log complete raw deal data for inspection
+    Logger.log(`\n===== COMPLETE RAW ${entityType.toUpperCase()} DATA =====`);
+    Logger.log(JSON.stringify(sampleItem, null, 2));
+    
+    // Extract all fields including nested ones
+    Logger.log('\n===== ALL AVAILABLE FIELDS =====');
+    const allFields = {};
+    
+    // Recursive function to extract all fields with their paths
+    function extractAllFields(obj, path = '') {
+      if (!obj || typeof obj !== 'object') return;
+      
+      if (Array.isArray(obj)) {
+        // For arrays, log the length and extract fields from first item if exists
+        Logger.log(`${path} (Array with ${obj.length} items)`);
+        if (obj.length > 0 && typeof obj[0] === 'object') {
+          extractAllFields(obj[0], `${path}[0]`);
+        }
+      } else {
+        // For objects, extract each property
+        for (const key in obj) {
+          const value = obj[key];
+          const newPath = path ? `${path}.${key}` : key;
+          
+          if (value === null) {
+            allFields[newPath] = 'null';
+            continue;
+          }
+          
+          const type = typeof value;
+          
+          if (type === 'object') {
+            if (Array.isArray(value)) {
+              allFields[newPath] = `array[${value.length}]`;
+              Logger.log(`${newPath}: array[${value.length}]`);
+              
+              // Special case for custom fields with options
+              if (key === 'options' && value.length > 0 && value[0] && value[0].label) {
+                Logger.log(`  - Multiple options field with values: ${value.map(opt => opt.label).join(', ')}`);
+              }
+              
+              // For small arrays with objects, recursively extract from the first item
+              if (value.length > 0 && typeof value[0] === 'object') {
+                extractAllFields(value[0], `${newPath}[0]`);
+              }
+            } else {
+              allFields[newPath] = 'object';
+              Logger.log(`${newPath}: object`);
+              extractAllFields(value, newPath);
+            }
+          } else {
+            allFields[newPath] = type;
+            
+            // Log a preview of the value unless it's a string longer than 50 chars
+            const preview = type === 'string' && value.length > 50 
+              ? value.substring(0, 50) + '...' 
+              : value;
+              
+            Logger.log(`${newPath}: ${type} = ${preview}`);
+          }
+        }
+      }
+    }
+    
+    // Start extraction from the top level
+    extractAllFields(sampleItem);
+    
+    // Specifically focus on custom fields section if it exists
+    if (sampleItem.custom_fields) {
+      Logger.log('\n===== CUSTOM FIELDS DETAIL =====');
+      for (const key in sampleItem.custom_fields) {
+        const field = sampleItem.custom_fields[key];
+        const fieldType = typeof field;
+        
+        if (fieldType === 'object' && Array.isArray(field)) {
+          Logger.log(`${key}: array[${field.length}]`);
+          // Check if this is a multiple options field
+          if (field.length > 0 && field[0] && field[0].label) {
+            Logger.log(`  - Multiple options with values: ${field.map(opt => opt.label).join(', ')}`);
+          }
+        } else {
+          const preview = fieldType === 'string' && field.length > 50 
+            ? field.substring(0, 50) + '...' 
+            : field;
+          Logger.log(`${key}: ${fieldType} = ${preview}`);
+        }
+      }
+    }
+    
+    // Count unique fields
+    const fieldPaths = Object.keys(allFields).sort();
+    Logger.log(`\nTotal unique fields found: ${fieldPaths.length}`);
+    
+    // Log all field paths in alphabetical order for easy lookup
+    Logger.log('\n===== ALPHABETICAL LIST OF ALL FIELD PATHS =====');
+    fieldPaths.forEach(path => {
+      Logger.log(`${path}: ${allFields[path]}`);
+    });
+    
+  } else {
+    Logger.log(`No ${entityType} found with this filter. Please check the filter ID.`);
+  }
+}
