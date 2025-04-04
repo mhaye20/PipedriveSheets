@@ -345,6 +345,22 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
       }
       
       if (typeof column === 'object' && column.key) {
+        // Special handling for ID columns
+        if (column.key === 'id') {
+          // Get the entity type name
+          const entityNameMap = {
+            [ENTITY_TYPES.DEALS]: "Deal",
+            [ENTITY_TYPES.PERSONS]: "Person",
+            [ENTITY_TYPES.ORGANIZATIONS]: "Organization", 
+            [ENTITY_TYPES.ACTIVITIES]: "Activity",
+            [ENTITY_TYPES.LEADS]: "Lead",
+            [ENTITY_TYPES.PRODUCTS]: "Product"
+          };
+          
+          const entityName = entityNameMap[entityType] || formatColumnName(entityType);
+          return `Pipedrive ${entityName} ID`;
+        }
+        
         // Special handling for email and phone fields
         if (typeof column.key === 'string' && column.key.includes('.')) {
           const parts = column.key.split('.');
@@ -2644,8 +2660,24 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
     // Get column headers (first row)
     const headers = values[0];
 
-    // Find the ID column index (usually first column)
-    const idColumnIndex = 0; // Assuming ID is in column A (index 0)
+    // Find the ID column index (look for Pipedrive ID columns first)
+    let idColumnIndex = headers.findIndex(header => 
+      header === 'Pipedrive ID' || 
+      header.match(/^Pipedrive .* ID$/)
+    );
+    
+    // If not found, look for generic ID column
+    if (idColumnIndex === -1) {
+      idColumnIndex = headers.indexOf('ID');
+    }
+    
+    // If still not found, fall back to the first column
+    if (idColumnIndex === -1) {
+      idColumnIndex = 0; // Fallback to first column (index 0)
+      Logger.log(`Warning: No explicit Pipedrive ID column found, using first column as ID. This may cause issues.`);
+    } else {
+      Logger.log(`Found ID column "${headers[idColumnIndex]}" at index ${idColumnIndex}`);
+    }
 
     // Get field mappings based on entity type
     const fieldMappings = getFieldMappingsForEntity(entityType);
@@ -3106,7 +3138,7 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
           case ENTITY_TYPES.ORGANIZATIONS:
             // Ensure we have a valid numeric ID for organizations
             if (isNaN(parseInt(rowData.id)) || !(/^\d+$/.test(String(rowData.id)))) {
-              throw new Error(`Organization ID must be numeric. Found: "${rowData.id}". Please make sure your data has the correct ID column.`);
+              throw new Error(`Organization ID must be numeric. Found: "${rowData.id}". Please ensure your sheet has a "Pipedrive ID" column with the correct Pipedrive organization IDs.`);
             }
             
             updateUrl = `${baseUrl}/api/v2/organizations/${rowData.id}`;
@@ -4327,5 +4359,55 @@ SyncService.saveTeamAwareColumnPreferences = function(columns, entityType, sheet
     
     // Store the full column objects
     scriptProperties.setProperty(key, JSON.stringify(columns));
+  }
+}
+
+/**
+ * Validate that ID fields contain numeric values
+ * @param {Object} data - The data object
+ * @param {string} fieldName - Field name to validate
+ */
+function validateIdField(data, fieldName) {
+  // Skip if field doesn't exist
+  if (!data || data[fieldName] === undefined || data[fieldName] === null) {
+    return;
+  }
+  
+  // Handle common ID fields that must be numeric
+  const numericIdFields = ['owner_id', 'person_id', 'org_id', 'organization_id', 
+                          'pipeline_id', 'stage_id', 'user_id', 'creator_user_id',
+                          'category_id', 'tax_id', 'unit_id'];
+                          
+  // If this is a field that requires numeric ID
+  if (numericIdFields.includes(fieldName)) {
+    try {
+      const idValue = data[fieldName];
+      // If it's already a number, we're good
+      if (typeof idValue === 'number') {
+        return;
+      }
+      
+      // If it's a string, try to convert to number
+      if (typeof idValue === 'string') {
+        const numericId = parseInt(idValue, 10);
+        // If it's a valid number, update the field
+        if (!isNaN(numericId) && /^\d+$/.test(idValue.trim())) {
+          data[fieldName] = numericId;
+          Logger.log(`Converted ${fieldName} from string "${idValue}" to number ${numericId}`);
+        } else {
+          // Not a valid number, delete the field to prevent API errors
+          delete data[fieldName];
+          Logger.log(`Removed invalid ${fieldName}: "${idValue}" - must be numeric`);
+        }
+      } else {
+        // Not a number or string, delete the field
+        delete data[fieldName];
+        Logger.log(`Removed invalid ${fieldName} with type ${typeof idValue}`);
+      }
+    } catch (e) {
+      // If any errors, delete the field to be safe
+      delete data[fieldName];
+      Logger.log(`Error validating ${fieldName}, removed: ${e.message}`);
+    }
   }
 }

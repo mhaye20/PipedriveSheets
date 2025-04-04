@@ -809,6 +809,11 @@ function showColumnSelectorUI() {
           col.name = `${entityNameMap[entityType]} Name`;
         }
         
+        // Make "id" field explicit to distinguish it from any custom "ID" column
+        if (col.key === 'id' && !col.isNested) {
+          col.name = `Pipedrive ${entityNameMap[entityType]} ID`;
+        }
+        
         // Make "title" field explicit for deals
         if (entityType === ENTITY_TYPES.DEALS && col.key === 'title' && !col.isNested) {
           col.name = 'Deal Title';

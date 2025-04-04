@@ -476,6 +476,21 @@
         opacity: 0.7;
       }
       
+      /* Required field styling */
+      .required {
+        position: relative;
+        background-color: rgba(66, 133, 244, 0.1);
+        border-left: 3px solid var(--primary-color);
+      }
+      
+      .required::after {
+        content: '★';
+        font-size: 11px;
+        margin-left: 5px;
+        color: var(--primary-color);
+        opacity: 0.8;
+      }
+      
       /* Editable field styling */
       .editable::after {
         content: '✏️';
@@ -701,6 +716,17 @@
         cursor: default;
         background-color: #f5f5f5;
       }
+      
+      /* Always show action buttons for ID column */
+      .required .action-buttons {
+        opacity: 1;
+      }
+      
+      .selected .remove-btn,
+      .selected .rename-btn {
+        margin-left: 6px;
+        opacity: 1;
+      }
     </style>
     
     <?!= dataScript ?>
@@ -723,7 +749,8 @@
       </div>
       
       <p class="info">
-        Select which Pipedrive data columns to display in your sheet. Drag items in the right panel to change their order.
+        Select which Pipedrive data columns to display in your sheet. Drag items in the right panel to change their order. 
+        <strong>Note: The ID column (★) is required</strong> for proper Pipedrive integration and cannot be removed.
       </p>
       
       <div class="info-tooltip">
@@ -893,6 +920,11 @@
               item.classList.add('editable');
             }
             
+            // Mark the ID column as required
+            if (col.key === 'id') {
+              item.classList.add('required');
+            }
+            
             // Add column name (no drag handle in available list)
             const columnText = document.createElement('span');
             columnText.className = 'column-text';
@@ -951,6 +983,11 @@
                 item.classList.add('read-only');
               } else {
                 item.classList.add('editable');
+              }
+              
+              // Mark the ID column as required
+              if (col.key === 'id') {
+                item.classList.add('required');
               }
               
               // Add column name (no drag handle in available list)
@@ -1041,13 +1078,32 @@
           item.className = 'item selected';
           item.dataset.key = col.key;
           item.dataset.index = index;
-          item.draggable = true;
+          // Make the ID column non-draggable
+          item.draggable = col.key !== 'id';
           
           // Add read-only class for address components
           if (isReadOnlyField(col.key, col)) {
             item.classList.add('read-only');
           } else {
             item.classList.add('editable');
+          }
+          
+          // Mark the ID column as required
+          if (col.key === 'id') {
+            item.classList.add('required');
+            // Add a visual indicator that this column must be first
+            const lockIndicator = document.createElement('div');
+            lockIndicator.style.position = 'absolute';
+            lockIndicator.style.left = '8px';
+            lockIndicator.style.top = '8px';
+            lockIndicator.style.fontSize = '11px';
+            lockIndicator.title = 'This column must remain first';
+            lockIndicator.innerHTML = '📌';
+            lockIndicator.style.color = 'var(--primary-color)';
+            lockIndicator.style.fontWeight = 'bold';
+            item.style.position = 'relative';
+            item.style.paddingLeft = '28px';
+            item.appendChild(lockIndicator);
           }
           
           // Add column name
@@ -1118,25 +1174,31 @@
           };
           actionButtons.appendChild(renameBtn);
           
-          // Add remove button
+          // Add remove button (but disable for ID column)
           const removeBtn = document.createElement('span');
           removeBtn.className = 'remove-btn';
           removeBtn.innerHTML = '<i class="material-icons" style="font-size:18px">close</i>';
-          removeBtn.title = 'Remove column';
+          removeBtn.title = col.key === 'id' ? 'ID column cannot be removed' : 'Remove column';
           removeBtn.onclick = (e) => {
             e.stopPropagation();
             removeColumn(col);
           };
+          if (col.key === 'id') {
+            removeBtn.style.opacity = '0.5';
+            removeBtn.style.cursor = 'not-allowed';
+          }
           actionButtons.appendChild(removeBtn);
           
           // Add the action buttons container to the item
           item.appendChild(actionButtons);
           
           // Set up drag events
-          item.ondragstart = handleDragStart;
-          item.ondragover = handleDragOver;
-          item.ondrop = handleDrop;
-          item.ondragend = handleDragEnd;
+          if (col.key !== 'id') { // Only set up drag events for non-ID columns
+            item.ondragstart = handleDragStart;
+            item.ondragover = handleDragOver;
+            item.ondrop = handleDrop;
+            item.ondragend = handleDragEnd;
+          }
           
           selectedList.appendChild(item);
         });
@@ -1146,6 +1208,12 @@
       let draggedItem = null;
       
       function handleDragStart(e) {
+        // Make sure this isn't the ID column
+        if (this.dataset.key === 'id') {
+          e.preventDefault();
+          return false;
+        }
+        
         draggedItem = this;
         this.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
@@ -1170,6 +1238,17 @@
         const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
         const toIndex = parseInt(this.dataset.index);
         
+        // Don't allow reordering if trying to move the ID column or place another column before it
+        if (selectedColumns[fromIndex]?.key === 'id' || toIndex === 0) {
+          // Show error message if trying to move ID column
+          if (selectedColumns[fromIndex]?.key === 'id') {
+            showStatus('error', 'The ID column cannot be moved from the first position');
+          } else if (toIndex === 0) {
+            showStatus('error', 'No column can be placed before the ID column');
+          }
+          return;
+        }
+        
         if (fromIndex !== toIndex) {
           const item = selectedColumns[fromIndex];
           selectedColumns.splice(fromIndex, 1);
@@ -1191,13 +1270,28 @@
         const fullColumn = originalAvailableColumns.find(col => col.key === column.key);
         if (fullColumn) {
           // Add a deep copy to prevent reference issues
-          selectedColumns.push(JSON.parse(JSON.stringify(fullColumn)));
+          const columnCopy = JSON.parse(JSON.stringify(fullColumn));
+          
+          // If this is the ID column and not already in selectedColumns, add it at the beginning
+          if (columnCopy.key === 'id' && !selectedColumns.some(col => col.key === 'id')) {
+            selectedColumns.unshift(columnCopy);
+          } else {
+            // Add non-ID columns to the end
+            selectedColumns.push(columnCopy);
+          }
+          
           renderAvailableList(searchBox.value);
           renderSelectedList();
         }
       }
       
       function removeColumn(column) {
+        // Prevent removing the ID column
+        if (column.key === 'id') {
+          showStatus('error', 'The ID column is required and cannot be removed');
+          return;
+        }
+        
         const index = selectedColumns.findIndex(col => col.key === column.key);
         if (index !== -1) {
           selectedColumns.splice(index, 1);
@@ -1485,6 +1579,19 @@
         
         console.log('Save button clicked, sending data to server');
         console.log(`Sending ${selectedColumns.length} columns to save`);
+        
+        // Ensure the ID column is always included
+        if (!selectedColumns.some(col => col.key === 'id')) {
+          // Find the ID column in the original columns
+          const idColumn = originalAvailableColumns.find(col => col.key === 'id');
+          if (idColumn) {
+            // Add ID column at the beginning of the array
+            selectedColumns.unshift(JSON.parse(JSON.stringify(idColumn)));
+            showStatus('info', 'ID column automatically added as it is required');
+            // Re-render to show the changes
+            renderSelectedList();
+          }
+        }
         
         // Update any address component display names before saving
         selectedColumns.forEach(col => {
