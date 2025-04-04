@@ -727,6 +727,28 @@
         margin-left: 6px;
         opacity: 1;
       }
+      
+      .info-tooltip-detail {
+        margin-top: 8px;
+        margin-bottom: 0;
+        font-size: 12px;
+        color: #666;
+      }
+      
+      .entity-tooltip {
+        background-color: #fff3e0;
+        border-left: 4px solid #ff9800;
+        padding: 12px 16px;
+        margin-bottom: 16px;
+        border-radius: 8px;
+        font-size: 13px;
+        color: #5d4037;
+      }
+      
+      .entity-tooltip-title {
+        font-weight: 500;
+        margin-bottom: 8px;
+      }
     </style>
     
     <?!= dataScript ?>
@@ -770,12 +792,21 @@
             
             Read-only fields include:
             <ul>
-              <li>Address components (street, city, etc.) - only full address is editable</li>
               <li>System fields (timestamps, counts, creator info)</li>
               <li>Calculated values (formatted values, weighted values)</li>
+              <li>Fields from related entities (you can only edit fields of the current entity type)</li>
               <li>Most ID fields except certain linkable references</li>
             </ul>
           </div>
+        </div>
+      </div>
+      
+      <div class="entity-tooltip">
+        <div class="entity-tooltip-title">Current entity type: <strong><?= entityTypeName ?></strong></div>
+        <div>
+          You can only edit fields that belong directly to <strong><?= entityTypeName ?></strong>. 
+          Any fields from related entities (like Organization fields when viewing Deals) will appear as read-only.
+          To edit those fields, you must use a filter for the corresponding entity type.
         </div>
       </div>
     </div>
@@ -1455,8 +1486,54 @@
           return true;
         }
         
-        // Address components are not read-only according to Pipedrive API docs
-        // They are all updatable via the API
+        // Entity-specific read-only checks
+        // Fields that belong to related entities should be read-only
+        if (key) {
+          // Check if this is a field from a related entity based on the current entity type
+          // For example, org_* fields should be read-only in a Deals sheet
+          
+          // Organization fields are only editable when in Organization entity type
+          if ((key.startsWith('org.') || key.startsWith('org_') || 
+               key.startsWith('organization.') || key.startsWith('organization_')) && 
+              entityType !== 'organizations') {
+            return true;
+          }
+          
+          // Person fields are only editable when in Person entity type
+          if ((key.startsWith('person.') || key.startsWith('person_')) && 
+              entityType !== 'persons') {
+            return true;
+          }
+          
+          // Deal fields are only editable when in Deal entity type
+          if ((key.startsWith('deal.') || key.startsWith('deal_')) && 
+              entityType !== 'deals') {
+            return true;
+          }
+          
+          // Activity fields are only editable when in Activity entity type
+          if ((key.startsWith('activity.') || key.startsWith('activity_')) && 
+              entityType !== 'activities') {
+            return true;
+          }
+          
+          // Product fields are only editable when in Product entity type
+          if ((key.startsWith('product.') || key.startsWith('product_')) && 
+              entityType !== 'products') {
+            return true;
+          }
+          
+          // Lead fields are only editable when in Lead entity type
+          if ((key.startsWith('lead.') || key.startsWith('lead_')) && 
+              entityType !== 'leads') {
+            return true;
+          }
+          
+          // Organization address components are only editable in Organization entity type
+          if (key.includes('address.') && entityType !== 'organizations') {
+            return true;
+          }
+        }
         
         // Common read-only fields across all entity types
         if (key && (

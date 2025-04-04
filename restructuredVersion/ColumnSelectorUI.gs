@@ -729,6 +729,52 @@ function showColumnSelectorUI() {
     
     // Post-process column names for better display
     availableColumns.forEach(col => {
+      // Mark fields as read-only based on entity type context
+      // Fields from related entities should be read-only
+      if (col.key) {
+        // Organization fields should be read-only when not in Organization view
+        if ((col.key.startsWith('org.') || col.key.startsWith('org_') || 
+             col.key.startsWith('organization.') || col.key.startsWith('organization_')) && 
+            entityType !== ENTITY_TYPES.ORGANIZATIONS) {
+          col.readOnly = true;
+        }
+        
+        // Person fields should be read-only when not in Person view
+        if ((col.key.startsWith('person.') || col.key.startsWith('person_')) && 
+            entityType !== ENTITY_TYPES.PERSONS) {
+          col.readOnly = true;
+        }
+        
+        // Deal fields should be read-only when not in Deal view
+        if ((col.key.startsWith('deal.') || col.key.startsWith('deal_')) && 
+            entityType !== ENTITY_TYPES.DEALS) {
+          col.readOnly = true;
+        }
+        
+        // Activity fields should be read-only when not in Activity view
+        if ((col.key.startsWith('activity.') || col.key.startsWith('activity_')) && 
+            entityType !== ENTITY_TYPES.ACTIVITIES) {
+          col.readOnly = true;
+        }
+        
+        // Product fields should be read-only when not in Product view
+        if ((col.key.startsWith('product.') || col.key.startsWith('product_')) && 
+            entityType !== ENTITY_TYPES.PRODUCTS) {
+          col.readOnly = true;
+        }
+        
+        // Lead fields should be read-only when not in Lead view
+        if ((col.key.startsWith('lead.') || col.key.startsWith('lead_')) && 
+            entityType !== ENTITY_TYPES.LEADS) {
+          col.readOnly = true;
+        }
+        
+        // Address components should be read-only when not in Organization view
+        if (col.key.includes('address.') && entityType !== ENTITY_TYPES.ORGANIZATIONS) {
+          col.readOnly = true;
+        }
+      }
+
       // Mark read-only fields based on Pipedrive API documentation
       // These fields are not included in the update endpoints or are system-generated
       
