@@ -564,6 +564,16 @@ function showColumnSelectorUI() {
         }
       }
 
+      // Remove redundant address fields
+      if (col.key === 'address_formatted_address' && availableColumns.some(c => c.key === 'address')) {
+        return false;
+      }
+      
+      // Also filter out any formatted_address fields that duplicate the main address
+      if (col.key.includes('formatted_address') && availableColumns.some(c => c.key === 'address')) {
+        return false;
+      }
+
       return true;
     });
     
@@ -698,6 +708,7 @@ function showColumnSelectorUI() {
           col.key === 'next_activity_type' ||
           col.key === 'next_activity_duration' ||
           col.key === 'next_activity_note' ||
+          col.key === 'last_activity_date' ||
           col.key === 'archive_time' ||
           col.key === 'local_close_date' ||
           col.key === 'local_won_date' ||

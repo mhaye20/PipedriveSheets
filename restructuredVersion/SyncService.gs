@@ -316,42 +316,10 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
     }
     
     // Get column preferences
-    const columnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
-    const userEmail = Session.getEffectiveUser().getEmail();
-    const userColumnSettingsKey = `COLUMNS_${sheetName}_${entityType}_${userEmail}`;
+    Logger.log(`Getting column preferences for ${entityType} in sheet "${sheetName}"`);
+    let columns = SyncService.getTeamAwareColumnPreferences(entityType, sheetName);
     
-    Logger.log(`Looking for column preferences with keys:`);
-    Logger.log(`- User specific: ${userColumnSettingsKey}`);
-    Logger.log(`- Column settings key: ${columnSettingsKey}`);
-    
-    const savedColumnsJson = scriptProperties.getProperty(userColumnSettingsKey) || 
-                            scriptProperties.getProperty(columnSettingsKey);
-    
-    if (scriptProperties.getProperty(userColumnSettingsKey)) {
-      Logger.log(`Found user-specific column preferences`);
-    } else if (scriptProperties.getProperty(columnSettingsKey)) {
-      Logger.log(`Found generic column preferences`);
-    } else {
-      Logger.log(`No saved column preferences found with any key format`);
-    }
-    
-    let columns = [];
-    
-    if (savedColumnsJson) {
-      try {
-        columns = JSON.parse(savedColumnsJson);
-        Logger.log(`Retrieved ${columns.length} column preferences`);
-        
-        // Log the columns for debugging
-        Logger.log("Column preferences:");
-        columns.forEach((col, index) => {
-          Logger.log(`Column ${index + 1}: ${JSON.stringify(col)}`);
-        });
-      } catch (e) {
-        Logger.log(`Error parsing column preferences: ${e.message}`);
-        throw new Error(`Invalid column preferences: ${e.message}`);
-      }
-    } else {
+    if (columns.length === 0) {
       // If no column preferences, use default columns
       Logger.log(`No column preferences found, using defaults for ${entityType}`);
       
@@ -366,6 +334,8 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
       }
       
       Logger.log(`Using ${columns.length} default columns`);
+    } else {
+      Logger.log(`Using ${columns.length} saved columns from preferences`);
     }
     
     // Create header row from column names
@@ -2710,6 +2680,31 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
             Logger.log(`Using product ID ${rowId} from column ${idColumnName} instead of first column value ${row[idColumnIndex]}`);
           }
         }
+        
+        // For organizations, ensure we're using a numeric ID
+        if (entityType === ENTITY_TYPES.ORGANIZATIONS) {
+          // Check if the rowId is not numeric - it might be a name or other value
+          if (isNaN(parseInt(rowId)) || !(/^\d+$/.test(String(rowId)))) {
+            // Look for an explicit "ID" column
+            const idColumnName = 'ID';
+            const idColumnIdx = headers.indexOf(idColumnName);
+            
+            if (idColumnIdx !== -1 && idColumnIdx !== idColumnIndex) {
+              const explicitId = row[idColumnIdx];
+              // Only use it if it's numeric
+              if (!isNaN(parseInt(explicitId)) && /^\d+$/.test(String(explicitId))) {
+                rowId = explicitId;
+                Logger.log(`Using organization ID ${rowId} from column ${idColumnName} instead of non-numeric value ${row[idColumnIndex]}`);
+              } else {
+                // Still not numeric, log a warning
+                Logger.log(`Warning: Non-numeric organization ID "${rowId}" - API request may fail`);
+              }
+            } else {
+              // No explicit ID column found, log a warning
+              Logger.log(`Warning: Non-numeric organization ID "${rowId}" and no ID column found - API request may fail`);
+            }
+          }
+        }
 
         // Create an object with field values to update
         const updateData = {};
@@ -2797,58 +2792,79 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
               }
             }
             // Handle date/datetime fields
-            else if (isDateField(fieldKey)) {
+            else if (isDateField(fieldKey, entityType)) {
+              // Format date fields to ISO date format (YYYY-MM-DD)
+              let formattedDate = value;
+              
               if (value instanceof Date) {
-                // Convert to UTC ISO format for API
-                const isoDate = value.toISOString();
-                
-                if (fieldKey.startsWith('custom_fields')) {
-                  const customFieldKey = fieldKey.replace('custom_fields.', '');
-                  updateData.custom_fields[customFieldKey] = isoDate;
-                } else {
-                  updateData[fieldKey] = isoDate;
-                }
+                // Format to YYYY-MM-DD
+                const year = value.getFullYear();
+                const month = String(value.getMonth() + 1).padStart(2, '0');
+                const day = String(value.getDate()).padStart(2, '0');
+                formattedDate = `${year}-${month}-${day}`;
               } else if (typeof value === 'string') {
-                // Try to parse the string as a date
-                const apiDateFormat = convertToStandardDateFormat(value);
-                
-                if (apiDateFormat) {
-                  if (fieldKey.startsWith('custom_fields')) {
-                    const customFieldKey = fieldKey.replace('custom_fields.', '');
-                    updateData.custom_fields[customFieldKey] = apiDateFormat;
-                  } else {
-                    updateData[fieldKey] = apiDateFormat;
+                // Try to parse as date if not already in ISO format
+                if (!value.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                  try {
+                    const dateObj = new Date(value);
+                    if (!isNaN(dateObj.getTime())) {
+                      const year = dateObj.getFullYear();
+                      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                      const day = String(dateObj.getDate()).padStart(2, '0');
+                      formattedDate = `${year}-${month}-${day}`;
+                    }
+                  } catch (dateError) {
+                    Logger.log(`Error parsing date: ${dateError.message}`);
                   }
                 }
               }
-            }
-            // Handle phone fields
-            else if (fieldKey === 'phone' || fieldKey.startsWith('phone.')) {
-              // Extract label if present (e.g., "phone.mobile" -> "mobile")
-              const parts = fieldKey.split('.');
-              const label = parts.length > 1 ? parts[1] : 'work'; // Default to work if no label
               
-              // Add to phone data collection for later formatting
-              phoneData.push({
-                value: value,
-                label: label,
-                primary: phoneData.length === 0 // First one is primary
-              });
+              // Set the formatted date in the update data
+                if (fieldKey.startsWith('custom_fields')) {
+                  const customFieldKey = fieldKey.replace('custom_fields.', '');
+                updateData.custom_fields[customFieldKey] = formattedDate;
+                } else {
+                updateData[fieldKey] = formattedDate;
+              }
             }
-            // Handle email fields
-            else if (fieldKey === 'email' || fieldKey.startsWith('email.')) {
-              // Extract label if present (e.g., "email.work" -> "work")
-              const parts = fieldKey.split('.');
-              const label = parts.length > 1 ? parts[1] : 'work'; // Default to work if no label
-              
-              // Add to email data collection for later formatting
-              emailData.push({
-                value: value,
-                label: label,
-                primary: emailData.length === 0 // First one is primary
-              });
+            // Handle phone and email fields specially
+            else if (fieldKey === 'phone' || fieldKey === 'phone.value' || fieldKey.startsWith('phone.')) {
+              // If it's a specific label like phone.mobile
+              if (fieldKey.startsWith('phone.') && fieldKey !== 'phone.value') {
+                const label = fieldKey.replace('phone.', '');
+                phoneData.push({
+                  label: label,
+                  value: value,
+                  primary: label.toLowerCase() === 'work' || label.toLowerCase() === 'mobile'
+                });
+                  } else {
+                // It's the primary phone
+                phoneData.push({
+                  label: 'mobile',
+                  value: value,
+                  primary: true
+                });
+              }
             }
-            // All other fields
+            else if (fieldKey === 'email' || fieldKey === 'email.value' || fieldKey.startsWith('email.')) {
+              // If it's a specific label like email.work
+              if (fieldKey.startsWith('email.') && fieldKey !== 'email.value') {
+                const label = fieldKey.replace('email.', '');
+                emailData.push({
+                  label: label,
+                  value: value,
+                  primary: label.toLowerCase() === 'work'
+                });
+              } else {
+                // It's the primary email
+                emailData.push({
+                  label: 'work',
+                  value: value,
+                  primary: true
+                });
+              }
+            }
+            // Handle all other fields normally
             else {
               if (fieldKey.startsWith('custom_fields')) {
                 const customFieldKey = fieldKey.replace('custom_fields.', '');
@@ -2859,25 +2875,24 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
             }
           }
         }
-        
-        // Process collected phone data in Pipedrive format
-        if (phoneData.length > 0) {
-          updateData.phone = phoneData;
-        }
-        
-        // Process collected email data in Pipedrive format
-        if (emailData.length > 0) {
-          updateData.email = emailData;
-        }
 
-        // Only add rows with actual data to update
-        if (Object.keys(updateData).length > 0 || (updateData.custom_fields && Object.keys(updateData.custom_fields).length > 0)) {
+        // Skip empty update data
+        if (Object.keys(updateData).length === 0 && 
+            (!updateData.custom_fields || Object.keys(updateData.custom_fields).length === 0)) {
+          continue;
+        }
+        
+        // Save the row index for error reporting
+        const rowIndex = i;
+        
+        // Push the row data to the modified rows array
           modifiedRows.push({
             id: rowId,
-            rowIndex: i,
-            data: updateData
-          });
-        }
+          rowIndex: rowIndex,
+          data: updateData,
+          emailData: emailData,
+          phoneData: phoneData
+        });
       }
     }
 
@@ -2961,6 +2976,12 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
             // Remove custom_fields - not allowed for activities in API v2
             delete rowData.data.custom_fields;
             
+            // Validate ID fields
+            validateIdField(rowData.data, 'owner_id');
+            validateIdField(rowData.data, 'person_id');
+            validateIdField(rowData.data, 'org_id');
+            validateIdField(rowData.data, 'deal_id');
+            
             // Special handling for activity due_date - ensure ISO date format (YYYY-MM-DD)
             if (rowData.data.due_date) {
               if (rowData.data.due_date instanceof Date) {
@@ -3001,7 +3022,7 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
             
             // Handle participants - person_id, org_id, and deal_id are read-only in API v2
             // They must be set via participants array
-            const participants = [];
+            let participants = [];
             
             // If person_id exists, add it as a participant
             if (rowData.data.person_id) {
@@ -3041,6 +3062,13 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
             
             // Remove ID from payload
             delete rowData.data.id;
+            
+            // Validate ID fields
+            validateIdField(rowData.data, 'owner_id');
+            validateIdField(rowData.data, 'person_id');
+            validateIdField(rowData.data, 'org_id');
+            validateIdField(rowData.data, 'stage_id');
+            validateIdField(rowData.data, 'pipeline_id');
             break;
             
           case ENTITY_TYPES.PERSONS:
@@ -3049,6 +3077,10 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
             
             // Remove ID from payload
             delete rowData.data.id;
+            
+            // Validate ID fields
+            validateIdField(rowData.data, 'owner_id');
+            validateIdField(rowData.data, 'org_id');
             
             // Format emails and phones correctly if present
             if (rowData.data.email && !Array.isArray(rowData.data.email)) {
@@ -3062,69 +3094,282 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
             }
             
             // Use proper email and phone arrays for PATCH API v2
-            if (emailData.length > 0) {
-              rowData.data.emails = emailData.map(item => ({
-                label: item.label,
-                value: item.value,
-                primary: item.primary
-              }));
-              // Remove the old email field if it exists
-              delete rowData.data.email;
+            if (rowData.emailData && rowData.emailData.length > 0) {
+              rowData.data.email = rowData.emailData;
             }
             
-            if (phoneData.length > 0) {
-              rowData.data.phones = phoneData.map(item => ({
-                label: item.label,
-                value: item.value,
-                primary: item.primary
-              }));
-              // Remove the old phone field if it exists
-              delete rowData.data.phone;
+            if (rowData.phoneData && rowData.phoneData.length > 0) {
+              rowData.data.phone = rowData.phoneData;
             }
             break;
             
           case ENTITY_TYPES.ORGANIZATIONS:
+            // Ensure we have a valid numeric ID for organizations
+            if (isNaN(parseInt(rowData.id)) || !(/^\d+$/.test(String(rowData.id)))) {
+              throw new Error(`Organization ID must be numeric. Found: "${rowData.id}". Please make sure your data has the correct ID column.`);
+            }
+            
             updateUrl = `${baseUrl}/api/v2/organizations/${rowData.id}`;
             method = 'PATCH';
             
             // Remove ID from payload
             delete rowData.data.id;
             
+            // Validate ID fields
+            validateIdField(rowData.data, 'owner_id');
+            
+            // Before we modify the address, let's get the current organization data
+            // to ensure we don't lose any existing address fields in Pipedrive
+            let preserveExistingAddress = false;
+            let existingAddressData = null;
+            
+            try {
+              // Fetch the current organization data
+              const orgUrl = `${baseUrl}/api/v2/organizations/${rowData.id}`;
+              const orgResponse = UrlFetchApp.fetch(orgUrl, {
+                method: 'GET',
+                headers: {
+                  'Authorization': `Bearer ${accessToken}`
+                },
+                muteHttpExceptions: true
+              });
+              
+              if (orgResponse.getResponseCode() === 200) {
+                const orgData = JSON.parse(orgResponse.getContentText());
+                if (orgData.success && orgData.data && orgData.data.address) {
+                  existingAddressData = orgData.data.address;
+                  preserveExistingAddress = true;
+                  Logger.log(`Found existing address data: ${JSON.stringify(existingAddressData)}`);
+                }
+              }
+            } catch (e) {
+              Logger.log(`Error fetching organization data: ${e.message}. Will proceed without existing address data.`);
+            }
+            
             // Special handling for address fields in organizations
+            // Recent API change requires address to be formatted as an array
+            if (rowData.data.address) {
+              const addressValue = rowData.data.address;
+              
+              Logger.log(`Converting address to array format for Pipedrive API: ${addressValue}`);
+              
+              // Check if it's already an array
+              if (Array.isArray(addressValue)) {
+                Logger.log(`Address is already formatted as an array: ${JSON.stringify(addressValue)}`);
+              } else {
+                try {
+                  // If we have existing address data
+                  if (preserveExistingAddress && existingAddressData) {
+                    // Create a proper address object based on what format we received
+                    let updatedAddress = [];
+                    
+                    // Handle case where existingAddressData is an object (not an array)
+                    if (existingAddressData && !Array.isArray(existingAddressData) && typeof existingAddressData === 'object') {
+                      Logger.log(`Existing address is in object format: ${JSON.stringify(existingAddressData)}`);
+                      
+                      // Create an array with the existing object's properties
+                      const addressObj = {
+                        value: addressValue,
+                        primary: true,
+                        label: "work"
+                      };
+                      
+                      // Copy all the component fields from the existing address
+                      for (const key in existingAddressData) {
+                        if (key !== 'value') {
+                          addressObj[key] = existingAddressData[key];
+                        }
+                      }
+                      
+                      // If the street number is in the address, try to update it
+                      if (addressObj.street_number && typeof addressValue === 'string') {
+                        const parts = addressValue.split(' ');
+                        if (parts.length > 0 && !isNaN(parseInt(parts[0]))) {
+                          addressObj.street_number = parts[0];
+                        }
+                      }
+                      
+                      // Update formatted_address if it exists
+                      if (addressObj.formatted_address) {
+                        addressObj.formatted_address = addressValue;
+                      }
+                      
+                      updatedAddress = [addressObj];
+                      Logger.log(`Created address array from object: ${JSON.stringify(updatedAddress)}`);
+                    }
+                    // Handle case where existingAddressData is an array
+                    else if (Array.isArray(existingAddressData) && existingAddressData.length > 0) {
+                      Logger.log(`Existing address is in array format: ${JSON.stringify(existingAddressData)}`);
+                      
+                      // Create a deep copy
+                      updatedAddress = JSON.parse(JSON.stringify(existingAddressData));
+                      
+                      // Update just the value in the first address
+                      updatedAddress[0].value = addressValue;
+                      
+                      // If the street number is in the address, try to update it
+                      if (updatedAddress[0].street_number && typeof addressValue === 'string') {
+                        const parts = addressValue.split(' ');
+                        if (parts.length > 0 && !isNaN(parseInt(parts[0]))) {
+                          updatedAddress[0].street_number = parts[0];
+                        }
+                      }
+                      
+                      // Update formatted_address if it exists
+                      if (updatedAddress[0].formatted_address) {
+                        updatedAddress[0].formatted_address = addressValue;
+                      }
+                      
+                      Logger.log(`Updated existing address array: ${JSON.stringify(updatedAddress)}`);
+                    }
+                    // Handle case where we don't have valid existing address data
+                    else {
+                      Logger.log(`No valid existing address data found, creating new array`);
+                      updatedAddress = [{
+                        value: addressValue,
+                        primary: true,
+                        label: "work"
+                      }];
+                    }
+                    
+                    // Update the rowData with our properly formatted address
+                    rowData.data.address = updatedAddress;
+                    Logger.log(`Final address format: ${JSON.stringify(updatedAddress)}`);
+                  } else {
+                    // No existing data or preserveExistingAddress is false
+                    rowData.data.address = [{
+                      value: addressValue,
+                      primary: true,
+                      label: "work"
+                    }];
+                    Logger.log(`Formatted address as new array: ${JSON.stringify(rowData.data.address)}`);
+                  }
+  } catch (e) {
+                  Logger.log(`Error formatting address: ${e.message}. Will try simple format.`);
+                  // Fallback to simple format
+                  rowData.data.address = [{
+                    value: addressValue,
+                    primary: true,
+                    label: "work"
+                  }];
+                }
+              }
+            }
+            
+            // Handle any other address components if they exist
             const addressFields = [
-              'address', 'address_street_number', 'address_route', 
+              'address_street_number', 'address_route', 
               'address_sublocality', 'address_locality', 'address_admin_area_level_1',
               'address_admin_area_level_2', 'address_country', 'address_postal_code',
               'address_formatted_address'
             ];
             
-            // Check if we have any address-related fields
-            const hasAddressFields = addressFields.some(field => field in rowData.data);
-            
-            if (hasAddressFields) {
-              Logger.log(`Organization has address fields, ensuring proper structure`);
-              
-              // Handle the main address field
-              if (rowData.data.address) {
-                // Make sure it's a string
-                if (typeof rowData.data.address !== 'string') {
-                  rowData.data.address = String(rowData.data.address);
-                }
-                Logger.log(`Setting address: ${rowData.data.address}`);
-              }
-              
-              // Make sure address_country is separate from address
-              if (rowData.data.address_country) {
-                Logger.log(`Setting address_country: ${rowData.data.address_country}`);
-              }
-              
-              // For other address components, ensure they're included correctly
-              for (const field of addressFields) {
-                if (field !== 'address' && field !== 'address_country' && field in rowData.data) {
-                  Logger.log(`Including address component ${field}: ${rowData.data[field]}`);
-                }
+            // Remove individual address components - they should be included in the main address field
+            for (const field of addressFields) {
+              if (field in rowData.data) {
+                Logger.log(`Removing individual address component ${field}: ${rowData.data[field]}`);
+                delete rowData.data[field];
               }
             }
+            break;
+            
+          case ENTITY_TYPES.ACTIVITIES:
+            updateUrl = `${baseUrl}/api/v2/activities/${rowData.id}`;
+            method = 'PATCH';
+            
+            // Remove ID from payload
+            delete rowData.data.id;
+            
+            // Validate ID fields
+            validateIdField(rowData.data, 'owner_id');
+            validateIdField(rowData.data, 'person_id');
+            validateIdField(rowData.data, 'org_id');
+            validateIdField(rowData.data, 'deal_id');
+            
+            // Special handling for activity due_date - ensure ISO date format (YYYY-MM-DD)
+            if (rowData.data.due_date) {
+              if (rowData.data.due_date instanceof Date) {
+                // Format to YYYY-MM-DD without time component
+                const year = rowData.data.due_date.getFullYear();
+                const month = String(rowData.data.due_date.getMonth() + 1).padStart(2, '0');
+                const day = String(rowData.data.due_date.getDate()).padStart(2, '0');
+                rowData.data.due_date = `${year}-${month}-${day}`;
+              } else if (typeof rowData.data.due_date === 'string') {
+                // Try to parse the string as a date if it's not in ISO format
+                if (!rowData.data.due_date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                  try {
+                    const dateObj = new Date(rowData.data.due_date);
+                    const year = dateObj.getFullYear();
+                    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                    const day = String(dateObj.getDate()).padStart(2, '0');
+                    rowData.data.due_date = `${year}-${month}-${day}`;
+    } catch (e) {
+                    Logger.log(`Error parsing due_date: ${e.message}`);
+                  }
+                }
+              }
+              
+              Logger.log(`Formatted due_date: ${rowData.data.due_date}`);
+            }
+            
+            // Handle due_time separately if it exists
+            if (rowData.data.due_time) {
+              if (rowData.data.due_time instanceof Date) {
+                // Format to HH:MM for API
+                const hours = String(rowData.data.due_time.getHours()).padStart(2, '0');
+                const minutes = String(rowData.data.due_time.getMinutes()).padStart(2, '0');
+                rowData.data.due_time = `${hours}:${minutes}`;
+              }
+              
+              Logger.log(`Formatted due_time: ${rowData.data.due_time}`);
+            }
+          
+            
+            // If person_id exists, add it as a participant
+            if (rowData.data.person_id) {
+              participants.push({
+                person_id: rowData.data.person_id,
+                primary: true
+              });
+              delete rowData.data.person_id;
+            }
+            
+            // Add organization as a participant if org_id exists
+            if (rowData.data.org_id) {
+              delete rowData.data.org_id;
+              // Note: org_id can't be directly added as participant, only indirectly via person
+            }
+            
+            // Deal can't be set as participant, remove it
+            if (rowData.data.deal_id) {
+              delete rowData.data.deal_id;
+              // Note: In API v2, deal association must be done differently
+            }
+            
+            // Only add participants if we have any
+            if (participants.length > 0) {
+              rowData.data.participants = participants;
+            }
+            
+            // Ensure type is set for activity if missing
+            if (!rowData.data.type) {
+              rowData.data.type = "task"; // Default type
+            }
+            break;
+            
+          case ENTITY_TYPES.LEADS:
+            updateUrl = `${baseUrl}/api/v2/leads/${rowData.id}`;
+            method = 'PATCH';
+            
+            // Remove ID from payload
+            delete rowData.data.id;
+            
+            // Validate ID fields
+            validateIdField(rowData.data, 'owner_id');
+            validateIdField(rowData.data, 'person_id');
+            validateIdField(rowData.data, 'org_id');
+            validateIdField(rowData.data, 'stage_id');
+            validateIdField(rowData.data, 'pipeline_id');
             break;
             
           case ENTITY_TYPES.PRODUCTS:
@@ -3133,784 +3378,59 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
             
             // Remove ID from payload
             delete rowData.data.id;
+            
+            // Validate ID fields
+            validateIdField(rowData.data, 'owner_id');
+            validateIdField(rowData.data, 'category_id');
+            validateIdField(rowData.data, 'unit_id');
+            validateIdField(rowData.data, 'tax_id');
+            validateIdField(rowData.data, 'prices');
             break;
             
-          // API v1 endpoints
-          case ENTITY_TYPES.LEADS:
-            updateUrl = `${baseUrl}/v1/leads/${rowData.id}`;
-            method = 'PATCH';
-            
-            // Remove ID from payload
-            delete rowData.data.id;
-            break;
-            
-          // API v1 fields endpoints using PUT
-          case ENTITY_TYPES.DEAL_FIELDS:
-            updateUrl = `${baseUrl}/v1/dealFields/${rowData.id}`;
-            method = 'PUT';
-            break;
-            
-          case ENTITY_TYPES.PERSON_FIELDS:
-            updateUrl = `${baseUrl}/v1/personFields/${rowData.id}`;
-            method = 'PUT';
-            break;
-            
-          case ENTITY_TYPES.ORGANIZATION_FIELDS:
-            updateUrl = `${baseUrl}/v1/organizationFields/${rowData.id}`;
-            method = 'PUT';
-            break;
-            
-          case ENTITY_TYPES.PRODUCT_FIELDS:
-            updateUrl = `${baseUrl}/v1/productFields/${rowData.id}`;
-            method = 'PUT';
-            break;
-            
-          // Default fallback (should not happen if entity types are properly defined)
           default:
-            // Use v1 API by default for unknown entity types
-            updateUrl = `${baseUrl}/v1/${entityType}/${rowData.id}`;
-            method = 'PUT';
-            Logger.log(`Warning: Unknown entity type ${entityType}, using default API endpoint`);
+            throw new Error(`Unknown entity type: ${entityType}`);
         }
         
-        // Log the request we're making
-        Logger.log(`Updating ${entityType} with ID ${rowData.id}`);
-        Logger.log(`Request URL: ${updateUrl}`);
-        Logger.log(`Request method: ${method}`);
+        // Set up the request body
+        const requestBody = rowData.data;
         
-        // Log the complete data payload that will be sent
-        Logger.log(`Complete request data for ${entityType}: ${JSON.stringify(rowData.data, (key, value) => {
-          // Handle Date objects for clear logging
-          if (value instanceof Date) {
-            return `Date(${value.toISOString()})`;
-          }
-          return value;
-        }, 2)}`);
-
-        // For activities, manually check for due_date in the row data
-        if (entityType === ENTITY_TYPES.ACTIVITIES) {
-          try {
-            // Store the current row information for use in this function
-            // We'll use the rowIndex from rowData to look up the correct row
-            const thisRowIndex = rowData.rowIndex;
-            const thisRow = values[thisRowIndex]; // values is from the dataRange.getValues() call
-            
-            // Check if any "due date" or similar fields exist in the headers
-            const dueDateHeaders = headers.filter(h => 
-              h.toLowerCase().includes('due') || 
-              h.toLowerCase().includes('date') ||
-              h.toLowerCase().includes('deadline')
-            );
-            
-            if (dueDateHeaders.length > 0) {
-              Logger.log(`Found potential due date headers: ${dueDateHeaders.join(', ')}`);
-            } else {
-              Logger.log(`No potential due date headers found`);
-            }
-          } catch (e) {
-            // Just log the error but continue with the request
-            Logger.log(`Error checking date headers: ${e.message}`);
-          }
-        }
-        
-        Logger.log(`Request data: ${JSON.stringify(rowData.data)}`);
-
-        // Make the API call with proper OAuth authentication
-        const options = {
+        // Make the API request
+        const response = UrlFetchApp.fetch(updateUrl, {
           method: method,
-          contentType: 'application/json',
           headers: {
-            'Authorization': 'Bearer ' + accessToken
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
           },
-          payload: JSON.stringify(rowData.data),
-          muteHttpExceptions: true
-        };
-
-        const response = UrlFetchApp.fetch(updateUrl, options);
-        const statusCode = response.getResponseCode();
-        const responseBody = response.getContentText();
+          payload: JSON.stringify(requestBody)
+        });
         
-        // Log response for debugging
-        Logger.log(`Response status: ${statusCode}`);
-        Logger.log(`Response body: ${responseBody}`);
-        
-        const responseJson = JSON.parse(responseBody);
-
-        if (statusCode >= 200 && statusCode < 300 && responseJson.success) {
-          // Update was successful
+        // Check the response status
+        if (response.getResponseCode() === 200) {
           successCount++;
-          
-          // Update the tracking column to "Synced"
-          activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setValue('Synced');
-          
-          // Add a timestamp if desired
-          if (scriptProperties.getProperty('ENABLE_TIMESTAMP') === 'true') {
-            const timestamp = new Date().toLocaleString();
-            activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setNote(`Last sync: ${timestamp}`);
-          }
-        } else {
-          // Update failed
+          Logger.log(`Successfully updated row ${rowData.id} in Pipedrive`);
+  } else {
           failureCount++;
-          
-          // Update the tracking column to "Error"
-          activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setValue('Error');
-          
-          // Add error details to the cell note
-          let errorMessage = responseJson.error || 'Unknown error';
-          if (responseJson.errorCode) {
-            errorMessage += ` (${responseJson.errorCode})`;
-          }
-          
-          activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setNote(`Error: ${errorMessage}`);
-          
-          // Track the failure for summary
-          failures.push({
-            id: rowData.id,
-            error: errorMessage
-          });
+          failures.push(`Failed to update row ${rowData.id} in Pipedrive: ${response.getContentText()}`);
+          Logger.log(`Failed to update row ${rowData.id} in Pipedrive: ${response.getContentText()}`);
         }
-      } catch (error) {
-        // Handle errors in the API call
+      } catch (e) {
         failureCount++;
-        
-        // Update the tracking column to "Error"
-        activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setValue('Error');
-        activeSheet.getRange(rowData.rowIndex + 1, syncStatusColumnIndex + 1).setNote(`Error: ${error.message}`);
-        
-        // Track the failure for summary
-        failures.push({
-          id: rowData.id,
-          error: error.message
-        });
-        
-        Logger.log(`Error updating row ${rowData.rowIndex}: ${error.message}`);
+        failures.push(`Error updating row ${rowData.id} in Pipedrive: ${e.message}`);
+        Logger.log(`Error updating row ${rowData.id} in Pipedrive: ${e.message}`);
       }
     }
 
-    // Refresh status column styling
-    refreshSyncStatusStyling();
-
-    // Show summary of results
-    if (!isScheduledSync) {
-      const ui = SpreadsheetApp.getUi();
-      
-      if (failureCount === 0) {
-        ui.alert(
-          'Sync Complete',
-          `Successfully updated ${successCount} record(s) in Pipedrive.`,
-          ui.ButtonSet.OK
-        );
-      } else {
-        // Build error message
-        let errorMsg = `Updated ${successCount} record(s) successfully.\n\n`;
-        errorMsg += 'The following records had errors:\n\n';
-
-        failures.forEach(failure => {
-          errorMsg += `- ID ${failure.id}: ${failure.error}\n`;
-        });
-        
-        ui.alert(
-          'Sync Errors',
-          errorMsg,
-          ui.ButtonSet.OK
-        );
-      }
-    }
-  } catch (error) {
-    Logger.log(`Error in pushChangesToPipedrive: ${error.message}`);
-    Logger.log(`Stack trace: ${error.stack}`);
-    
-    if (!isScheduledSync) {
-      const ui = SpreadsheetApp.getUi();
-      ui.alert(
-        'Sync Error',
-        `An error occurred during sync: ${error.message}`,
-        ui.ButtonSet.OK
-      );
-    }
-  }
-}
-
-/**
- * Refreshes the styling of the Sync Status column
- * This is useful if the styling gets lost or if the user wants to reset it
- */
-function refreshSyncStatusStyling() {
-  try {
-    // Get the active sheet
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    const sheetName = sheet.getName();
-
-    // Check if two-way sync is enabled for this sheet
-    const scriptProperties = PropertiesService.getScriptProperties();
-    const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
-    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
-
-    const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
-
-    // If two-way sync is not enabled, just return silently
-    if (!twoWaySyncEnabled) {
-      return;
-    }
-
-    // Get the tracking column
-    let trackingColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey) || '';
-    let trackingColumnIndex;
-
-    if (trackingColumn) {
-      // Convert column letter to index (0-based)
-      trackingColumnIndex = columnLetterToIndex(trackingColumn);
+    // Log the results
+    Logger.log(`Sync completed. ${successCount} rows updated, ${failureCount} rows failed`);
+    if (failureCount > 0) {
+      SpreadsheetApp.getActiveSpreadsheet().toast(`Sync completed with ${failureCount} failures: ${failures.join('\n')}`);
     } else {
-      // Try to find the Sync Status column by header name
-      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-      trackingColumnIndex = headers.findIndex(header =>
-        header && header.toString().toLowerCase().includes('sync status')
-      );
-
-      if (trackingColumnIndex === -1) {
-        SpreadsheetApp.getActiveSpreadsheet().toast(
-          'Could not find the Sync Status column. Please set up two-way sync again.',
-          'Column Not Found',
-          5
-        );
-        return;
-      }
+      SpreadsheetApp.getActiveSpreadsheet().toast('Sync completed successfully!');
     }
-
-    // Convert to 1-based index for getRange
-    const columnPos = trackingColumnIndex + 1;
-
-    // Style the header cell
-    const headerCell = sheet.getRange(1, columnPos);
-    headerCell.setBackground('#E8F0FE') // Light blue background
-      .setFontWeight('bold')
-      .setNote('This column tracks changes for two-way sync with Pipedrive');
-
-    // Add only BORDERS to the entire status column (not background)
-    const lastRow = Math.max(sheet.getLastRow(), 2);
-    const fullStatusColumn = sheet.getRange(1, columnPos, lastRow, 1);
-    fullStatusColumn.setBorder(null, true, null, true, false, false, '#DADCE0', SpreadsheetApp.BorderStyle.SOLID);
-
-    // Add data validation for all cells in the status column (except header)
-    if (lastRow > 1) {
-      // Get all values from the first column to identify timestamps/separators
-      const firstColumnValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-
-      // Collect row indices of actual data rows (not timestamps/separators)
-      const dataRowIndices = [];
-      for (let i = 0; i < firstColumnValues.length; i++) {
-        const value = firstColumnValues[i][0];
-        const rowIndex = i + 2; // +2 because we start at row 2
-
-        // Skip empty rows and rows that look like timestamps
-        if (!value || (typeof value === 'string' &&
-          (value.includes('Timestamp') || value.includes('Last synced')))) {
-          continue;
-        }
-
-        dataRowIndices.push(rowIndex);
-      }
-
-      // Apply background color only to data rows
-      dataRowIndices.forEach(rowIndex => {
-        sheet.getRange(rowIndex, columnPos).setBackground('#F8F9FA'); // Light gray background
-      });
-
-      // Apply data validation only to actual data rows
-      const rule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
-        .build();
-
-      // Apply validation to each data row individually
-      dataRowIndices.forEach(rowIndex => {
-        sheet.getRange(rowIndex, columnPos).setDataValidation(rule);
-      });
-
-      // Clear and recreate conditional formatting
-      // Get all existing conditional formatting rules
-      const rules = sheet.getConditionalFormatRules();
-      // Clear any existing rules for the tracking column
-      const newRules = rules.filter(rule => {
-        const ranges = rule.getRanges();
-        return !ranges.some(range => range.getColumn() === columnPos);
-      });
-
-      // Define statusRange for conditional formatting (was missing)
-      const statusRange = sheet.getRange(2, columnPos, lastRow - 1, 1);
-
-      // Create conditional format for "Modified" status
-      const modifiedRule = SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo('Modified')
-        .setBackground('#FCE8E6')  // Light red background
-        .setFontColor('#D93025')   // Red text
-        .setRanges([statusRange])
-        .build();
-      newRules.push(modifiedRule);
-
-      // Create conditional format for "Synced" status
-      const syncedRule = SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo('Synced')
-        .setBackground('#E6F4EA')  // Light green background
-        .setFontColor('#137333')   // Green text
-        .setRanges([statusRange])
-        .build();
-      newRules.push(syncedRule);
-
-      // Create conditional format for "Error" status
-      const errorRule = SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo('Error')
-        .setBackground('#FEF7E0')
-        .setFontColor('#B06000')
-        .setRanges([statusRange])
-        .build();
-      newRules.push(errorRule);
-
-      // Apply all rules
-      sheet.setConditionalFormatRules(newRules);
-    }
-  } catch (error) {
-    Logger.log(`Error refreshing sync status styling: ${error.message}`);
-    SpreadsheetApp.getActiveSpreadsheet().toast(
-      `Error refreshing styling: ${error.message}`,
-      'Error',
-      5
-    );
-  }
-}
-
-/**
- * Cleans up formatting from previous sync status columns
- * @param {Sheet} sheet - The sheet to clean up
- * @param {string} sheetName - The name of the sheet
- */
-function cleanupPreviousSyncStatusColumn(sheet, sheetName) {
-  try {
-    Logger.log(`Looking for previous Sync Status columns to clean up (current: ${currentSyncColumn})`);
-    
-    // Show a toast to let users know that post-processing is happening
-    // This helps users understand that data is already written but cleanup is still in progress
-    SpreadsheetApp.getActiveSpreadsheet().toast(
-      'Performing post-sync cleanup and formatting. Your data is already written.',
-      'Finalizing Sync',
-      5
-    );
-    
-    // Get script properties
-    const scriptProperties = PropertiesService.getScriptProperties();
-    const sheetName = sheet.getName();
-    const previousSyncColumnKey = `PREVIOUS_TRACKING_COLUMN_${sheetName}`;
-    const previousSyncColumn = scriptProperties.getProperty(previousSyncColumnKey);
-    
-    // IMPORTANT: We do NOT want to override column headers when Pipedrive adds new fields
-    // If the previous column is converted to a Pipedrive data column, we need to keep it
-    
-    // Clean up the known previous column first if it exists and is different from current
-    if (previousSyncColumn && previousSyncColumn !== currentSyncColumn) {
-      Logger.log(`Previous Sync Status column found at ${previousSyncColumn}`);
-      
-      try {
-        // Convert letter to column index
-        const previousColumnIndex = letterToColumn(previousSyncColumn);
-        
-        // Clean up all Sync Status-specific formatting and validation from this column
-        // but do NOT clear the header cell - let the main sync function handle headers
-        
-        // First, clear any sync-specific formatting and validation in the data cells
-        if (sheet.getLastRow() > 1) {
-          const dataRange = sheet.getRange(2, previousColumnIndex, Math.max(sheet.getLastRow() - 1, 1), 1);
-          
-          // Clear all formatting and validation from data cells
-          dataRange.clearFormat();
-          dataRange.clearDataValidations();
-          
-          // Check for and clear status-specific values ONLY
-          const values = dataRange.getValues();
-          const newValues = values.map(row => {
-            const value = String(row[0]).trim();
-            
-            // Only clear if it's one of the specific status values
-            if (value === "Modified" || 
-                value === "Not modified" || 
-                value === "Synced" || 
-                value === "Error") {
-              return [""];
-            }
-            return [value]; // Keep any other values
-          });
-          
-          // Write the cleaned values back
-          dataRange.setValues(newValues);
-          Logger.log(`Cleaned status values from previous column ${previousSyncColumn}`);
-        }
-        
-        // Remove any sync-specific formatting or notes from the header
-        // but KEEP the header cell itself for Pipedrive data
-        const headerCell = sheet.getRange(1, previousColumnIndex);
-        headerCell.clearFormat();
-        headerCell.clearNote();
-        // Do NOT call setValue() - let the main sync function set the header
-        
-        Logger.log(`Cleaned formatting from previous Sync Status column ${previousSyncColumn}`);
-      } catch (e) {
-        Logger.log(`Error cleaning previous column ${previousSyncColumn}: ${e.message}`);
-      }
-    }
-    
-    // Scan for any other columns that might have sync status formatting
-    const lastColumn = sheet.getLastColumn();
-    
-    for (let i = 1; i <= lastColumn; i++) {
-      const colLetter = columnToLetter(i);
-      
-      // Skip the current sync column
-      if (colLetter === currentSyncColumn) {
-        continue;
-      }
-      
-      // Check if this might be a sync status column by inspecting formatting and values
-      try {
-        // Check the header for sync status indicators
-        const headerCell = sheet.getRange(1, i);
-        const headerValue = headerCell.getValue();
-        const headerNote = headerCell.getNote();
-        
-        const isSyncStatusHeader = 
-          headerValue === "Sync Status" || 
-          headerValue === "Sync Status (hidden)" || 
-          headerValue === "Status" ||
-          (headerNote && (headerNote.includes('sync') || headerNote.includes('track') || headerNote.includes('Pipedrive')));
-        
-        // Also check for sync status values in the data cells
-        let hasSyncStatusValues = false;
-        if (sheet.getLastRow() > 1) {
-          // Sample a few cells to check for status values
-          const sampleSize = Math.min(10, sheet.getLastRow() - 1);
-          const sampleRange = sheet.getRange(2, i, sampleSize, 1);
-          const sampleValues = sampleRange.getValues();
-          
-          hasSyncStatusValues = sampleValues.some(row => {
-            const value = String(row[0]).trim();
-            return value === "Modified" || 
-                   value === "Not modified" || 
-                   value === "Synced" || 
-                   value === "Error";
-          });
-        }
-        
-        // If this column has sync status indicators, clean it
-        if (isSyncStatusHeader || hasSyncStatusValues) {
-          Logger.log(`Found additional Sync Status column at ${colLetter}, cleaning up...`);
-          
-          // Clean any sync-specific formatting and validation but preserve the header cell
-          if (sheet.getLastRow() > 1) {
-            const dataRange = sheet.getRange(2, i, Math.max(sheet.getLastRow() - 1, 1), 1);
-            
-            // Clear all formatting and validation
-            dataRange.clearFormat();
-            dataRange.clearDataValidations();
-            
-            // Only clear specific status values
-            const values = dataRange.getValues();
-            const newValues = values.map(row => {
-              const value = String(row[0]).trim();
-              if (value === "Modified" || 
-                  value === "Not modified" || 
-                  value === "Synced" || 
-                  value === "Error") {
-                return [""];
-              }
-              return [value]; // Keep any other values
-            });
-            
-            dataRange.setValues(newValues);
-          }
-          
-          // Remove sync-specific formatting and notes from header
-          // but preserve the header cell itself for Pipedrive data
-          headerCell.clearFormat();
-          headerCell.clearNote();
-          // Do NOT clear header text - let main sync function set it
-          
-          Logger.log(`Cleaned sync status formatting from column ${colLetter}`);
-        }
-      } catch (e) {
-        Logger.log(`Error checking column ${colLetter}: ${e.message}`);
-      }
-    }
-    
-    // Clear the previous column tracking since we've cleaned it up
-    scriptProperties.deleteProperty(previousSyncColumnKey);
-    Logger.log(`Cleanup of previous Sync Status columns complete`);
-  } catch (error) {
-    Logger.log(`Error in cleanupPreviousSyncStatusColumn: ${error.message}`);
-    Logger.log(`Stack trace: ${error.stack}`);
-  }
-}
-
-/**
- * Saves settings to script properties
- */
-function saveSettings(apiKey, entityType, filterId, subdomain, sheetName) {
-  const scriptProperties = PropertiesService.getScriptProperties();
-  
-  // Save global settings (only if provided)
-  if (apiKey) scriptProperties.setProperty('PIPEDRIVE_API_KEY', apiKey);
-  if (subdomain) scriptProperties.setProperty('PIPEDRIVE_SUBDOMAIN', subdomain);
-  
-  // Save sheet-specific settings
-  const sheetFilterIdKey = `FILTER_ID_${sheetName}`;
-  const sheetEntityTypeKey = `ENTITY_TYPE_${sheetName}`;
-  
-  scriptProperties.setProperty(sheetFilterIdKey, filterId);
-  scriptProperties.setProperty(sheetEntityTypeKey, entityType);
-  scriptProperties.setProperty('SHEET_NAME', sheetName);
-}
-
-/**
- * Saves column preferences to script properties
- * @param {Array} columns - Array of column objects with key and name properties
- * @param {string} entityType - Entity type
- * @param {string} sheetName - Sheet name
- * @param {string} userEmail - Email of the user saving the preferences
- */
-SyncService.saveColumnPreferences = function(columns, entityType, sheetName, userEmail) {
-  try {
-    Logger.log(`SyncService.saveColumnPreferences for ${entityType} in sheet "${sheetName}" for user ${userEmail}`);
-    
-    // Store the full column objects to preserve names and other properties
-    const scriptProperties = PropertiesService.getScriptProperties();
-    
-    // Store columns based on both entity type and sheet name for sheet-specific preferences
-    const columnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
-    scriptProperties.setProperty(columnSettingsKey, JSON.stringify(columns));
-    
-    // Also store in user-specific property if email is provided
-    if (userEmail) {
-      const userColumnSettingsKey = `COLUMNS_${userEmail}_${sheetName}_${entityType}`;
-      scriptProperties.setProperty(userColumnSettingsKey, JSON.stringify(columns));
-      Logger.log(`Saved user-specific column preferences with key: ${userColumnSettingsKey}`);
-    }
-    
-    return true;
   } catch (e) {
-    Logger.log(`Error in SyncService.saveColumnPreferences: ${e.message}`);
+    Logger.log(`Error in pushChangesToPipedrive: ${e.message}`);
     Logger.log(`Stack trace: ${e.stack}`);
-    throw e;
-  }
-}
-
-/**
- * Logs debug information about the Pipedrive data
- */
-function logDebugInfo() {
-  const scriptProperties = PropertiesService.getScriptProperties();
-  const sheetName = scriptProperties.getProperty('SHEET_NAME') || DEFAULT_SHEET_NAME;
-  
-  // Get sheet-specific settings
-  const sheetFilterIdKey = `FILTER_ID_${sheetName}`;
-  const sheetEntityTypeKey = `ENTITY_TYPE_${sheetName}`;
-  
-  const filterId = scriptProperties.getProperty(sheetFilterIdKey) || '';
-  const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
-  
-  // Show which column selections are available for the current entity type and sheet
-  const columnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
-  const savedColumnsJson = scriptProperties.getProperty(columnSettingsKey);
-  
-  if (savedColumnsJson) {
-    Logger.log(`\n===== COLUMN SETTINGS FOR ${sheetName} - ${entityType} =====`);
-    try {
-      const selectedColumns = JSON.parse(savedColumnsJson);
-      Logger.log(`Number of selected columns: ${selectedColumns.length}`);
-      Logger.log(JSON.stringify(selectedColumns, null, 2));
-    } catch (e) {
-      Logger.log(`Error parsing column settings: ${e.message}`);
-    }
-  } else {
-    Logger.log(`\n===== NO COLUMN SETTINGS FOUND FOR ${sheetName} - ${entityType} =====`);
-  }
-  
-  // Get a sample item to see what data is available
-  let sampleData = [];
-  switch (entityType) {
-    case ENTITY_TYPES.DEALS:
-      sampleData = getDealsWithFilter(filterId, 1);
-      break;
-    case ENTITY_TYPES.PERSONS:
-      sampleData = getPersonsWithFilter(filterId, 1);
-      break;
-    case ENTITY_TYPES.ORGANIZATIONS:
-      sampleData = getOrganizationsWithFilter(filterId, 1);
-      break;
-    case ENTITY_TYPES.ACTIVITIES:
-      sampleData = getActivitiesWithFilter(filterId, 1);
-      break;
-    case ENTITY_TYPES.LEADS:
-      sampleData = getLeadsWithFilter(filterId, 1);
-      break;
-  }
-  
-  if (sampleData && sampleData.length > 0) {
-    const sampleItem = sampleData[0];
-    
-    // Log filter ID and entity type
-    Logger.log('===== DEBUG INFORMATION =====');
-    Logger.log(`Entity Type: ${entityType}`);
-    Logger.log(`Filter ID: ${filterId}`);
-    Logger.log(`Sheet Name: ${sheetName}`);
-    
-    // Log complete raw deal data for inspection
-    Logger.log(`\n===== COMPLETE RAW ${entityType.toUpperCase()} DATA =====`);
-    Logger.log(JSON.stringify(sampleItem, null, 2));
-    
-    // Extract all fields including nested ones
-    Logger.log('\n===== ALL AVAILABLE FIELDS =====');
-    const allFields = {};
-    
-    // Recursive function to extract all fields with their paths
-    function extractAllFields(obj, path = '') {
-      if (!obj || typeof obj !== 'object') return;
-      
-      if (Array.isArray(obj)) {
-        // For arrays, log the length and extract fields from first item if exists
-        Logger.log(`${path} (Array with ${obj.length} items)`);
-        if (obj.length > 0 && typeof obj[0] === 'object') {
-          extractAllFields(obj[0], `${path}[0]`);
-        }
-      } else {
-        // For objects, extract each property
-        for (const key in obj) {
-          const value = obj[key];
-          const newPath = path ? `${path}.${key}` : key;
-          
-          if (value === null) {
-            allFields[newPath] = 'null';
-            continue;
-          }
-          
-          const type = typeof value;
-          
-          if (type === 'object') {
-            if (Array.isArray(value)) {
-              allFields[newPath] = `array[${value.length}]`;
-              Logger.log(`${newPath}: array[${value.length}]`);
-              
-              // Special case for custom fields with options
-              if (key === 'options' && value.length > 0 && value[0] && value[0].label) {
-                Logger.log(`  - Multiple options field with values: ${value.map(opt => opt.label).join(', ')}`);
-              }
-              
-              // For small arrays with objects, recursively extract from the first item
-              if (value.length > 0 && typeof value[0] === 'object') {
-                extractAllFields(value[0], `${newPath}[0]`);
-              }
-            } else {
-              allFields[newPath] = 'object';
-              Logger.log(`${newPath}: object`);
-              extractAllFields(value, newPath);
-            }
-          } else {
-            allFields[newPath] = type;
-            
-            // Log a preview of the value unless it's a string longer than 50 chars
-            const preview = type === 'string' && value.length > 50 
-              ? value.substring(0, 50) + '...' 
-              : value;
-              
-            Logger.log(`${newPath}: ${type} = ${preview}`);
-          }
-        }
-      }
-    }
-    
-    // Start extraction from the top level
-    extractAllFields(sampleItem);
-    
-    // Specifically focus on custom fields section if it exists
-    if (sampleItem.custom_fields) {
-      Logger.log('\n===== CUSTOM FIELDS DETAIL =====');
-      for (const key in sampleItem.custom_fields) {
-        const field = sampleItem.custom_fields[key];
-        const fieldType = typeof field;
-        
-        if (fieldType === 'object' && Array.isArray(field)) {
-          Logger.log(`${key}: array[${field.length}]`);
-          // Check if this is a multiple options field
-          if (field.length > 0 && field[0] && field[0].label) {
-            Logger.log(`  - Multiple options with values: ${field.map(opt => opt.label).join(', ')}`);
-          }
-        } else {
-          const preview = fieldType === 'string' && field.length > 50 
-            ? field.substring(0, 50) + '...' 
-            : field;
-          Logger.log(`${key}: ${fieldType} = ${preview}`);
-        }
-      }
-    }
-    
-    // Count unique fields
-    const fieldPaths = Object.keys(allFields).sort();
-    Logger.log(`\nTotal unique fields found: ${fieldPaths.length}`);
-    
-    // Log all field paths in alphabetical order for easy lookup
-    Logger.log('\n===== ALPHABETICAL LIST OF ALL FIELD PATHS =====');
-    fieldPaths.forEach(path => {
-      Logger.log(`${path}: ${allFields[path]}`);
-    });
-    
-  } else {
-    Logger.log(`No ${entityType} found with this filter. Please check the filter ID.`);
-  }
-}
-
-/**
- * Gets team-aware column preferences
- * @param {string} entityType - Entity type
- * @param {string} sheetName - Sheet name
- * @return {Array} Array of column keys
- */
-SyncService.getTeamAwareColumnPreferences = function(entityType, sheetName) {
-  try {
-    // Get from script properties directly since UI module might not be available
-    const scriptProperties = PropertiesService.getScriptProperties();
-    const columnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
-    const savedColumnsJson = scriptProperties.getProperty(columnSettingsKey);
-    
-    if (savedColumnsJson) {
-      try {
-        return JSON.parse(savedColumnsJson);
-      } catch (parseError) {
-        Logger.log(`Error parsing column preferences: ${parseError.message}`);
-      }
-    }
-    
-    return [];
-  } catch (e) {
-    Logger.log(`Error in SyncService.getTeamAwareColumnPreferences: ${e.message}`);
-    return [];
-  }
-};
-
-/**
- * Saves team-aware column preferences - wrapper for UI.gs function
- * @param {Array} columns - Column objects or keys to save
- * @param {string} entityType - Entity type
- * @param {string} sheetName - Sheet name
- */
-SyncService.saveTeamAwareColumnPreferences = function(columns, entityType, sheetName) {
-  try {
-    // Keep full column objects intact to preserve names
-    // Call the function in UI.gs that handles saving to both storage locations
-    return UI.saveTeamAwareColumnPreferences(columns, entityType, sheetName);
-  } catch (e) {
-    Logger.log(`Error in SyncService.saveTeamAwareColumnPreferences: ${e.message}`);
-    
-    // Fallback to local implementation if UI.saveTeamAwareColumnPreferences fails
-    const scriptProperties = PropertiesService.getScriptProperties();
-    const key = `COLUMNS_${sheetName}_${entityType}`;
-    
-    // Store the full column objects
-    scriptProperties.setProperty(key, JSON.stringify(columns));
+    SpreadsheetApp.getActiveSpreadsheet().toast(`Error: ${e.message}`);
   }
 }
 
@@ -4637,4 +4157,175 @@ function getFieldValue(item, fieldKey) {
   }
   
   return value;
+}
+
+/**
+ * Checks if a field is a date field
+ * @param {string} fieldKey - The field key to check
+ * @param {string} entityType - The entity type for context-specific checks
+ * @return {boolean} True if the field is a date field
+ */
+function isDateField(fieldKey, entityType) {
+  // Common date fields across all entity types
+  const commonDateFields = [
+    'add_time', 'update_time', 'created_at', 'updated_at', 
+    'last_activity_date', 'next_activity_date', 'due_date', 
+    'expected_close_date', 'won_time', 'lost_time', 'close_time',
+    'last_incoming_mail_time', 'last_outgoing_mail_time',
+    'start_date', 'end_date', 'date'
+  ];
+  
+  // Check if it's a known date field
+  if (commonDateFields.includes(fieldKey)) {
+    return true;
+  }
+  
+  // Entity-specific date fields
+  if (entityType === ENTITY_TYPES.DEALS) {
+    const dealDateFields = ['close_date', 'lost_reason_changed_time', 'dropped_time', 'rotten_time'];
+    if (dealDateFields.includes(fieldKey)) {
+      return true;
+    }
+  } else if (entityType === ENTITY_TYPES.ACTIVITIES) {
+    const activityDateFields = ['due_date', 'due_time', 'marked_as_done_time', 'last_notification_time'];
+    if (activityDateFields.includes(fieldKey)) {
+      return true;
+    }
+  }
+  
+  // Check if it looks like a date field by name
+  return (
+    fieldKey.endsWith('_date') || 
+    fieldKey.endsWith('_time') || 
+    fieldKey.includes('date_') || 
+    fieldKey.includes('time_')
+  );
+}
+
+/**
+ * Validates and converts ID fields to ensure they are integers
+ * @param {Object} data - The data object containing fields to validate
+ * @param {string} fieldName - The name of the field to validate
+ * @returns {boolean} True if the field was valid or fixed, false if it was removed
+ */
+function validateIdField(data, fieldName) {
+  if (data[fieldName] !== undefined) {
+    // Check if the field is not an integer
+    if (isNaN(parseInt(data[fieldName])) || !(/^\d+$/.test(String(data[fieldName])))) {
+      Logger.log(`Warning: ${fieldName} "${data[fieldName]}" is not a valid integer. Removing from request.`);
+      // Remove the invalid field from the request to prevent API errors
+      delete data[fieldName];
+      return false;
+    } else {
+      // Convert to integer if it's a valid number
+      data[fieldName] = parseInt(data[fieldName]);
+      Logger.log(`Using numeric ${fieldName}: ${data[fieldName]}`);
+      return true;
+    }
+  }
+  return true; // Field not present, so no validation needed
+}
+
+/**
+ * Gets team-aware column preferences
+ * @param {string} entityType - Entity type
+ * @param {string} sheetName - Sheet name
+ * @return {Array} Array of column keys
+ */
+SyncService.getTeamAwareColumnPreferences = function(entityType, sheetName) {
+  try {
+    // Get from script properties directly since UI module might not be available
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const userEmail = Session.getEffectiveUser().getEmail();
+    
+    // Try to get user's team ID first for team-shared preferences
+    let teamKey = null;
+    let columnsJson = null;
+    
+    try {
+      // Check if the getUserTeam function is available
+      if (typeof getUserTeam === 'function') {
+        // Get the user's team information
+        const userTeam = getUserTeam(userEmail);
+        if (userTeam && userTeam.teamId) {
+          // Check for team-based preferences first
+          teamKey = `COLUMNS_${sheetName}_${entityType}_TEAM_${userTeam.teamId}`;
+          Logger.log(`Looking for team preferences with key: ${teamKey}`);
+          
+          columnsJson = scriptProperties.getProperty(teamKey);
+          if (columnsJson) {
+            Logger.log(`Found team-based preferences for ${sheetName} (${columnsJson.length} chars)`);
+          }
+        }
+      }
+    } catch (teamError) {
+      Logger.log(`Error getting team info: ${teamError.message}, continuing with other keys`);
+    }
+    
+    // If no team preferences, try user-specific preferences
+    if (!columnsJson) {
+      const userKey = `COLUMNS_${sheetName}_${entityType}_${userEmail}`;
+      Logger.log(`Looking for user preferences with key: ${userKey}`);
+      columnsJson = scriptProperties.getProperty(userKey);
+      
+      if (columnsJson) {
+        Logger.log(`Found user-specific preferences for ${sheetName} (${columnsJson.length} chars)`);
+      }
+    }
+    
+    // If neither team nor user preferences found, try old format
+    if (!columnsJson) {
+      const columnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
+      Logger.log(`Looking for legacy preferences with key: ${columnSettingsKey}`);
+      columnsJson = scriptProperties.getProperty(columnSettingsKey);
+      
+      if (columnsJson) {
+        Logger.log(`Found legacy preferences for ${sheetName} (${columnsJson.length} chars)`);
+      }
+    }
+    
+    if (columnsJson) {
+      try {
+        const parsedColumns = JSON.parse(columnsJson);
+        Logger.log(`Retrieved ${parsedColumns.length} column preferences`);
+        
+        // Log first few columns for debugging
+        if (parsedColumns.length > 0) {
+          Logger.log(`First 3 columns: ${JSON.stringify(parsedColumns.slice(0, 3))}`);
+        }
+        
+        return parsedColumns;
+      } catch (parseError) {
+        Logger.log(`Error parsing column preferences: ${parseError.message}`);
+      }
+    }
+    
+    return [];
+  } catch (e) {
+    Logger.log(`Error in SyncService.getTeamAwareColumnPreferences: ${e.message}`);
+    return [];
+  }
+};
+
+/**
+ * Saves team-aware column preferences - wrapper for UI.gs function
+ * @param {Array} columns - Column objects or keys to save
+ * @param {string} entityType - Entity type
+ * @param {string} sheetName - Sheet name
+ */
+SyncService.saveTeamAwareColumnPreferences = function(columns, entityType, sheetName) {
+  try {
+    // Keep full column objects intact to preserve names
+    // Call the function in UI.gs that handles saving to both storage locations
+    return UI.saveTeamAwareColumnPreferences(columns, entityType, sheetName);
+  } catch (e) {
+    Logger.log(`Error in SyncService.saveTeamAwareColumnPreferences: ${e.message}`);
+    
+    // Fallback to local implementation if UI.saveTeamAwareColumnPreferences fails
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const key = `COLUMNS_${sheetName}_${entityType}`;
+    
+    // Store the full column objects
+    scriptProperties.setProperty(key, JSON.stringify(columns));
+  }
 }

@@ -687,6 +687,20 @@
         margin-left: 8px;
         font-weight: normal;
       }
+      
+      .lock-icon {
+        display: inline-block;
+        margin-left: 5px;
+        font-size: 12px;
+        color: #666;
+        vertical-align: middle;
+      }
+      
+      .read-only {
+        color: #666;
+        cursor: default;
+        background-color: #f5f5f5;
+      }
     </style>
     
     <?!= dataScript ?>
@@ -792,17 +806,17 @@
       
       // Create a deep copy of the original available columns to ensure we don't lose data
       function initializeColumns() {
-        // Debug information
-        console.log("Working with availableColumns:", availableColumns ? availableColumns.length : "none");
-        if (!availableColumns || availableColumns.length === 0) {
-          console.error("No available columns found! This is a problem.");
-        } else {
-          console.log("First few available columns:", availableColumns.slice(0, 5));
-        }
-        
+      // Debug information
+      console.log("Working with availableColumns:", availableColumns ? availableColumns.length : "none");
+      if (!availableColumns || availableColumns.length === 0) {
+        console.error("No available columns found! This is a problem.");
+      } else {
+        console.log("First few available columns:", availableColumns.slice(0, 5));
+      }
+      
         // Initialize originalAvailableColumns as a window property to ensure it's globally accessible
         window.originalAvailableColumns = availableColumns ? JSON.parse(JSON.stringify(availableColumns)) : [];
-        console.log("Original available columns copy created with length:", originalAvailableColumns.length);
+      console.log("Original available columns copy created with length:", originalAvailableColumns.length);
       }
       
       // Render the lists
@@ -814,7 +828,7 @@
         availableList.innerHTML = '';
         
         // Ensure search term is lowercase for case-insensitive comparison
-        searchTerm = (searchTerm || '').toLowerCase();
+        searchTerm = (typeof searchTerm === 'string' ? searchTerm : '').toLowerCase();
         
         // Group columns by parent key or top-level
         const topLevel = [];
@@ -879,9 +893,25 @@
               item.classList.add('editable');
             }
             
+            // Add column name (no drag handle in available list)
             const columnText = document.createElement('span');
             columnText.className = 'column-text';
-            columnText.textContent = col.name;
+            
+            // Add a lock icon to clearly indicate read-only status
+            if (isReadOnlyField(col.key, col)) {
+              const lockIcon = document.createElement('span');
+              lockIcon.className = 'lock-icon';
+              lockIcon.textContent = '🔒';
+              lockIcon.title = 'This field is read-only and cannot be modified in Pipedrive';
+              columnText.appendChild(lockIcon);
+            }
+            
+            columnText.appendChild(document.createTextNode(col.name));
+            if (col.customName) {
+              columnText.title = "Original field: " + col.name;
+              columnText.style.fontStyle = 'italic';
+              columnText.classList.add('custom-named');
+            }
             item.appendChild(columnText);
             
             // Create add button
@@ -923,9 +953,25 @@
                 item.classList.add('editable');
               }
               
+              // Add column name (no drag handle in available list)
               const columnText = document.createElement('span');
               columnText.className = 'column-text';
-              columnText.textContent = col.name;
+              
+              // Add a lock icon to clearly indicate read-only status
+              if (isReadOnlyField(col.key, col)) {
+                const lockIcon = document.createElement('span');
+                lockIcon.className = 'lock-icon';
+                lockIcon.textContent = '🔒';
+                lockIcon.title = 'This field is read-only and cannot be modified in Pipedrive';
+                columnText.appendChild(lockIcon);
+              }
+              
+              columnText.appendChild(document.createTextNode(col.name));
+              if (col.customName) {
+                columnText.title = "Original field: " + col.name;
+                columnText.style.fontStyle = 'italic';
+                columnText.classList.add('custom-named');
+              }
               item.appendChild(columnText);
               
               // Create add button
@@ -1003,11 +1049,6 @@
           } else {
             item.classList.add('editable');
           }
-          
-          // Add drag handle
-          const dragHandle = document.createElement('span');
-          dragHandle.className = 'drag-handle';
-          item.appendChild(dragHandle);
           
           // Add column name
           const columnText = document.createElement('span');
@@ -1191,263 +1232,14 @@
       }
       
       // Event listeners
-      document.getElementById('saveBtn').onclick = () => {
-        if (selectedColumns.length === 0) {
-          showStatus('error', 'Please select at least one column');
-          return;
-        }
-        
-        console.log('Save button clicked, sending data to server');
-        console.log(`Sending ${selectedColumns.length} columns to save`);
-        
-        // Update any address component display names before saving
-        selectedColumns.forEach(col => {
-          if (col.key && (col.key.includes('sublocality') || col.key.includes('locality'))) {
-            // Make sure names match display labels
-            if (col.key.includes('sublocality')) {
-              col.name = col.name.replace('District/sublocality', 'District/Borough');
-              col.name = col.name.replace('Neighborhood', 'District/Borough');
-              if (col.customName && col.customName.includes('District/sublocality')) {
-                col.customName = col.customName.replace('District/sublocality', 'District/Borough');
-              }
-            }
-            if (col.key.includes('locality') && !col.key.includes('sublocality')) {
-              col.name = col.name.replace('City/town/village/locality', 'City');
-              if (col.customName && col.customName.includes('City/town/village/locality')) {
-                col.customName = col.customName.replace('City/town/village/locality', 'City');
-              }
-            }
-          }
-        });
-        
-        // Log email and phone columns specifically
-        const emailColumns = selectedColumns.filter(col => col.key.startsWith('email.'));
-        const phoneColumns = selectedColumns.filter(col => col.key.startsWith('phone.'));
-        
-        console.log('Email columns:', emailColumns);
-        console.log('Phone columns:', phoneColumns);
-        
-        // Show loading animation
-        document.getElementById('saveLoading').style.display = 'flex';
-        document.getElementById('saveBtn').disabled = true;
-        document.getElementById('cancelBtn').disabled = true;
-        
-        console.log('Calling handleSaveColumns with:', {
-          columns: selectedColumns.map(c => ({key: c.key, name: c.name, customName: c.customName})),
-          entityType,
-          sheetName
-        });
-        
-        google.script.run
-          .withSuccessHandler((result) => {
-            console.log('Save successful, result:', result);
-            document.getElementById('saveLoading').style.display = 'none';
-            showStatus('success', 'Column preferences saved successfully!');
-            
-            // Close after a short delay to show the success message
-            setTimeout(() => {
-              google.script.host.close();
-            }, 1500);
-          })
-          .withFailureHandler((error) => {
-            console.error('Save failed:', error);
-            document.getElementById('saveLoading').style.display = 'none';
-            document.getElementById('saveBtn').disabled = false;
-            document.getElementById('cancelBtn').disabled = false;
-            showStatus('error', 'Error: ' + error.message);
-          })
-          .handleSaveColumns(selectedColumns, entityType, sheetName);
-      };
-      
-      document.getElementById('cancelBtn').onclick = () => {
-        google.script.host.close();
-      };
-      
-      document.getElementById('helpBtn').onclick = () => {
-        const helpContent = 'Tips for selecting columns:\n' +
-                           '\n• Search for specific columns using the search box' +
-                           '\n• Main fields are top-level Pipedrive fields' +
-                           '\n• Nested fields provide more detailed information' +
-                           '\n• Drag and drop to reorder selected columns' +
-                           '\n• The column order here determines the order in your sheet';
-                           
-        alert(helpContent);
-      };
-      
-      searchBox.oninput = () => {
-        renderAvailableList(searchBox.value);
-      };
-      
-      // Initial render
-      renderAvailableList();
-      renderSelectedList();
-      
-      // Toggle API details
-      function toggleApiDetails() {
-        const details = document.getElementById('apiDetails');
-        const toggle = document.getElementById('apiDetailsToggle');
-        
-        if (details.classList.contains('expanded')) {
-          details.classList.remove('expanded');
-          toggle.classList.remove('expanded');
-          toggle.textContent = 'Details';
-        } else {
-          details.classList.add('expanded');
-          toggle.classList.add('expanded');
-          toggle.textContent = 'Hide';
-        }
-      }
-
-      // Add this helper function to check if a field is read-only
-      function isReadOnlyField(key, column) {
-        // Check if the column object has a readOnly property
-        if (column && column.readOnly === true) {
-          return true;
-        }
-        
-        // Check for address components - they are read-only according to Pipedrive API
-        if (key && 
-            (key.includes('.street_number') || 
-             key.includes('.route') || 
-             key.includes('.subpremise') || 
-             key.includes('.sublocality') || 
-             key.includes('.locality') || 
-             key.includes('.admin_area_level_1') || 
-             key.includes('.admin_area_level_2') || 
-             key.includes('.country') || 
-             key.includes('.postal_code') ||
-             key.includes('_street_number') || 
-             key.includes('_route') || 
-             key.includes('_subpremise') || 
-             key.includes('_sublocality') || 
-             key.includes('_locality') || 
-             key.includes('_admin_area_level_1') || 
-             key.includes('_admin_area_level_2') || 
-             key.includes('_country') || 
-             key.includes('_postal_code'))) {
-          return true;
-        }
-        
-        // Common read-only fields across all entity types
-        if (key && (
-            // ID fields (except the main ID used for identification)
-            (key !== 'id' && key.endsWith('_id') && key !== 'owner_id' && 
-             key !== 'person_id' && key !== 'org_id' && key !== 'organization_id' && 
-             key !== 'deal_id' && key !== 'lead_id' && key !== 'stage_id' && 
-             key !== 'pipeline_id' && key !== 'project_id' && key !== 'category') ||
-            
-            // System-generated fields
-            key === 'creator_user_id' || 
-            key === 'user_id' || 
-            key === 'followers_count' ||
-            key === 'participants_count' ||
-            key === 'activities_count' ||
-            key === 'done_activities_count' ||
-            key === 'undone_activities_count' ||
-            key === 'files_count' ||
-            key === 'notes_count' ||
-            key === 'email_messages_count' ||
-            key === 'people_count' ||
-            key === 'products_count' ||
-            
-            // Formatted or calculated fields
-            key === 'formatted_value' || 
-            key === 'weighted_value' || 
-            key === 'formatted_weighted_value' ||
-            key === 'weighted_value_currency' ||
-            key.startsWith('formatted_') ||
-            
-            // System fields
-            key === 'first_char' ||
-            key === 'active_flag' ||
-            key === 'cc_email' ||
-            key === 'next_activity_id' ||
-            key === 'last_activity_id' ||
-            key === 'last_incoming_mail_time' ||
-            key === 'last_outgoing_mail_time' ||
-            key === 'rotten_time' ||
-            key === 'next_activity_date' ||
-            key === 'next_activity_time' ||
-            key === 'next_activity_type' ||
-            key === 'next_activity_duration' ||
-            key === 'next_activity_note' ||
-            key === 'archive_time' ||
-            key === 'local_close_date' ||
-            key === 'local_won_date' ||
-            key === 'local_lost_date' ||
-            
-            // Label information (can only be modified via label_ids)
-            key === 'label' ||
-            
-            // Deal-specific read-only fields
-            key === 'stage_order_nr' ||
-            key === 'person_name' ||
-            key === 'org_name' ||
-            key === 'origin' ||
-            key === 'origin_id' ||
-            key === 'channel' ||
-            
-            // Person/Org specific
-            key === 'has_pic' ||
-            key === 'pic_hash' ||
-            key === 'owner_name' ||
-            key === 'org_hidden' ||
-            key === 'person_hidden'
-        )) {
-          return true;
-        }
-        
-        return false;
-      }
-
-      function renderLists() {
-        renderSelectedList();
-        renderAvailableList();
-        
-        // Update column counts
-        selectedCountEl.textContent = selectedColumns.length;
-        availableCountEl.textContent = availableColumns.length;
-      }
-
-      // Initialize the application
-      function initApp() {
-        try {
-          console.log("Initializing column selector app...");
-          
-          // Make sure we have availableColumns
-          if (typeof availableColumns === 'undefined') {
-            console.warn("availableColumns is not defined, creating empty array");
-            window.availableColumns = [];
-          }
-          
-          // Make sure we have selectedColumns
-          if (typeof selectedColumns === 'undefined') {
-            console.warn("selectedColumns is not defined, creating empty array");
-            window.selectedColumns = [];
-          }
-          
-          // Load data from server
-          loadData();
-          
-          // Initialize the original columns array
-          initializeColumns();
-          
-          // Render the UI
-          renderLists();
-          
-          console.log("App initialized successfully.");
-        } catch (error) {
-          console.error("Error initializing app:", error);
-        }
-      }
-      
       window.onload = function() {
         // Initialize application first
         initApp();
         
         // Set up event listeners
         searchBox.addEventListener('input', function() {
-          filterAvailableList(this.value.toLowerCase());
+          // Call the existing renderAvailableList function with the search value
+          renderAvailableList(this.value);
         });
         
         document.getElementById('saveBtn').addEventListener('click', function() {
@@ -1532,6 +1324,236 @@
         // Update column counts
         selectedCountEl.textContent = selectedColumns.length;
         availableCountEl.textContent = availableColumns.length;
+      }
+
+      // Initialize the application
+      function initApp() {
+        try {
+          console.log("Initializing column selector app...");
+          
+          // Make sure we have availableColumns
+          if (typeof availableColumns === 'undefined') {
+            console.warn("availableColumns is not defined, creating empty array");
+            window.availableColumns = [];
+          }
+          
+          // Make sure we have selectedColumns
+          if (typeof selectedColumns === 'undefined') {
+            console.warn("selectedColumns is not defined, creating empty array");
+            window.selectedColumns = [];
+          }
+          
+          // Load data from server
+          loadData();
+          
+          // Initialize the original columns array
+          initializeColumns();
+          
+          // Render the UI
+          renderLists();
+          
+          console.log("App initialized successfully.");
+        } catch (error) {
+          console.error("Error initializing app:", error);
+        }
+      }
+      
+      // Add this helper function to check if a field is read-only
+      function isReadOnlyField(key, column) {
+        // Check if the column object has a readOnly property
+        if (column && column.readOnly === true) {
+          return true;
+        }
+        
+        // Check for address components - they are read-only according to Pipedrive API
+        if (key && 
+            (key.includes('.street_number') || 
+             key.includes('.route') || 
+             key.includes('.subpremise') || 
+             key.includes('.sublocality') || 
+             key.includes('.locality') || 
+             key.includes('.admin_area_level_1') || 
+             key.includes('.admin_area_level_2') || 
+             key.includes('.country') || 
+             key.includes('.postal_code') ||
+             key.includes('_street_number') || 
+             key.includes('_route') || 
+             key.includes('_subpremise') || 
+             key.includes('_sublocality') || 
+             key.includes('_locality') || 
+             key.includes('_admin_area_level_1') || 
+             key.includes('_admin_area_level_2') || 
+             key.includes('_country') || 
+             key.includes('_postal_code'))) {
+          return true;
+        }
+        
+        
+        // Common read-only fields across all entity types
+        if (key && (
+            // ID fields (except the main ID used for identification)
+            (key !== 'id' && key.endsWith('_id') && key !== 'owner_id' && 
+             key !== 'person_id' && key !== 'org_id' && key !== 'organization_id' && 
+             key !== 'deal_id' && key !== 'lead_id' && key !== 'stage_id' && 
+             key !== 'pipeline_id' && key !== 'project_id' && key !== 'category') ||
+            
+            // System-generated fields
+            key === 'creator_user_id' || 
+            key === 'user_id' || 
+            key === 'followers_count' ||
+            key === 'participants_count' ||
+            key === 'activities_count' ||
+            key === 'done_activities_count' ||
+            key === 'undone_activities_count' ||
+            key === 'files_count' ||
+            key === 'notes_count' ||
+            key === 'email_messages_count' ||
+            key === 'people_count' ||
+            key === 'products_count' ||
+            
+            // Formatted or calculated fields
+            key === 'formatted_value' || 
+            key === 'weighted_value' || 
+            key === 'formatted_weighted_value' ||
+            key === 'weighted_value_currency' ||
+            key.startsWith('formatted_') ||
+            
+            // System fields
+            key === 'first_char' ||
+            key === 'active_flag' ||
+            key === 'cc_email' ||
+            key === 'next_activity_id' ||
+            key === 'last_activity_id' ||
+            key === 'last_incoming_mail_time' ||
+            key === 'last_outgoing_mail_time' ||
+            key === 'rotten_time' ||
+            key === 'next_activity_date' ||
+            key === 'next_activity_time' ||
+            key === 'next_activity_type' ||
+            key === 'next_activity_duration' ||
+            key === 'next_activity_note' ||
+            key === 'archive_time' ||
+            key === 'local_close_date' ||
+            key === 'local_won_date' ||
+            key === 'local_lost_date' ||
+            
+            // Label information (can only be modified via label_ids)
+            key === 'label' ||
+            
+            // Deal-specific read-only fields
+            key === 'stage_order_nr' ||
+            key === 'person_name' ||
+            key === 'org_name' ||
+            key === 'origin' ||
+            key === 'origin_id' ||
+            key === 'channel' ||
+            
+            // Person/Org specific
+            key === 'has_pic' ||
+            key === 'pic_hash' ||
+            key === 'owner_name' ||
+            key === 'org_hidden' ||
+            key === 'person_hidden'
+        )) {
+          return true;
+        }
+        
+        return false;
+      }
+
+      // Add this function before renderLists()
+      function searchColumns(searchTerm) {
+        console.log("Searching columns with term:", searchTerm);
+        renderAvailableList(searchTerm);
+      }
+      
+      // Replace the existing searchBox event handler
+      searchBox.oninput = function() {
+        searchColumns(this.value);
+      };
+      
+      // Initial render
+      renderAvailableList();
+      renderSelectedList();
+
+      // Add the saveColumns and showHelp functions
+      function saveColumns() {
+        if (selectedColumns.length === 0) {
+          showStatus('error', 'Please select at least one column');
+          return;
+        }
+        
+        console.log('Save button clicked, sending data to server');
+        console.log(`Sending ${selectedColumns.length} columns to save`);
+        
+        // Update any address component display names before saving
+        selectedColumns.forEach(col => {
+          if (col.key && (col.key.includes('sublocality') || col.key.includes('locality'))) {
+            // Make sure names match display labels
+            if (col.key.includes('sublocality')) {
+              col.name = col.name.replace('District/sublocality', 'District/Borough');
+              col.name = col.name.replace('Neighborhood', 'District/Borough');
+              if (col.customName && col.customName.includes('District/sublocality')) {
+                col.customName = col.customName.replace('District/sublocality', 'District/Borough');
+              }
+            }
+            if (col.key.includes('locality') && !col.key.includes('sublocality')) {
+              col.name = col.name.replace('City/town/village/locality', 'City');
+              if (col.customName && col.customName.includes('City/town/village/locality')) {
+                col.customName = col.customName.replace('City/town/village/locality', 'City');
+              }
+            }
+          }
+        });
+        
+        // Log email and phone columns specifically
+        const emailColumns = selectedColumns.filter(col => col.key.startsWith('email.'));
+        const phoneColumns = selectedColumns.filter(col => col.key.startsWith('phone.'));
+        
+        console.log('Email columns:', emailColumns);
+        console.log('Phone columns:', phoneColumns);
+        
+        // Show loading animation
+        document.getElementById('saveLoading').style.display = 'flex';
+        document.getElementById('saveBtn').disabled = true;
+        document.getElementById('cancelBtn').disabled = true;
+        
+        console.log('Calling handleSaveColumns with:', {
+          columns: selectedColumns.map(c => ({key: c.key, name: c.name, customName: c.customName})),
+          entityType,
+          sheetName
+        });
+        
+        google.script.run
+          .withSuccessHandler((result) => {
+            console.log('Save successful, result:', result);
+            document.getElementById('saveLoading').style.display = 'none';
+            showStatus('success', 'Column preferences saved successfully!');
+            
+            // Close after a short delay to show the success message
+            setTimeout(() => {
+              google.script.host.close();
+            }, 1500);
+          })
+          .withFailureHandler((error) => {
+            console.error('Save failed:', error);
+            document.getElementById('saveLoading').style.display = 'none';
+            document.getElementById('saveBtn').disabled = false;
+            document.getElementById('cancelBtn').disabled = false;
+            showStatus('error', 'Error: ' + error.message);
+          })
+          .handleSaveColumns(selectedColumns, entityType, sheetName);
+      }
+      
+      function showHelp() {
+        const helpContent = 'Tips for selecting columns:\n' +
+                           '\n• Search for specific columns using the search box' +
+                           '\n• Main fields are top-level Pipedrive fields' +
+                           '\n• Nested fields provide more detailed information' +
+                           '\n• Drag and drop to reorder selected columns' +
+                           '\n• The column order here determines the order in your sheet';
+                           
+        alert(helpContent);
       }
     </script>
   </body>
