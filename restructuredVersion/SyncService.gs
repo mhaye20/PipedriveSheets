@@ -2607,51 +2607,40 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
     let columnConfig = [];
 
     if (savedColumnsJson) {
-      try {
-        columnConfig = JSON.parse(savedColumnsJson);
-        Logger.log(`Retrieved column configuration for ${entityType}`);
-      } catch (e) {
-        Logger.log(`Error parsing column configuration: ${e.message}`);
-      }
+      columnConfig = JSON.parse(savedColumnsJson);
     }
 
-    // Create a mapping from display names to field keys
     const headerToFieldKeyMap = {};
-    columnConfig.forEach(col => {
-      const displayName = col.customName || col.name;
-      headerToFieldKeyMap[displayName] = col.key;
-    });
-
-    // Find the "Sync Status" column by header name
-    const headerRow = activeSheet.getRange(1, 1, 1, activeSheet.getLastColumn()).getValues()[0];
-    let syncStatusColumnIndex = -1;
-
-    // Search for "Sync Status" header
-    for (let i = 0; i < headerRow.length; i++) {
-      if (headerRow[i] === "Sync Status") {
-        syncStatusColumnIndex = i;
-        Logger.log(`Found Sync Status column at index ${syncStatusColumnIndex}`);
-        
-        // Update the stored tracking column letter
-        const trackingColumn = columnToLetter(syncStatusColumnIndex + 1);
-        scriptProperties.setProperty(twoWaySyncTrackingColumnKey, trackingColumn);
-        break;
+    for (const column of columnConfig) {
+      if (column.key && column.name) {
+        if (column.customName) {
+          headerToFieldKeyMap[column.customName] = column.key;
+        } else {
+          headerToFieldKeyMap[column.name] = column.key;
+        }
       }
     }
 
-    // Validate tracking column index
-    if (syncStatusColumnIndex === -1) {
-      Logger.log(`Sync Status column not found, cannot proceed with sync`);
+    // Get field mappings
+    Logger.log(`Getting field mappings for entity type: ${entityType}`);
+    
+    // Get the sync tracking column position
+    const syncStatusColumnPos = scriptProperties.getProperty(twoWaySyncTrackingColumnKey);
+    if (!syncStatusColumnPos) {
       if (!isScheduledSync) {
         const ui = SpreadsheetApp.getUi();
         ui.alert(
-          'Sync Status Column Not Found',
-          'The Sync Status column could not be found. Please enable two-way sync in the settings first.',
+          'Sync Tracking Column Not Found',
+          'Could not find the sync tracking column. Please configure two-way sync settings again.',
           ui.ButtonSet.OK
         );
       }
       return;
     }
+    
+    // Convert column letter to index (e.g., AA -> 27)
+    const syncStatusColumnIndex = columnLetterToIndex(syncStatusColumnPos) - 1; // Convert to 0-based index
+    Logger.log(`Sync status column letter: ${syncStatusColumnPos}, index: ${syncStatusColumnIndex}`);
 
     // Get the data range
     const dataRange = activeSheet.getDataRange();
@@ -3228,90 +3217,6 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
             }
             break;
             
-          case ENTITY_TYPES.ACTIVITIES:
-            updateUrl = `${baseUrl}/api/v2/activities/${rowData.id}`;
-            method = 'PATCH';
-            
-            // Remove ID from payload
-            delete rowData.data.id;
-            
-            // Validate ID fields
-            validateIdField(rowData.data, 'owner_id');
-            validateIdField(rowData.data, 'person_id');
-            validateIdField(rowData.data, 'org_id');
-            validateIdField(rowData.data, 'deal_id');
-            
-            // Special handling for activity due_date - ensure ISO date format (YYYY-MM-DD)
-            if (rowData.data.due_date) {
-              if (rowData.data.due_date instanceof Date) {
-                // Format to YYYY-MM-DD without time component
-                const year = rowData.data.due_date.getFullYear();
-                const month = String(rowData.data.due_date.getMonth() + 1).padStart(2, '0');
-                const day = String(rowData.data.due_date.getDate()).padStart(2, '0');
-                rowData.data.due_date = `${year}-${month}-${day}`;
-              } else if (typeof rowData.data.due_date === 'string') {
-                // Try to parse the string as a date if it's not in ISO format
-                if (!rowData.data.due_date.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                  try {
-                    const dateObj = new Date(rowData.data.due_date);
-                    const year = dateObj.getFullYear();
-                    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-                    const day = String(dateObj.getDate()).padStart(2, '0');
-                    rowData.data.due_date = `${year}-${month}-${day}`;
-    } catch (e) {
-                    Logger.log(`Error parsing due_date: ${e.message}`);
-                  }
-                }
-              }
-              
-              Logger.log(`Formatted due_date: ${rowData.data.due_date}`);
-            }
-            
-            // Handle due_time separately if it exists
-            if (rowData.data.due_time) {
-              if (rowData.data.due_time instanceof Date) {
-                // Format to HH:MM for API
-                const hours = String(rowData.data.due_time.getHours()).padStart(2, '0');
-                const minutes = String(rowData.data.due_time.getMinutes()).padStart(2, '0');
-                rowData.data.due_time = `${hours}:${minutes}`;
-              }
-              
-              Logger.log(`Formatted due_time: ${rowData.data.due_time}`);
-            }
-          
-            
-            // If person_id exists, add it as a participant
-            if (rowData.data.person_id) {
-              participants.push({
-                person_id: rowData.data.person_id,
-                primary: true
-              });
-              delete rowData.data.person_id;
-            }
-            
-            // Add organization as a participant if org_id exists
-            if (rowData.data.org_id) {
-              delete rowData.data.org_id;
-              // Note: org_id can't be directly added as participant, only indirectly via person
-            }
-            
-            // Deal can't be set as participant, remove it
-            if (rowData.data.deal_id) {
-              delete rowData.data.deal_id;
-              // Note: In API v2, deal association must be done differently
-            }
-            
-            // Only add participants if we have any
-            if (participants.length > 0) {
-              rowData.data.participants = participants;
-            }
-            
-            // Ensure type is set for activity if missing
-            if (!rowData.data.type) {
-              rowData.data.type = "task"; // Default type
-            }
-            break;
-            
           case ENTITY_TYPES.LEADS:
             updateUrl = `${baseUrl}/api/v2/leads/${rowData.id}`;
             method = 'PATCH';
@@ -3363,15 +3268,72 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
         if (response.getResponseCode() === 200) {
           successCount++;
           Logger.log(`Successfully updated row ${rowData.id} in Pipedrive`);
-  } else {
+          
+          // Update the Sync Status cell to "Synced"
+          try {
+            const sheet = activeSheet;
+            const rowIndex = rowData.rowIndex + 1; // Add 1 because rowIndex is 0-based and sheet is 1-based
+            
+            // Get the Sync Status cell and update it
+            if (syncStatusColumnIndex >= 0) {
+              const syncStatusCell = sheet.getRange(rowIndex, syncStatusColumnIndex + 1); // Add 1 for 1-based indexing
+              syncStatusCell.setValue("Synced");
+              // Set the background color to light green to indicate success
+              syncStatusCell.setBackground('#e6f4ea');
+              Logger.log(`Updated Sync Status for row ${rowIndex} to "Synced"`);
+            } else {
+              Logger.log(`Could not update Sync Status: syncStatusColumnIndex is ${syncStatusColumnIndex}`);
+            }
+          } catch (e) {
+            Logger.log(`Error updating Sync Status cell: ${e.message}`);
+          }
+        } else {
           failureCount++;
           failures.push(`Failed to update row ${rowData.id} in Pipedrive: ${response.getContentText()}`);
           Logger.log(`Failed to update row ${rowData.id} in Pipedrive: ${response.getContentText()}`);
+          
+          // Set the Sync Status cell to "Error"
+          try {
+            const sheet = activeSheet;
+            const rowIndex = rowData.rowIndex + 1; // Add 1 because rowIndex is 0-based and sheet is 1-based
+            
+            // Get the Sync Status cell and update it
+            if (syncStatusColumnIndex >= 0) {
+              const syncStatusCell = sheet.getRange(rowIndex, syncStatusColumnIndex + 1); // Add 1 for 1-based indexing
+              syncStatusCell.setValue("Error");
+              // Set the background color to light red to indicate error
+              syncStatusCell.setBackground('#fce8e6');
+              Logger.log(`Updated Sync Status for row ${rowIndex} to "Error"`);
+            } else {
+              Logger.log(`Could not update Sync Status: syncStatusColumnIndex is ${syncStatusColumnIndex}`);
+            }
+          } catch (e) {
+            Logger.log(`Error updating Sync Status cell: ${e.message}`);
+          }
         }
       } catch (e) {
         failureCount++;
         failures.push(`Error updating row ${rowData.id} in Pipedrive: ${e.message}`);
         Logger.log(`Error updating row ${rowData.id} in Pipedrive: ${e.message}`);
+        
+        // Set the Sync Status cell to "Error" for errors
+        try {
+          const sheet = activeSheet;
+          const rowIndex = rowData.rowIndex + 1; // Add 1 because rowIndex is 0-based and sheet is 1-based
+          
+          // Get the Sync Status cell and update it
+          if (syncStatusColumnIndex >= 0) {
+            const syncStatusCell = sheet.getRange(rowIndex, syncStatusColumnIndex + 1); // Add 1 for 1-based indexing
+            syncStatusCell.setValue("Error");
+            // Set the background color to light red to indicate error
+            syncStatusCell.setBackground('#fce8e6');
+            Logger.log(`Updated Sync Status for row ${rowIndex} to "Error" due to exception`);
+          } else {
+            Logger.log(`Could not update Sync Status: syncStatusColumnIndex is ${syncStatusColumnIndex}`);
+          }
+        } catch (statusError) {
+          Logger.log(`Error updating Sync Status cell: ${statusError.message}`);
+        }
       }
     }
 
