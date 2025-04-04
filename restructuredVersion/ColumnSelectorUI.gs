@@ -730,9 +730,206 @@ function showColumnSelectorUI() {
           col.key === 'pic_hash' ||
           col.key === 'owner_name' ||
           col.key === 'org_hidden' ||
-          col.key === 'person_hidden'
+          col.key === 'person_hidden' ||
+          
+          // Additional count and statistical fields
+          col.key === 'open_deals_count' ||
+          col.key === 'closed_deals_count' ||
+          col.key === 'related_open_deals_count' ||
+          col.key === 'related_closed_deals_count' ||
+          col.key === 'won_deals_count' ||
+          col.key === 'lost_deals_count' ||
+          col.key === 'related_won_deals_count' ||
+          col.key === 'related_lost_deals_count' ||
+          col.key === 'activities_count' ||
+          col.key === 'done_activities_count' ||
+          col.key === 'undone_activities_count' ||
+          col.key === 'total_activities_count' ||
+          col.key === 'company_id' ||
+          col.key === 'last_activity' ||
+          col.key === 'next_activity' ||
+          col.key === 'picture' ||
+          
+          // Count fields in any format
+          col.key.includes('_count') ||
+          
+          // Activity and notification fields
+          col.key === 'last_notification_time' ||
+          col.key === 'last_notification_user_id' ||
+          col.key === 'notification_language_id' ||
+          col.key === 'update_user_id' ||
+          col.key === 'reference_type' ||
+          col.key === 'reference_id' ||
+          col.key === 'marked_as_done_time' ||
+          col.key === 'series_id' ||
+          col.key === 'conference_meeting_client' ||
+          col.key === 'conference_meeting_url' ||
+          col.key === 'rec_master_activity_id' ||
+          col.key === 'original_start_time' ||
+          
+          // Deal specific fields
+          col.key === 'first_won_time' ||
+          col.key === 'last_stage_change_time' ||
+          col.key === 'timezone' ||
+          col.key.includes('timezone') ||
+          
+          // All auto-populated number fields for persons/organizations
+          (col.key === 'people' || col.key === 'company') ||
+          
+          // Fields containing activity dates/activities which are calculated
+          (col.key.includes('activity') && (col.key.includes('date') || col.key.includes('time') || col.key.includes('count')))
       )) {
         col.readOnly = true;
+      }
+      
+      // Additional pass to mark more specific entity fields as read-only
+      if (!col.readOnly) {
+        // Organization fields
+        if (entityType === ENTITY_TYPES.ORGANIZATIONS) {
+          // People count and related fields are read-only for organizations
+          if (col.key === 'people_count' || col.key === 'people') {
+            col.readOnly = true;
+          }
+        }
+        
+        // Deal fields
+        if (entityType === ENTITY_TYPES.DEALS) {
+          // Status-related calculated fields
+          if (col.key === 'status' && col.isNested) {
+            col.readOnly = true;
+          }
+        }
+        
+        // Activity fields
+        if (entityType === ENTITY_TYPES.ACTIVITIES) {
+          // Reference and calendar fields
+          if (col.key.includes('reference') || 
+              col.key.includes('calendar') || 
+              col.key.includes('series') ||
+              col.key.includes('created_by') ||
+              col.key.includes('conference')) {
+            col.readOnly = true;
+          }
+        }
+        
+        // Person fields
+        if (entityType === ENTITY_TYPES.PERSONS) {
+          // Email and phone composite fields are read-only
+          if ((col.key === 'email' || col.key === 'phone') && !col.key.includes('.')) {
+            col.readOnly = true;
+          }
+        }
+        
+        // General address components detection
+        if (col.key.includes('address') && 
+            (col.key.includes('formatted') || 
+             col.key.includes('admin_area') || 
+             col.key.includes('locality') || 
+             col.key.includes('postal_code') ||
+             col.key.includes('route') ||
+             col.key.includes('street') ||
+             col.key.includes('country') ||
+             col.key.includes('premise') ||
+             col.key.includes('region') ||
+             col.key.includes('city') ||
+             col.key.includes('state') ||
+             col.key.includes('zip'))) {
+          col.readOnly = true;
+        }
+        
+        // Check for participant fields
+        if ((col.key.includes('participant') || col.key.includes('participants.')) && 
+            (col.key.includes('person_id') || col.key.includes('primary_flag'))) {
+          col.readOnly = true;
+        }
+        
+        // Mark attendees fields as read-only
+        if (col.key.includes('attendees.') || col.key === 'attendees') {
+          col.readOnly = true;
+        }
+        
+        // All participant interaction counts are read-only
+        if (col.key.includes('deals') && col.key.includes('count')) {
+          col.readOnly = true;
+        }
+        
+        // All fields containing "lost", "won", "open", "closed" plus "deals" are likely read-only stats
+        if ((col.key.includes('lost') || col.key.includes('won') || 
+            col.key.includes('open') || col.key.includes('closed')) && 
+            col.key.includes('deals')) {
+          col.readOnly = true;
+        }
+        
+        // Add owner-related fields that should be read-only
+        if (col.key.startsWith('owner.') || 
+            (col.key.startsWith('owner_') && col.key !== 'owner_id') ||
+            col.key === 'owner_id.active_flag' ||
+            col.key === 'owner_id.email' ||
+            col.key === 'owner_id.has_pic' ||
+            col.key === 'owner_id.id' ||
+            col.key === 'owner_id.pic_hash' ||
+            col.key === 'owner_id.value') {
+          col.readOnly = true;
+        }
+        
+        // Common read-only fields reported in UI
+        const readOnlyFieldNames = [
+          'active_flag',
+          'activities_to_do',
+          'cc_email',
+          'done_activities',
+          'email_messages_count',
+          'files_count',
+          'followers_count',
+          'last_activity_date',
+          'last_activity',
+          'last_email_received',
+          'last_email_sent',
+          'next_activity_date',
+          'next_activity',
+          'next_activity_time',
+          'notes_count',
+          'org_name',
+          'owner_name',
+          'total_activities',
+          'company',
+          'people',
+          'picture',
+          'person_hidden',
+          'org_hidden',
+          'person_name',
+          'creator_user',
+          'source_channel',
+          'channel',
+          'source_origin',
+          'origin',
+          'stage_order_nr',
+          'timezone',
+          'weighted_value',
+          'next_activity_duration',
+          'next_activity_note',
+          'next_activity_type',
+          'participants_count',
+          'products_count',
+          'rotten_time',
+          // Additional owner-related fields
+          'owner_active_flag',
+          'owner_email',
+          'owner_has_pic',
+          'owner_id.active_flag',
+          'owner_id.email',
+          'owner_id.has_pic',
+          'owner_id.id',
+          'owner_id.pic_hash',
+          'owner_id.value',
+          'owner_pic_hash',
+          'owner_value'
+        ];
+        
+        // Check if the field name exactly matches any of these fields
+        if (readOnlyFieldNames.includes(col.key)) {
+          col.readOnly = true;
+        }
       }
       
       // Handle owner_id specially
