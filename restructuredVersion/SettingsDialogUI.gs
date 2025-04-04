@@ -11,8 +11,9 @@ var SettingsDialogUI = SettingsDialogUI || {};
 
 /**
  * Shows settings dialog where users can configure filter ID and entity type
+ * @param {string} [initialTab='settings'] - Which tab to show initially ('settings' or 'columns')
  */
-SettingsDialogUI.showSettings = function() {
+SettingsDialogUI.showSettings = function(initialTab = 'settings') {
   try {
     // Get the active sheet name
     const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
@@ -54,11 +55,82 @@ SettingsDialogUI.showSettings = function() {
     template.savedSubdomain = savedSubdomain;
     template.savedFilterId = savedFilterId;
     template.savedEntityType = savedEntityType;
+    template.initialTab = initialTab; // Pass which tab should be initially active
+    
+    // Initialize column data variables for the column tab
+    let availableColumnsData = [];
+    let selectedColumnsData = [];
+    const formattedEntityType = formatEntityTypeName(savedEntityType);
+    
+    // If we're opening the columns tab or need to preload column data, fetch it
+    if (initialTab === 'columns') {
+      try {
+        Logger.log(`Attempting to load column data for ${savedEntityType}`);
+        // Get the saved columns
+        selectedColumnsData = getColumnPreferences(savedEntityType, activeSheetName) || [];
+        
+        // If in columns tab, try to get available columns (but don't fail if it doesn't work)
+        // We'll fetch it in the UI if needed
+        try {
+          // This call is just to prime the cache, may fail but that's ok
+          // The column selector tab has its own loading mechanism
+          let sampleData = [];
+          switch (savedEntityType) {
+            case ENTITY_TYPES.DEALS:
+              sampleData = PipedriveAPI.getDealsWithFilter(savedFilterId, 1);
+              break;
+            case ENTITY_TYPES.PERSONS:
+              sampleData = PipedriveAPI.getPersonsWithFilter(savedFilterId, 1);
+              break;
+            case ENTITY_TYPES.ORGANIZATIONS:
+              sampleData = PipedriveAPI.getOrganizationsWithFilter(savedFilterId, 1);
+              break;
+            case ENTITY_TYPES.ACTIVITIES:
+              sampleData = PipedriveAPI.getActivitiesWithFilter(savedFilterId, 1);
+              break;
+            case ENTITY_TYPES.LEADS:
+              sampleData = PipedriveAPI.getLeadsWithFilter(savedFilterId, 1);
+              break;
+            case ENTITY_TYPES.PRODUCTS:
+              sampleData = PipedriveAPI.getProductsWithFilter(savedFilterId, 1);
+              break;
+          }
+          
+          if (sampleData && sampleData.length > 0) {
+            Logger.log(`Got sample data for ${savedEntityType}, populating column data`);
+            // We got sample data but won't process it here - the UI will handle that
+            // This is just to make sure we have something for the template
+            availableColumnsData = [
+              { key: 'id', name: 'ID', isNested: false },
+              { key: 'name', name: 'Name', isNested: false }
+            ];
+          }
+        } catch (columnError) {
+          Logger.log(`Non-critical error loading column data: ${columnError.message}`);
+          // Don't fail the whole dialog for column data issues
+        }
+      } catch (dataError) {
+        Logger.log(`Error preparing column data: ${dataError.message}`);
+      }
+    }
+    
+    // Create the data script with either real data or empty defaults
+    template.dataScript = `<script>
+      // Pass all available columns and selected columns to the front-end
+      window.availableColumns = ${JSON.stringify(availableColumnsData || [])};
+      window.selectedColumns = ${JSON.stringify(selectedColumnsData || [])};
+      window.entityType = "${savedEntityType}";
+      window.sheetName = "${activeSheetName}";
+      window.entityTypeName = "${formattedEntityType}";
+    </script>`;
+    
+    template.entityTypeName = formattedEntityType;
+    template.sheetName = activeSheetName;
     
     // Create the HTML output from the template
     const htmlOutput = template.evaluate()
-      .setWidth(430)
-      .setHeight(550)
+      .setWidth(600)
+      .setHeight(600)
       .setTitle(`Pipedrive Settings for "${activeSheetName}"`)
       .setSandboxMode(HtmlService.SandboxMode.IFRAME);
     
@@ -119,8 +191,11 @@ SettingsDialogUI.showHelp = function() {
 };
 
 // Export functions to be globally accessible
-this.showSettings = SettingsDialogUI.showSettings;
+this.showSettings = function() { SettingsDialogUI.showSettings('settings'); };
 this.showHelp = SettingsDialogUI.showHelp; 
+
+// Add a function for the column selector that redirects to the combined dialog with columns tab
+this.showColumnSelector = function() { SettingsDialogUI.showSettings('columns'); };
 
 
 
@@ -1293,14 +1368,14 @@ function showColumnSelectorUI() {
  */
 ColumnSelectorUI.showColumnSelector = function() {
   try {
-    // Implementation that directly calls showColumnSelectorUI
+    // Implementation that directly calls the showSettings function with 'columns' tab active
     const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     
     if (!activeSheet) {
       throw new Error('No active sheet found. Please select a sheet first.');
     }
     
-    showColumnSelectorUI();
+    SettingsDialogUI.showSettings('columns');
   } catch (e) {
     Logger.log(`Error in ColumnSelectorUI.showColumnSelector: ${e.message}`);
     Logger.log(`Stack trace: ${e.stack}`);
@@ -1976,8 +2051,8 @@ ColumnSelectorUI.formatEntityTypeName = formatEntityTypeName;
  */
 function showColumnSelector() {
   try {
-    // Call showColumnSelectorUI directly
-    showColumnSelectorUI();
+    // Use the SettingsDialogUI with columns tab
+    SettingsDialogUI.showSettings('columns');
   } catch (e) {
     Logger.log(`Error in showColumnSelector: ${e.message}`);
     Logger.log(`Stack trace: ${e.stack}`);
@@ -2008,11 +2083,11 @@ function renderColumnSelectorHtml(availableColumns, selectedColumns, entityType,
   // Create the data script that will be injected into the HTML template
   const dataScript = `<script>
     // Pass all available columns and selected columns to the front-end
-    const availableColumns = ${JSON.stringify(availableColumns || [])};
-    const selectedColumns = ${JSON.stringify(selectedColumns || [])};
-    const entityType = "${entityType}";
-    const sheetName = "${sheetName}";
-    const entityTypeName = "${formattedEntityType}";
+    window.availableColumns = ${JSON.stringify(availableColumns || [])};
+    window.selectedColumns = ${JSON.stringify(selectedColumns || [])};
+    window.entityType = "${entityType}";
+    window.sheetName = "${sheetName}";
+    window.entityTypeName = "${formattedEntityType}";
   </script>`;
   
   // Create the HTML template
@@ -2022,6 +2097,8 @@ function renderColumnSelectorHtml(availableColumns, selectedColumns, entityType,
   template.dataScript = dataScript;
   template.entityTypeName = formattedEntityType;
   template.sheetName = sheetName;
+  // Set initialTab to 'columns' since this function is specifically for column selector
+  template.initialTab = 'columns';
   
   // Evaluate template to HTML
   return template.evaluate().getContent();

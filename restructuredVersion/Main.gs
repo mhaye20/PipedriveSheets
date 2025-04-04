@@ -100,8 +100,8 @@ function createPipedriveMenu() {
   menu.addItem('🔄 Sync Data', 'syncFromPipedrive')
       .addItem('⬆️ Push Changes to Pipedrive', 'pushChangesToPipedrive')
       .addSeparator()
-      .addItem('📊 Select Columns', 'showColumnSelector')
-      .addItem('⚙️ Filter Settings', 'showSettings')
+      .addItem('📊 Select Columns', 'showColumnsTab')
+      .addItem('⚙️ Filter Settings', 'showSettingsTab')
       .addItem('🔁 Two-Way Sync Settings', 'showTwoWaySyncSettings')
       .addItem('👥 Team Management', 'showTeamManager')
       .addSeparator()
@@ -763,5 +763,33 @@ function testCreateTeamForOwner() {
   } catch (e) {
     Logger.log('Error in testCreateTeamForOwner: ' + e.message);
     throw e;
+  }
+}
+
+var SettingsDialogUI = SettingsDialogUI || {};
+
+/**
+ * Shows the settings dialog with the columns tab active
+ * This function is called from the menu
+ */
+function showColumnsTab() {
+  try {
+    SettingsDialogUI.showSettings('columns');
+  } catch (e) {
+    Logger.log('Error in showColumnsTab: ' + e.message);
+    SpreadsheetApp.getUi().alert('Error', 'Failed to open column settings: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+/**
+ * Shows the settings dialog with the settings tab active
+ * This function is called from the menu
+ */
+function showSettingsTab() {
+  try {
+    SettingsDialogUI.showSettings('settings');
+  } catch (e) {
+    Logger.log('Error in showSettingsTab: ' + e.message);
+    SpreadsheetApp.getUi().alert('Error', 'Failed to open filter settings: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }

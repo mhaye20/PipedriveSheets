@@ -1221,7 +1221,6 @@
     }
   </style>
   <?!= dataScript ?>
-  <?!= include('SettingsDialogUI') ?>
 </head>
 
 <body>
@@ -1413,6 +1412,14 @@
     let manualEntry = false;
     let filtersForEntity = {};
 
+    // Define variables for column selector functionality
+    // These will be initialized either from dataScript or with defaults
+    let availableColumns = typeof window.availableColumns !== 'undefined' ? window.availableColumns : [];
+    let selectedColumns = typeof window.selectedColumns !== 'undefined' ? window.selectedColumns : [];
+    let entityType = typeof window.entityType !== 'undefined' ? window.entityType : '';
+    let sheetName = typeof window.sheetName !== 'undefined' ? window.sheetName : '';
+    let entityTypeName = typeof window.entityTypeName !== 'undefined' ? window.entityTypeName : '';
+
     // Add this tab switching functionality
       document.addEventListener('DOMContentLoaded', function() {
         const tabs = document.querySelectorAll('.tab');
@@ -1433,7 +1440,24 @@
             // Show selected tab content
             const tabId = tab.getAttribute('data-tab');
             document.getElementById(tabId + '-tab').classList.add('active');
+
+            // Initialize columns data if switching to columns tab
+            if (tabId === 'columns' && (!availableColumns || availableColumns.length === 0)) {
+              initializeColumns();
+              renderLists();
+            }
           });
+        });
+        
+        // Set initial active tab based on parameter passed from server
+        const initialTab = '<?= initialTab ?>' || 'settings';
+        
+        // Find the tab with that data-tab attribute
+        tabs.forEach(tab => {
+          if (tab.getAttribute('data-tab') === initialTab) {
+            // Simulate a click on this tab
+            tab.click();
+          }
         });
       });
 
@@ -1743,9 +1767,6 @@
      * - selectedColumns
      */
 
-    // Define originalAvailableColumns locally if not already defined globally
-    var originalAvailableColumns = typeof originalAvailableColumns !== 'undefined' ? originalAvailableColumns : [];
-
     // DOM elements
     const availableList = document.getElementById('availableList');
     const selectedList = document.getElementById('selectedList');
@@ -1765,14 +1786,14 @@
 
       // Initialize originalAvailableColumns as a window property to ensure it's globally accessible
       window.originalAvailableColumns = availableColumns ? JSON.parse(JSON.stringify(availableColumns)) : [];
-      console.log("Original available columns copy created with length:", originalAvailableColumns.length);
+      console.log("Original available columns copy created with length:", window.originalAvailableColumns.length);
     }
 
     // Render the lists
     function renderAvailableList(searchTerm = '') {
       console.log("Rendering available list with search term:", searchTerm);
       console.log("Available columns before rendering:", availableColumns.length);
-      console.log("Original available columns before rendering:", originalAvailableColumns.length);
+      console.log("Original available columns before rendering:", window.originalAvailableColumns.length);
 
       availableList.innerHTML = '';
 
@@ -1785,7 +1806,7 @@
       let availableCount = 0;
 
       // Always use the original available columns array as source of truth
-      originalAvailableColumns.forEach(col => {
+      window.originalAvailableColumns.forEach(col => {
         // Check if this column is already selected
         if (!selectedColumns.some(selected => selected.key === col.key)) {
           availableCount++;
@@ -1888,7 +1909,7 @@
       for (const parentKey in nested) {
         if (nested[parentKey].length > 0) {
           // Find the parent name from the original available columns
-          const parentName = originalAvailableColumns.find(col => col.key === parentKey)?.name || parentKey;
+          const parentName = window.originalAvailableColumns.find(col => col.key === parentKey)?.name || parentKey;
 
           const categoryHeader = document.createElement('div');
           categoryHeader.className = 'category';
@@ -2185,7 +2206,7 @@
     // Column management
     function addColumn(column) {
       // Find the column in the original available columns array to ensure we have complete data
-      const fullColumn = originalAvailableColumns.find(col => col.key === column.key);
+      const fullColumn = window.originalAvailableColumns.find(col => col.key === column.key);
       if (fullColumn) {
         // Add a deep copy to prevent reference issues
         const columnCopy = JSON.parse(JSON.stringify(fullColumn));
@@ -2287,35 +2308,28 @@
     function loadData() {
       try {
         console.log("Attempting to load data from server...");
-        // Get the data passed from the server
-        const availableColumnsJson = '<?!= JSON.stringify(availableColumns) ?>';
-        const selectedColumnsJson = '<?!= JSON.stringify(selectedColumns) ?>';
-
-        if (!availableColumnsJson || availableColumnsJson === '<?!= JSON.stringify(availableColumns) ?>') {
-          console.error('Server variables not properly processed. Using empty arrays as fallback.');
-          window.availableColumns = [];
-          window.selectedColumns = [];
+        
+        // Check if data is already in window properties (from dataScript)
+        if (typeof window.availableColumns !== 'undefined' && window.availableColumns.length > 0) {
+          console.log('Data already loaded from server script:', 
+            window.availableColumns.length + ' available columns, ' + 
+            window.selectedColumns.length + ' selected columns');
+          
+          // Just assign to local variables for ease of use
+          availableColumns = window.availableColumns;
+          selectedColumns = window.selectedColumns;
           return;
         }
-
-        // Parse the JSON data
-        try {
-          window.availableColumns = JSON.parse(availableColumnsJson);
-          window.selectedColumns = JSON.parse(selectedColumnsJson);
-          console.log('Data loaded successfully:',
-            availableColumns.length + ' available columns, ' +
-            selectedColumns.length + ' selected columns');
-        } catch (parseError) {
-          console.error('Error parsing data from server:', parseError);
-          console.log('Raw availableColumnsJson:', availableColumnsJson.substring(0, 100) + '...');
-          window.availableColumns = [];
-          window.selectedColumns = [];
-        }
+        
+        // If we get here, we don't have data yet
+        console.error('No data available from server. Using empty arrays as fallback.');
+        availableColumns = [];
+        selectedColumns = [];
       } catch (error) {
         console.error('Error in loadData function:', error);
         // Initialize with empty arrays to prevent further errors
-        window.availableColumns = [];
-        window.selectedColumns = [];
+        availableColumns = [];
+        selectedColumns = [];
       }
     }
 
@@ -2515,7 +2529,7 @@
       // Ensure the ID column is always included
       if (!selectedColumns.some(col => col.key === 'id')) {
         // Find the ID column in the original columns
-        const idColumn = originalAvailableColumns.find(col => col.key === 'id');
+        const idColumn = window.originalAvailableColumns.find(col => col.key === 'id');
         if (idColumn) {
           // Add ID column at the beginning of the array
           selectedColumns.unshift(JSON.parse(JSON.stringify(idColumn)));
