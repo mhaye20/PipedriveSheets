@@ -573,6 +573,68 @@ function showColumnSelectorUI() {
         return false;
       }
 
+      // NEW: Filter out redundant read-only organization name fields
+      if (col.key === 'org_name' && availableColumns.some(c => 
+          (c.key === 'org_id' || c.key === 'organization_id' || c.key === 'organization'))) {
+        return false;
+      }
+      
+      // NEW: Filter out redundant read-only person name fields
+      if (col.key === 'person_name' && availableColumns.some(c => 
+          (c.key === 'person_id' || c.key === 'person'))) {
+        return false;
+      }
+      
+      // NEW: Filter out redundant owner name in favor of owner_id
+      if (col.key === 'owner_name' && availableColumns.some(c => c.key === 'owner_id')) {
+        return false;
+      }
+      
+      // NEW: Filter out other common redundant name fields
+      if ((col.key.endsWith('_name') || col.key.includes('_name_')) && 
+          availableColumns.some(c => c.key === col.key.replace('_name', '_id'))) {
+        return false;
+      }
+      
+      // NEW: Filter out redundant date/time display variants
+      if (col.key.startsWith('formatted_') && 
+          availableColumns.some(c => c.key === col.key.replace('formatted_', ''))) {
+        return false;
+      }
+      
+      // NEW: Filter out redundant activity data
+      if (col.key.includes('_activity_') && !col.key.includes('id') && 
+          availableColumns.some(c => c.key.includes('_activity_id'))) {
+        return false;
+      }
+      
+      // NEW: Filter out redundant deal stage fields
+      if (col.key === 'stage' && availableColumns.some(c => c.key === 'stage_id')) {
+        return false;
+      }
+      
+      // NEW: Filter out redundant pipeline fields
+      if (col.key === 'pipeline' && availableColumns.some(c => c.key === 'pipeline_id')) {
+        return false;
+      }
+
+      // NEW: Filter out redundant email/phone composite fields
+      // Keep the specific type fields (like email.work, phone.mobile) instead of the generic composite
+      if ((col.key === 'email' || col.key === 'phone') && 
+          availableColumns.some(c => c.key.startsWith(col.key + '.'))) {
+        return false;
+      }
+      
+      // NEW: Filter out redundant label fields (keep label_ids for editing)
+      if (col.key === 'label' && availableColumns.some(c => c.key === 'label_ids')) {
+        return false;
+      }
+      
+      // NEW: Filter out status fields that duplicate status_id
+      if (col.key === 'status' && availableColumns.some(c => c.key === 'status_id')) {
+        return false;
+      }
+
       return true;
     });
     
