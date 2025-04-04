@@ -20,6 +20,23 @@ function formatColumnName(name) {
   
   // Convert to string if not already a string
   let formatted = String(name);
+
+  // Check if this looks like a Pipedrive hash ID (long alphanumeric string)
+  // Typical pattern for custom field IDs: "73da068304a33c665282ba719d8b4ff540112a0f"
+  if (/^[a-f0-9]{20,}$/i.test(formatted)) {
+    // It's likely a hash ID, return a generic name instead of formatting the hash
+    return "Custom Field";
+  }
+  
+  // If the name contains a hash ID (common for Timezone fields and others)
+  if (/[a-f0-9]{20,}/i.test(formatted)) {
+    // Remove the hash portion and trim whitespace
+    formatted = formatted.replace(/[a-f0-9]{20,}/gi, '').trim();
+    // If we end up with an empty string, use a generic name
+    if (!formatted) {
+      return "Custom Field";
+    }
+  }
   
   // Replace underscores with spaces
   formatted = formatted.replace(/_/g, ' ');

@@ -97,7 +97,36 @@ function showColumnSelectorUI() {
             addedCustomFields.add(key);
             const customFieldValue = obj[key];
             const currentPath = `custom_fields.${key}`;
-            const displayName = fieldMap[key] || formatColumnName(key);
+            
+            // Enhanced display name handling for custom fields with hash IDs
+            let displayName;
+            
+            // First try to use the field map which should contain proper names from the API
+            if (fieldMap[key]) {
+              displayName = fieldMap[key];
+              Logger.log(`Using field map name for custom field ${key}: ${displayName}`);
+            } 
+            // If not in field map but looks like a hash ID, use a generic name + label
+            else if (/^[a-f0-9]{20,}$/i.test(key)) {
+              // Extract field type or label if possible from the value
+              let fieldType = "Custom Field";
+              if (typeof customFieldValue === 'object' && customFieldValue !== null) {
+                if (customFieldValue.value !== undefined && customFieldValue.currency !== undefined) {
+                  fieldType = "Currency Field";
+                } else if (customFieldValue.value !== undefined && customFieldValue.formatted_address !== undefined) {
+                  fieldType = "Address Field";
+                } else if (customFieldValue.value !== undefined && customFieldValue.until !== undefined) {
+                  fieldType = "Date Range Field";
+                }
+              }
+              displayName = fieldType;
+              Logger.log(`Generated generic name for hash ID custom field ${key}: ${displayName}`);
+            }
+            // Fall back to formatting the key
+            else {
+              displayName = formatColumnName(key);
+              Logger.log(`Formatting custom field key ${key} to ${displayName}`);
+            }
             
             // Simple value custom fields
             if (typeof customFieldValue !== 'object' || customFieldValue === null) {
