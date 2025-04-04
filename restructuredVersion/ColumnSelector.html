@@ -1142,12 +1142,8 @@
               addressLabel.textContent = addressType;
               columnText.appendChild(addressLabel);
               
-              // Add read-only indicator for address components
-              const readOnlyIndicator = document.createElement('span');
-              readOnlyIndicator.className = 'read-only-indicator';
-              readOnlyIndicator.innerHTML = '<i class="material-icons" style="font-size:14px">lock</i> Read-only';
-              readOnlyIndicator.title = 'Address components from Pipedrive are read-only';
-              columnText.appendChild(readOnlyIndicator);
+              // Remove read-only indicator since address components are updatable
+              // according to Pipedrive API documentation
             }
           }
           
@@ -1459,41 +1455,13 @@
           return true;
         }
         
-        // Check for address components - they are read-only according to Pipedrive API
-        if (key && 
-            (key.includes('.street_number') || 
-             key.includes('.route') || 
-             key.includes('.subpremise') || 
-             key.includes('.sublocality') || 
-             key.includes('.locality') || 
-             key.includes('.admin_area_level_1') || 
-             key.includes('.admin_area_level_2') || 
-             key.includes('.country') || 
-             key.includes('.postal_code') ||
-             key.includes('_street_number') || 
-             key.includes('_route') || 
-             key.includes('_subpremise') || 
-             key.includes('_sublocality') || 
-             key.includes('_locality') || 
-             key.includes('_admin_area_level_1') || 
-             key.includes('_admin_area_level_2') || 
-             key.includes('_country') || 
-             key.includes('_postal_code'))) {
-          return true;
-        }
-        
+        // Address components are not read-only according to Pipedrive API docs
+        // They are all updatable via the API
         
         // Common read-only fields across all entity types
         if (key && (
-            // ID fields (except the main ID used for identification)
-            (key !== 'id' && key.endsWith('_id') && key !== 'owner_id' && 
-             key !== 'person_id' && key !== 'org_id' && key !== 'organization_id' && 
-             key !== 'deal_id' && key !== 'lead_id' && key !== 'stage_id' && 
-             key !== 'pipeline_id' && key !== 'project_id' && key !== 'category') ||
-            
             // System-generated fields
             key === 'creator_user_id' || 
-            key === 'user_id' || 
             key === 'followers_count' ||
             key === 'participants_count' ||
             key === 'activities_count' ||
@@ -1521,7 +1489,7 @@
             key === 'last_incoming_mail_time' ||
             key === 'last_outgoing_mail_time' ||
             key === 'rotten_time' ||
-            key === 'next_activity_date' ||
+            key === 'next_activity_date' || // Except for Leads where it's updatable
             key === 'next_activity_time' ||
             key === 'next_activity_type' ||
             key === 'next_activity_duration' ||
@@ -1531,18 +1499,14 @@
             key === 'local_won_date' ||
             key === 'local_lost_date' ||
             
-            // Label information (can only be modified via label_ids)
-            key === 'label' ||
-            
             // Deal-specific read-only fields
             key === 'stage_order_nr' ||
             key === 'person_name' ||
             key === 'org_name' ||
             key === 'origin' ||
             key === 'origin_id' ||
-            key === 'channel' ||
             
-            // Person/Org specific
+            // Person/Org specific read-only fields
             key === 'has_pic' ||
             key === 'pic_hash' ||
             key === 'owner_name' ||

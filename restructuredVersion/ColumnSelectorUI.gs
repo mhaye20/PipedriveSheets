@@ -173,7 +173,6 @@ function showColumnSelectorUI() {
                       name: `${displayName} (${componentName})`,
                       isNested: true,
                       parentKey: currentPath,
-                      readOnly: true // Address components are read-only
                     });
                   }
                 });
@@ -639,43 +638,13 @@ function showColumnSelectorUI() {
     
     // Post-process column names for better display
     availableColumns.forEach(col => {
-      // Mark address components as read-only based on Pipedrive API docs
-      if (col.key && 
-          (col.key.includes('.street_number') || 
-           col.key.includes('.route') || 
-           col.key.includes('.subpremise') || 
-           col.key.includes('.sublocality') || 
-           col.key.includes('.locality') || 
-           col.key.includes('.admin_area_level_1') || 
-           col.key.includes('.admin_area_level_2') || 
-           col.key.includes('.country') || 
-           col.key.includes('.postal_code') ||
-           col.key.includes('_street_number') || 
-           col.key.includes('_route') || 
-           col.key.includes('_subpremise') || 
-           col.key.includes('_sublocality') || 
-           col.key.includes('_locality') || 
-           col.key.includes('_admin_area_level_1') || 
-           col.key.includes('_admin_area_level_2') || 
-           col.key.includes('_country') || 
-           col.key.includes('_postal_code'))) {
-        col.readOnly = true;
-      }
-      
       // Mark read-only fields based on Pipedrive API documentation
       // These fields are not included in the update endpoints or are system-generated
       
       // Common read-only fields across all entity types
       if (col.key && (
-          // ID fields (except the main ID used for identification)
-          (col.key !== 'id' && col.key.endsWith('_id') && col.key !== 'owner_id' && 
-           col.key !== 'person_id' && col.key !== 'org_id' && col.key !== 'organization_id' && 
-           col.key !== 'deal_id' && col.key !== 'lead_id' && col.key !== 'stage_id' && 
-           col.key !== 'pipeline_id' && col.key !== 'project_id' && col.key !== 'category') ||
-          
           // System-generated fields
           col.key === 'creator_user_id' || 
-          col.key === 'user_id' || 
           col.key === 'followers_count' ||
           col.key === 'participants_count' ||
           col.key === 'activities_count' ||
@@ -692,7 +661,8 @@ function showColumnSelectorUI() {
           col.key === 'weighted_value' || 
           col.key === 'formatted_weighted_value' ||
           col.key === 'weighted_value_currency' ||
-          col.key.startsWith('formatted_') ||
+          col.key.startsWith('formatted_') &&
+          !col.key.includes('address'), // Don't mark address formatted fields as read-only
           
           // System fields
           col.key === 'first_char' ||
@@ -714,16 +684,12 @@ function showColumnSelectorUI() {
           col.key === 'local_won_date' ||
           col.key === 'local_lost_date' ||
           
-          // Label information (can only be modified via label_ids)
-          col.key === 'label' ||
-          
           // Deal-specific read-only fields
           col.key === 'stage_order_nr' ||
           col.key === 'person_name' ||
           col.key === 'org_name' ||
           col.key === 'origin' ||
           col.key === 'origin_id' ||
-          col.key === 'channel' ||
           
           // Person/Org specific
           col.key === 'has_pic' ||
@@ -818,23 +784,6 @@ function showColumnSelectorUI() {
           if ((col.key === 'email' || col.key === 'phone') && !col.key.includes('.')) {
             col.readOnly = true;
           }
-        }
-        
-        // General address components detection
-        if (col.key.includes('address') && 
-            (col.key.includes('formatted') || 
-             col.key.includes('admin_area') || 
-             col.key.includes('locality') || 
-             col.key.includes('postal_code') ||
-             col.key.includes('route') ||
-             col.key.includes('street') ||
-             col.key.includes('country') ||
-             col.key.includes('premise') ||
-             col.key.includes('region') ||
-             col.key.includes('city') ||
-             col.key.includes('state') ||
-             col.key.includes('zip'))) {
-          col.readOnly = true;
         }
         
         // Check for participant fields
