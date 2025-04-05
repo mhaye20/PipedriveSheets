@@ -2238,360 +2238,226 @@ function extractColumnsFromData(data, entityType) {
   try {
     const columns = [];
     const processedKeys = new Set();
-    const processedAddressFields = new Set(); // To prevent duplicate address components
+    const mainCategoryName = getEntityCategoryName(entityType);
+    const customFieldCategory = "Custom Fields";
+    const metadataCategory = "System Fields";
     
-    // Always include the ID column first
-    columns.push({
-      key: 'id',
-      name: 'Pipedrive ID',
-      isNested: false,
-      required: true,
-      readOnly: false
-    });
-    processedKeys.add('id');
-    
-    // Get field definitions for proper naming
-    let fieldDefinitions = [];
-    switch (entityType) {
-      case ENTITY_TYPES.DEALS:
-        fieldDefinitions = getDealFields();
-        break;
-      case ENTITY_TYPES.PERSONS:
-        fieldDefinitions = getPersonFields();
-        break;
-      case ENTITY_TYPES.ORGANIZATIONS:
-        fieldDefinitions = getOrganizationFields();
-        break;
-      case ENTITY_TYPES.ACTIVITIES:
-        fieldDefinitions = getActivityFields();
-        break;
-      case ENTITY_TYPES.LEADS:
-        fieldDefinitions = getLeadFields();
-        break;
-      case ENTITY_TYPES.PRODUCTS:
-        fieldDefinitions = getProductFields();
-        break;
-    }
-    
-    // Map field keys to their friendly names
-    const fieldNameMap = {};
-    fieldDefinitions.forEach(field => {
-      if (field.key && field.name) {
-        fieldNameMap[field.key] = field.name;
-      }
-    });
-    
-    // Function to check if a key is a base hash key (without address components)
-    function isBaseHashKey(key) {
-      return /^[a-f0-9]{20,}$/i.test(key);
-    }
-    
-    // Function to check if a key is a hash key with a component
-    function isHashWithComponent(key) {
-      return /[a-f0-9]{20,}_[a-z_]+/i.test(key);
-    }
-    
-    // Function to extract field name from field definitions if available
-    function getFieldName(key) {
-      // For hash-based custom fields, try to find a nicely formatted name
-      if (/[a-f0-9]{20,}/i.test(key)) {
-        const hashMatch = key.match(/([a-f0-9]{20,})/i);
-        if (hashMatch && hashMatch[1]) {
-          // Look in the custom fields cache for this hash ID
-          if (typeof fieldDefinitionsCache.customFields !== 'undefined' && 
-              fieldDefinitionsCache.customFields[hashMatch[1]]) {
-            const baseName = fieldDefinitionsCache.customFields[hashMatch[1]];
-            
-            // For components, add descriptive suffix
-            if (key.includes('_subpremise')) return `${baseName} - Suite/Apt`;
-            if (key.includes('_street_number')) return `${baseName} - Street Number`;
-            if (key.includes('_route')) return `${baseName} - Street Name`;
-            if (key.includes('_locality')) return `${baseName} - City`;
-            if (key.includes('_sublocality')) return `${baseName} - District`;
-            if (key.includes('_admin_area_level_1')) return `${baseName} - State/Province`;
-            if (key.includes('_admin_area_level_2')) return `${baseName} - County`;
-            if (key.includes('_country')) return `${baseName} - Country`;
-            if (key.includes('_postal_code')) return `${baseName} - ZIP/Postal`;
-            if (key.includes('_formatted_address')) return `${baseName} - Full Address`;
-            if (key.includes('_timezone_id')) return `${baseName} - Timezone`;
-            if (key.includes('_until')) return `${baseName} - End Time/Date`;
-            if (key.includes('_currency')) return `${baseName} - Currency`;
-            
-            // Base key case
-            return baseName;
-          }
-        }
-      }
-      
-      // For nested fields like person_id.name
-      if (key.includes('.')) {
-        const parts = key.split('.');
-        if (parts.length === 2) {
-          const root = parts[0];
-          const property = parts[1];
-          
-          // Format based on patterns
-          if (root === 'person_id') return `Contact - ${formatBasicName(property)}`;
-          if (root === 'org_id') return `Organization - ${formatBasicName(property)}`;
-          if (root === 'user_id') return `User - ${formatBasicName(property)}`;
-          if (root === 'creator_user_id') return `Creator - ${formatBasicName(property)}`;
-        }
-      }
-      
-      // Check field name mappings from field definitions
-      if (fieldNameMap[key]) {
-        return fieldNameMap[key];
-      }
-      
-      // Default to formatted column name
-      return formatColumnName(key);
-    }
-    
-    // First process all regular fields (excluding address components and nested objects)
-    for (const key in data) {
-      // Skip already processed keys
-      if (processedKeys.has(key)) continue;
-      
-      // Skip fields with dots
-      if (key.includes('.')) continue;
-      
-      // Check if it's a hash key with components (like address parts)
-      if (isHashWithComponent(key)) {
-        // Group address components for processing later
-        if (key.includes('_street_number') || 
-            key.includes('_route') || 
-            key.includes('_locality') || 
-            key.includes('_sublocality') ||
-            key.includes('_admin_area') ||
-            key.includes('_country') ||
-            key.includes('_postal_code') ||
-            key.includes('_formatted_address') ||
-            key.includes('_subpremise')) {
-          
-          // Extract the base hash ID
-          const hashMatch = key.match(/([a-f0-9]{20,})/i);
-          if (hashMatch && hashMatch[1]) {
-            const baseHashId = hashMatch[1];
-            
-            // Only process if we haven't processed this hash ID's address components yet
-            if (!processedAddressFields.has(baseHashId)) {
-              processedAddressFields.add(baseHashId);
-              
-              // First add the main address field
-              if (!processedKeys.has(baseHashId)) {
-                columns.push({
-                  key: baseHashId,
-                  name: getFieldName(baseHashId),
-                  isNested: false,
-                  readOnly: false
-                });
-                processedKeys.add(baseHashId);
-              }
-              
-              // Add each component separately
-              const addressComponents = [
-                '_subpremise',
-                '_street_number',
-                '_route',
-                '_locality',
-                '_sublocality',
-                '_admin_area_level_1',
-                '_admin_area_level_2',
-                '_country',
-                '_postal_code',
-                '_formatted_address'
-              ];
-              
-              for (const component of addressComponents) {
-                const fullKey = `${baseHashId}${component}`;
-                
-                // Only add if this component exists in the data
-                if (fullKey in data) {
-                  columns.push({
-                    key: fullKey,
-                    name: getFieldName(fullKey),
-                    isNested: false,
-                    readOnly: false
-                  });
-                  processedKeys.add(fullKey);
-                }
-              }
-            }
-            continue;
-          }
-        }
-        
-        // Other component fields (currency, timezone, etc.)
-        if (!processedKeys.has(key)) {
-          columns.push({
-            key: key,
-            name: getFieldName(key),
-            isNested: false,
-            readOnly: false
-          });
-          processedKeys.add(key);
-        }
-        continue;
-      }
-      
-      // Process basic hash custom fields (without components)
-      if (isBaseHashKey(key) && !processedKeys.has(key)) {
-        columns.push({
-          key: key,
-          name: getFieldName(key),
-          isNested: false,
-          readOnly: false
-        });
-        processedKeys.add(key);
-        continue;
-      }
-      
-      // Process regular fields
+    // Helper function to add a column with category
+    function addColumn(key, name, isNested = false, parentKey = null, category = mainCategoryName, readOnly = false, required = false) {
       if (!processedKeys.has(key)) {
-        // Skip fields we don't want to expose
-        if (['name',
-             'add_time',
-             'update_time', 
-             'id'].includes(key)) {
-          if (processedKeys.has(key)) {
-            continue;
-          }
-        }
-        
-        // For objects, they'll be processed in the recursive pass below
-        if (typeof data[key] === 'object' && data[key] !== null) {
-          continue;
-        }
-        
-        // Add the field
-        columns.push({
-          key: key,
-          name: getFieldName(key),
-          isNested: false,
-          readOnly: false
+    columns.push({
+          key, 
+          name, 
+          isNested, 
+          parentKey, 
+          category, // Add category
+          readOnly: readOnly || isReadOnlyField(key, entityType), // Use central read-only check
+          required 
         });
         processedKeys.add(key);
       }
     }
-    
-    // Now process nested objects
+
+    // 1. Always include the ID column
+    addColumn('id', 'Pipedrive ID', false, null, mainCategoryName, false, true);
+
+    // 2. Process standard Pipedrive fields for this entity type
+    const standardFieldKeys = getStandardFieldKeys(entityType);
+    for (const key of standardFieldKeys) {
+      if (data.hasOwnProperty(key) && key !== 'id') {
+        const fieldName = formatColumnName(key); // Use the centralized formatter
+        addColumn(key, fieldName, false, null, mainCategoryName);
+      }
+    }
+
+    // 3. Process Custom Fields (Hash IDs)
+    for (const key in data) {
+      if (processedKeys.has(key)) continue;
+
+      // Custom field (base hash or component)
+      if (/[a-f0-9]{20,}/i.test(key)) {
+        const fieldName = formatColumnName(key);
+        addColumn(key, fieldName, false, null, customFieldCategory);
+      } 
+      // Skip objects for now, handle them in step 4
+      else if (typeof data[key] === 'object' && data[key] !== null) {
+        continue;
+      } 
+      // Other top-level fields not already processed (potential system/metadata fields)
+      else {
+        const fieldName = formatColumnName(key);
+        
+        // --- Refined Categorization Logic ---
+        let category = metadataCategory; // Default to System/Metadata
+        const lowerKey = key.toLowerCase();
+
+        // Known System/Read-Only/Metadata fields
+        const systemIndicators = ['_count', '_id', '_flag', '_char', 'cc_email', 'visible_', 'hidden', 'formatted_', 'weighted_', 'rotten_', 'last_', 'next_activity', 'first_won', 'stage_order', 'company_id'];
+        const exactSystemKeys = ['active', 'deleted']; // Add more exact keys if needed
+
+        if (exactSystemKeys.includes(lowerKey) || systemIndicators.some(ind => lowerKey.includes(ind))) {
+            // Exceptions: Keep related IDs (_id) and dates (_time, _date) in their respective categories (handled later)
+            if (!(lowerKey.endsWith('_id') && !lowerKey.startsWith('next_') && !lowerKey.startsWith('last_')) && 
+                !lowerKey.includes('_time') && !lowerKey.includes('_date')) {
+                category = metadataCategory;
+            }
+        }
+        
+        // Assign to Main Category if it's a standard field or looks like one (date/time/related id)
+        if (standardFieldKeys.includes(key) || 
+           (key.endsWith('_id') && !lowerKey.startsWith('next_') && !lowerKey.startsWith('last_')) || // Related IDs
+           key.includes('_time') || key.includes('_date')) { // Dates/Times
+           category = mainCategoryName; 
+        } 
+        // If not specifically categorized as Main or System, keep as Metadata for now
+        // --- End Refined Categorization ---
+        
+        addColumn(key, fieldName, false, null, category);
+      }
+    }
+
+    // 4. Process Nested/Related Entity Fields
     for (const key in data) {
       const value = data[key];
-      
-      // Only process objects
+      if (processedKeys.has(key)) continue; // Already added as top-level (e.g., custom field hash)
+
       if (typeof value === 'object' && value !== null) {
-        // Process object fields differently depending on type
-        if (Array.isArray(value)) {
-          // For arrays of objects with standard structure (email, phone, etc.)
-          if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
-            // For email/phone arrays from person_id
-            if ((key === 'email' || key === 'phone') && value[0].label && value[0].value) {
-              // For email array, add a field for each type (work, home, etc.)
-              value.forEach((item, index) => {
-                if (item.label && item.value) {
-                  const itemKey = `${key}.${index}`;
-                  // Also add nested fields for all properties
-                  for (const prop in item) {
-                    const nestedKey = `${itemKey}.${prop}`;
-                    if (!processedKeys.has(nestedKey)) {
-                      columns.push({
-                        key: nestedKey,
-                        name: `${formatBasicName(key)} ${formatBasicName(prop)} (${index})`,
-                        isNested: true,
-                        parentKey: key,
-                        readOnly: false
-                      });
-                      processedKeys.add(nestedKey);
-                    }
-                  }
-                }
-              });
-            }
-          }
-        } else if (value !== null) {
-          // Regular nested object
-          // For standard fields with objects like org_id, person_id, user_id
-          if (['org_id', 'person_id', 'user_id', 'creator_user_id', 'owner_id'].includes(key)) {
-            // First add the main object field
-            if (!processedKeys.has(key)) {
-              columns.push({
-                key: key,
-                name: getFieldName(key),
-                isNested: false,
-                readOnly: false
-              });
-              processedKeys.add(key);
-            }
-            
-            // Add all properties as nested fields
-            for (const prop in value) {
-              const nestedKey = `${key}.${prop}`;
-              if (!processedKeys.has(nestedKey)) {
-                columns.push({
-                  key: nestedKey,
-                  name: getFieldName(nestedKey),
-                  isNested: true,
-                  parentKey: key,
-                  readOnly: false
-                });
-                processedKeys.add(nestedKey);
-              }
-            }
-          }
-          // For custom object fields (hash-based)
-          else if (isBaseHashKey(key)) {
-            // First add the main object field
-            if (!processedKeys.has(key)) {
-              columns.push({
-                key: key,
-                name: getFieldName(key),
-                isNested: false,
-                readOnly: false
-              });
-              processedKeys.add(key);
-            }
-            
-            // Add all properties as nested fields
-            for (const prop in value) {
-              const nestedKey = `${key}.${prop}`;
-              if (!processedKeys.has(nestedKey)) {
-                columns.push({
-                  key: nestedKey,
-                  name: `${getFieldName(key)} - ${formatBasicName(prop)}`,
-                  isNested: true,
-                  parentKey: key,
-                  readOnly: false
-                });
-                processedKeys.add(nestedKey);
-              }
-            }
-          }
+        // Determine category based on the parent key
+        let category = metadataCategory; // Default
+        let relatedEntityType = null;
+
+        if (key === 'person_id') { category = getEntityCategoryName(ENTITY_TYPES.PERSONS); relatedEntityType = ENTITY_TYPES.PERSONS; }
+        else if (key === 'org_id') { category = getEntityCategoryName(ENTITY_TYPES.ORGANIZATIONS); relatedEntityType = ENTITY_TYPES.ORGANIZATIONS; }
+        else if (key === 'owner_id') { category = "Owner Fields"; }
+        else if (key === 'user_id') { category = "User Fields"; }
+        else if (key === 'creator_user_id') { category = "Creator Fields"; }
+        else if (key === 'deal_id') { category = getEntityCategoryName(ENTITY_TYPES.DEALS); relatedEntityType = ENTITY_TYPES.DEALS; } 
+        else if (key === 'pipeline_id') { category = "Pipeline/Stage Fields"; }
+        else if (key === 'stage_id') { category = "Pipeline/Stage Fields"; }
+        // Add more related entities as needed
+
+        // Add the parent object itself if it represents a link (like org_id)
+        if (key.endsWith('_id') && !key.startsWith('next_') && !key.startsWith('last_')) {
+            addColumn(key, formatColumnName(key), false, null, category); 
         }
+
+        // Recursively process properties within the object
+        processNestedObject(value, key, category, relatedEntityType, addColumn, 1);
       }
     }
     
-    // Sort columns logically
+    // Sort columns: First by category order, then by name within category
+    const categoryOrder = [
+      mainCategoryName,
+      "Owner Fields",
+      getEntityCategoryName(ENTITY_TYPES.PERSONS),
+      getEntityCategoryName(ENTITY_TYPES.ORGANIZATIONS),
+      getEntityCategoryName(ENTITY_TYPES.DEALS),
+      getEntityCategoryName(ENTITY_TYPES.ACTIVITIES),
+      getEntityCategoryName(ENTITY_TYPES.LEADS),
+      getEntityCategoryName(ENTITY_TYPES.PRODUCTS),
+      "Pipeline/Stage Fields",
+      "User Fields",
+      "Creator Fields",
+      customFieldCategory,
+      metadataCategory
+    ];
+
     columns.sort((a, b) => {
-      if (a.key === 'id') return -1;
-      if (b.key === 'id') return 1;
-      
-      if (!a.isNested && b.isNested) return -1;
-      if (a.isNested && !b.isNested) return 1;
-      
-      if (a.isNested && b.isNested) {
-        if (a.parentKey !== b.parentKey) {
-          return a.parentKey.localeCompare(b.parentKey);
-        }
+      const categoryIndexA = categoryOrder.indexOf(a.category);
+      const categoryIndexB = categoryOrder.indexOf(b.category);
+
+      if (categoryIndexA !== categoryIndexB) {
+        // Handle categories not explicitly listed (put them last)
+        if (categoryIndexA === -1) return 1;
+        if (categoryIndexB === -1) return -1;
+        return categoryIndexA - categoryIndexB;
       }
       
+      // If same category, sort by nested status (non-nested first), then name
+      if (a.isNested !== b.isNested) {
+        return a.isNested ? 1 : -1;
+      }
       return a.name.localeCompare(b.name);
     });
-    
-    Logger.log(`Extracted ${columns.length} columns for entity type ${entityType}`);
+
+    Logger.log(`Extracted and categorized ${columns.length} columns for entity type ${entityType}`);
     return columns;
   } catch (e) {
     Logger.log(`Error extracting columns: ${e.message}`);
-    return getFallbackColumns(entityType);
+    Logger.log(`Stack: ${e.stack}`);
+    return getFallbackColumns(entityType); // Ensure fallback includes category
+  }
+}
+
+/**
+ * Helper to recursively process nested objects for column extraction
+ */
+function processNestedObject(obj, parentKey, parentCategory, relatedEntityType, addColumnFn, depth) {
+   if (depth > 3) return; // Limit recursion depth
+
+   // Special check for Owner fields
+   const isOwnerField = parentKey === 'owner_id';
+
+   for (const key in obj) {
+     if (key === 'id' && parentKey.endsWith('_id')) continue; // Avoid adding parent_id.id
+     if (key.startsWith('_')) continue; // Skip internal props
+     
+     const value = obj[key];
+     const currentPath = `${parentKey}.${key}`;
+     const name = formatColumnName(currentPath);
+     const isNested = true;
+     const isReadOnly = isReadOnlyField(currentPath, relatedEntityType || '');
+
+     // Use "Owner Fields" category if processing owner_id properties
+     const currentCategory = isOwnerField ? "Owner Fields" : parentCategory;
+
+     if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+       // Recursively process deeper objects
+       addColumnFn(currentPath, name, isNested, parentKey, currentCategory, isReadOnly);
+       processNestedObject(value, currentPath, currentCategory, relatedEntityType, addColumnFn, depth + 1);
+     } else if (!Array.isArray(value)) { // Add simple properties
+       addColumnFn(currentPath, name, isNested, parentKey, currentCategory, isReadOnly);
+     } 
+     // Handle arrays (e.g., email, phone) - Add specific entries if needed
+     else if (Array.isArray(value) && (parentKey === 'email' || parentKey === 'phone')) {
+         // Add entries for different labels (work, home, etc.) - logic handled by formatColumnName
+         // Add the base array field first
+         addColumnFn(parentKey, formatColumnName(parentKey), false, null, currentCategory, isReadOnly); 
+         value.forEach((item, index) => {
+             if(item && typeof item === 'object'){
+                 for(const prop in item){
+                     const itemPath = `${parentKey}.${index}.${prop}`;
+                     const itemName = formatColumnName(itemPath);
+                     addColumnFn(itemPath, itemName, true, parentKey, currentCategory, isReadOnly);
+                 }
+             }
+         });
+     }
+   }
+}
+
+/**
+ * Gets standard field keys for a given entity type.
+ * Placeholder: In a real scenario, this might fetch from Pipedrive API or use constants.
+ */
+function getStandardFieldKeys(entityType) {
+    // Example basic fields - expand this based on Pipedrive documentation or API calls
+    const common = ['id', 'name', 'owner_id', 'org_id', 'person_id', 'add_time', 'update_time', 'visible_to'];
+    switch (entityType) {
+        case ENTITY_TYPES.DEALS:
+            return [...common, 'title', 'value', 'currency', 'pipeline_id', 'stage_id', 'status', 'expected_close_date', 'lost_reason', 'won_time', 'lost_time', 'close_time'];
+        case ENTITY_TYPES.PERSONS:
+            return [...common, 'email', 'phone', 'first_name', 'last_name']; // 'name' is often calculated
+        case ENTITY_TYPES.ORGANIZATIONS:
+            return [...common, 'address', 'label'];
+        case ENTITY_TYPES.ACTIVITIES:
+            return [...common, 'subject', 'type', 'due_date', 'due_time', 'duration', 'note', 'done', 'deal_id', 'assigned_to_user_id']; // Removed 'name'
+        case ENTITY_TYPES.LEADS:
+            return [...common, 'title', 'note', 'lead_value', 'expected_close_date']; // Removed 'name'
+        case ENTITY_TYPES.PRODUCTS:
+            return [...common, 'code', 'unit', 'tax', 'prices', 'description'];
+        default: return common;
   }
 }
 
@@ -2611,55 +2477,56 @@ function formatFieldName(key) {
  * @return {Array} Array of basic column objects
  */
 function getFallbackColumns(entityType) {
+  const mainCategory = getEntityCategoryName(entityType);
   const columns = [
-    { key: 'id', name: 'ID', isNested: false, required: true }
+    { key: 'id', name: 'Pipedrive ID', isNested: false, category: mainCategory, required: true, readOnly: false }
   ];
   
   // Add common fields based on entity type
   switch (entityType) {
     case ENTITY_TYPES.DEALS:
       columns.push(
-        { key: 'title', name: 'Title', isNested: false },
-        { key: 'value', name: 'Value', isNested: false },
-        { key: 'status', name: 'Status', isNested: false },
-        { key: 'stage_id', name: 'Stage ID', isNested: false }
+        { key: 'title', name: 'Deal Title', isNested: false, category: mainCategory },
+        { key: 'value', name: 'Deal Value', isNested: false, category: mainCategory },
+        { key: 'status', name: 'Status', isNested: false, category: mainCategory },
+        { key: 'stage_id', name: 'Pipeline Stage', isNested: false, category: mainCategory }
       );
       break;
     case ENTITY_TYPES.PERSONS:
       columns.push(
-        { key: 'name', name: 'Name', isNested: false },
-        { key: 'email', name: 'Email', isNested: false },
-        { key: 'phone', name: 'Phone', isNested: false }
+        { key: 'name', name: 'Name', isNested: false, category: mainCategory },
+        { key: 'email', name: 'Email', isNested: false, category: mainCategory },
+        { key: 'phone', name: 'Phone', isNested: false, category: mainCategory }
       );
       break;
     case ENTITY_TYPES.ORGANIZATIONS:
       columns.push(
-        { key: 'name', name: 'Name', isNested: false },
-        { key: 'address', name: 'Address', isNested: false }
+        { key: 'name', name: 'Name', isNested: false, category: mainCategory },
+        { key: 'address', name: 'Address', isNested: false, category: mainCategory }
       );
       break;
     case ENTITY_TYPES.ACTIVITIES:
       columns.push(
-        { key: 'subject', name: 'Subject', isNested: false },
-        { key: 'type', name: 'Type', isNested: false },
-        { key: 'due_date', name: 'Due Date', isNested: false }
+        { key: 'subject', name: 'Subject', isNested: false, category: mainCategory },
+        { key: 'type', name: 'Type', isNested: false, category: mainCategory },
+        { key: 'due_date', name: 'Due Date', isNested: false, category: mainCategory }
       );
       break;
     case ENTITY_TYPES.LEADS:
       columns.push(
-        { key: 'title', name: 'Title', isNested: false },
-        { key: 'value', name: 'Value', isNested: false }
+        { key: 'title', name: 'Title', isNested: false, category: mainCategory },
+        { key: 'lead_value', name: 'Lead Value', isNested: false, category: mainCategory }
       );
       break;
     case ENTITY_TYPES.PRODUCTS:
       columns.push(
-        { key: 'name', name: 'Name', isNested: false },
-        { key: 'code', name: 'Code', isNested: false },
-        { key: 'prices', name: 'Prices', isNested: false }
+        { key: 'name', name: 'Name', isNested: false, category: mainCategory },
+        { key: 'code', name: 'Code', isNested: false, category: mainCategory },
+        { key: 'prices', name: 'Prices', isNested: false, category: mainCategory }
       );
       break;
     default:
-      columns.push({ key: 'name', name: 'Name', isNested: false });
+      columns.push({ key: 'name', name: 'Name', isNested: false, category: mainCategory });
   }
   
   return columns;
@@ -2755,14 +2622,14 @@ function improveColumnNamesForUI(columns, entityType) {
         const parentKey = column.parentKey;
         
         if (parentKey) { // Check if parentKey is valid
-          let parentName = '';
-          
+        let parentName = '';
+        
           // Get parent name using formatColumnName to ensure consistency
           parentName = formatColumnName(parentKey);
           
           // Avoid redundant parent name prefixes if already present
           if (!column.name.startsWith(parentName)) {
-            column.name = `${parentName} - ${column.name}`;
+          column.name = `${parentName} - ${column.name}`;
           }
         } else {
           // If parent key exists but we couldn't format it, use a fallback

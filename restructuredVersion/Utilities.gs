@@ -872,3 +872,27 @@ function getFormattedColumnName(key) {
   // Formatting logic now happens in formatColumnName, cache should be initialized beforehand.
   return formatColumnName(key);
 }
+
+/**
+ * Gets a user-friendly category name for an entity type.
+ * @param {string} entityType - The entity type (e.g., ENTITY_TYPES.DEALS).
+ * @return {string} The category name (e.g., "Deal Fields").
+ */
+function getEntityCategoryName(entityType) {
+  switch (entityType) {
+    case ENTITY_TYPES.DEALS:
+      return 'Deal Fields';
+    case ENTITY_TYPES.PERSONS:
+      return 'Contact Fields';
+    case ENTITY_TYPES.ORGANIZATIONS:
+      return 'Organization Fields';
+    case ENTITY_TYPES.ACTIVITIES:
+      return 'Activity Fields';
+    case ENTITY_TYPES.LEADS:
+      return 'Lead Fields';
+    case ENTITY_TYPES.PRODUCTS:
+      return 'Product Fields';
+    default:
+      return 'Standard Fields';
+  }
+}
