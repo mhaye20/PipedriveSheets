@@ -2127,6 +2127,9 @@ function getColumnsDataForEntity(entityType, sheetName) {
     
     // Get sample data to extract available columns
     try {
+      // Initialize the custom fields cache to get proper field names
+      initializeCustomFieldsCache(entityType);
+      
       // Get sample data based on filter
       const filterId = PropertiesService.getScriptProperties().getProperty(`FILTER_ID_${sheetName}`) || '';
       
@@ -2389,4 +2392,13 @@ function isReadOnlyField(key, entityType) {
   }
   
   return false;
+}
+
+/**
+ * Client-callable function to get a formatted column name
+ * @param {string} key - The field key to format
+ * @return {string} Formatted column name
+ */
+function getFormattedColumnName(key) {
+  return formatColumnName(key);
 }

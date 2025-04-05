@@ -1396,7 +1396,7 @@
           <span class="loader"></span>
         </div>
         <button class="secondary-btn" id="cancelBtn">Cancel</button>
-        <button class="primary-btn" id="saveBtn">Save & Close</button>
+        <button class="primary-btn" id="columnsTabSaveBtn">Save & Close</button>
       </div>
     </div>
   </div>
@@ -1840,6 +1840,33 @@
               col.name = col.name.replace('City/town/village/locality', 'City');
             }
           }
+          
+          // Handle custom fields with generic names
+          if (col.name === 'Custom Field' && col.key && /[a-f0-9]{20,}/i.test(col.key)) {
+            // Try to get a better name from the server
+            google.script.run.withSuccessHandler(function(betterName) {
+              if (betterName && betterName !== 'Custom Field') {
+                // Find the element and update it
+                const elements = document.querySelectorAll(`.item[data-key="${col.key}"] .column-text`);
+                elements.forEach(el => {
+                  el.textContent = betterName;
+                });
+                
+                // Update our local data too
+                col.name = betterName;
+              }
+            }).getFormattedColumnName(col.key);
+            
+            // Also try a basic client-side improvement showing the field key's last part
+            const keyParts = col.key.split('.');
+            if (keyParts.length > 1) {
+              // Get the last part after the hash
+              const lastPart = keyParts[keyParts.length - 1];
+              if (lastPart && lastPart !== 'label_ids' && !/^[a-f0-9]{20,}$/i.test(lastPart)) {
+                col.name = lastPart.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+              }
+            }
+          }
 
           if (!searchTerm || col.name.toLowerCase().includes(searchTerm)) {
             if (!col.isNested) {
@@ -1926,11 +1953,40 @@
       // Then add nested columns by parent
       for (const parentKey in nested) {
         if (nested[parentKey].length > 0) {
-          // Find the parent name from the original available columns
-          const parentName = window.originalAvailableColumns.find(col => col.key === parentKey)?.name || parentKey;
-
+          // Find the parent name from the original available columns or format the key
+          let parentName = parentKey;
+          
+          // First try to find the name from available columns
+          const parentObj = window.originalAvailableColumns.find(col => col.key === parentKey);
+          if (parentObj && parentObj.name) {
+            parentName = parentObj.name;
+          } else {
+            // If not found, format the key directly using our global helper
+            try {
+              // Call through to server-side formatting if possible
+              google.script.run.withSuccessHandler(formattedName => {
+                const categoryHeader = document.querySelector(`.category[data-parent-key="${parentKey}"]`);
+                if (categoryHeader) {
+                  categoryHeader.textContent = formattedName;
+                }
+              }).getFormattedColumnName(parentKey);
+              
+              // Also do basic formatting on client side immediately
+              parentName = parentKey.split('.').pop()
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, l => l.toUpperCase());
+            } catch (e) {
+              console.error('Error formatting parent key:', e);
+              // Basic fallback formatting
+              parentName = parentKey.split('.').pop()
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, l => l.toUpperCase());
+            }
+          }
+          
           const categoryHeader = document.createElement('div');
           categoryHeader.className = 'category';
+          categoryHeader.setAttribute('data-parent-key', parentKey);
           categoryHeader.textContent = parentName;
           availableList.appendChild(categoryHeader);
 
@@ -2298,7 +2354,7 @@
         renderAvailableList(this.value);
       });
 
-      document.getElementById('saveBtn').addEventListener('click', function () {
+      document.getElementById('columnsTabSaveBtn').addEventListener('click', function () {
         saveColumns();
       });
 
@@ -2594,7 +2650,7 @@
 
       // Show loading animation
       document.getElementById('saveLoading').style.display = 'flex';
-      document.getElementById('saveBtn').disabled = true;
+      document.getElementById('columnsTabSaveBtn').disabled = true;
       document.getElementById('cancelBtn').disabled = true;
 
       console.log('Calling handleSaveColumns with:', {
@@ -2617,7 +2673,7 @@
         .withFailureHandler((error) => {
           console.error('Save failed:', error);
           document.getElementById('saveLoading').style.display = 'none';
-          document.getElementById('saveBtn').disabled = false;
+          document.getElementById('columnsTabSaveBtn').disabled = false;
           document.getElementById('cancelBtn').disabled = false;
           showStatus('error', 'Error: ' + error.message);
         })

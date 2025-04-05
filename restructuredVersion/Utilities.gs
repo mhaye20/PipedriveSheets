@@ -20,11 +20,41 @@ function formatColumnName(name) {
   
   // Convert to string if not already a string
   let formatted = String(name);
-
-  // Check if this looks like a Pipedrive hash ID (long alphanumeric string)
-  // Typical pattern for custom field IDs: "73da068304a33c665282ba719d8b4ff540112a0f"
+  
+  // First try to find the field name from cached field definitions
+  if (/[a-f0-9]{20,}/i.test(formatted)) {
+    // This looks like it contains a custom field hash ID
+    try {
+      // Extract the hash part
+      const hashMatch = formatted.match(/([a-f0-9]{20,})/i);
+      if (hashMatch && hashMatch[1]) {
+        const hashId = hashMatch[1];
+        
+        // Check if we have a field definition cache with this ID
+        if (typeof fieldDefinitionsCache.customFields !== 'undefined' && 
+            fieldDefinitionsCache.customFields[hashId]) {
+          return fieldDefinitionsCache.customFields[hashId];
+        }
+        
+        // If the hash is part of a more complex name (like hash_subcomponent)
+        // Extract any remaining parts of the name
+        let remainingName = formatted.replace(hashId, '').replace(/^_|\./, ' ').trim();
+        
+        // If there are remaining parts, format them with the hash
+        if (remainingName) {
+          return formatBasicName(remainingName);
+        }
+      }
+    } catch (e) {
+      Logger.log(`Error looking up custom field name: ${e.message}`);
+    }
+  }
+  
+  // If we reach here, either it's not a hash ID or we couldn't find the field name
+  
+  // Check if this looks like a Pipedrive hash ID on its own (long alphanumeric string)
   if (/^[a-f0-9]{20,}$/i.test(formatted)) {
-    // It's likely a hash ID, return a generic name instead of formatting the hash
+    // It's likely a hash ID, return a generic name
     return "Custom Field";
   }
   
@@ -38,8 +68,20 @@ function formatColumnName(name) {
     }
   }
   
+  return formatBasicName(formatted);
+}
+
+/**
+ * Basic name formatting for column names
+ * @param {string} name - Name to format
+ * @return {string} Formatted name
+ */
+function formatBasicName(name) {
   // Replace underscores with spaces
-  formatted = formatted.replace(/_/g, ' ');
+  let formatted = name.replace(/_/g, ' ');
+  
+  // Replace dots with spaces (common in nested fields)
+  formatted = formatted.replace(/\./g, ' ');
   
   // Capitalize first letter of each word
   formatted = formatted.replace(/\b\w/g, l => l.toUpperCase());
@@ -639,4 +681,75 @@ function include(filename) {
   
   // For standard includes, return the content of the file
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+/**
+ * Initializes the custom field definitions cache with field names from Pipedrive
+ * @param {string} entityType - The entity type (deals, persons, etc.)
+ * @return {Object} - The field definitions cache
+ */
+function initializeCustomFieldsCache(entityType) {
+  try {
+    if (!fieldDefinitionsCache.customFields) {
+      fieldDefinitionsCache.customFields = {};
+    }
+    
+    // Get field definitions based on entity type
+    let fields = [];
+    
+    switch (entityType) {
+      case 'deals':
+      case ENTITY_TYPES.DEALS:
+        fields = getDealFields();
+        break;
+      case 'persons':
+      case ENTITY_TYPES.PERSONS:
+        fields = getPersonFields();
+        break;
+      case 'organizations':
+      case ENTITY_TYPES.ORGANIZATIONS:
+        fields = getOrganizationFields();
+        break;
+      case 'activities':
+      case ENTITY_TYPES.ACTIVITIES:
+        fields = getActivityFields();
+        break;
+      case 'leads':
+      case ENTITY_TYPES.LEADS:
+        fields = getLeadFields();
+        break;
+      case 'products':
+      case ENTITY_TYPES.PRODUCTS:
+        fields = getProductFields();
+        break;
+      default:
+        // Try to get fields for all entity types if not specified
+        fields = [
+          ...getDealFields(),
+          ...getPersonFields(),
+          ...getOrganizationFields(),
+          ...getActivityFields(),
+          ...getLeadFields(),
+          ...getProductFields()
+        ];
+    }
+    
+    // Process the fields to extract custom field definitions
+    for (const field of fields) {
+      if (field.key && /[a-f0-9]{20,}/i.test(field.key)) {
+        // Extract the hash part
+        const hashMatch = field.key.match(/([a-f0-9]{20,})/i);
+        if (hashMatch && hashMatch[1]) {
+          const hashId = hashMatch[1];
+          fieldDefinitionsCache.customFields[hashId] = field.name;
+        }
+      }
+    }
+    
+    Logger.log(`Initialized custom fields cache with ${Object.keys(fieldDefinitionsCache.customFields).length} fields`);
+    return fieldDefinitionsCache.customFields;
+  } catch (e) {
+    Logger.log(`Error initializing custom fields cache: ${e.message}`);
+    return {};
+  }
 } 
