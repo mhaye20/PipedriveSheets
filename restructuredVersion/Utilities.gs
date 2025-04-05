@@ -12,165 +12,138 @@ var fieldDefinitionsCache = {};
 
 /**
  * Formats a column name for display in the UI
- * @param {string} name - Raw column name
+ * @param {string} name - Raw column name (usually the Pipedrive field key)
  * @return {string} Formatted column name
  */
-function formatColumnName(name) {
-  if (!name) return '';
-  
-  // Convert to string if not already a string
-  let key = String(name);
-  
-  // First check for standard entity object properties (person_id.name, org_id.address, etc.)
+function formatColumnName(key) {
+  if (!key) return '';
+  key = String(key);
+
+  // 1. Handle Nested Fields (e.g., 'person_id.name')
   if (key.includes('.')) {
     const parts = key.split('.');
+    // Basic case: parent.property
     if (parts.length === 2) {
-      const rootObject = parts[0];
+      const parentKey = parts[0];
       const property = parts[1];
-      
-      // Common entity root objects
-      if (rootObject === 'person_id') {
-        return `Contact - ${formatBasicName(property)}`;
-      } else if (rootObject === 'org_id') {
-        return `Organization - ${formatBasicName(property)}`;
-      } else if (rootObject === 'user_id') {
-        return `User - ${formatBasicName(property)}`;
-      } else if (rootObject === 'creator_user_id') {
-        return `Creator - ${formatBasicName(property)}`;
-      } else if (rootObject === 'owner_id') {
-        return `Owner - ${formatBasicName(property)}`;
+      const parentName = formatColumnName(parentKey); // Recursively format parent
+      const propertyName = formatBasicName(property);
+      // Avoid redundant names like "Organization - Organization Name"
+      if (parentName && propertyName.toLowerCase().includes(parentName.toLowerCase())) {
+        return propertyName;
+      } 
+      // Handle Owner special case
+      else if (parentKey === 'owner_id' && property === 'name') {
+        return 'Owner Name'; // Keep it simple
       }
-      
-      // Array types like email.0.value or phone.0.label
-      if (parts[1].match(/^\d+$/)) {
-        // It's an array index
-        if (parts.length >= 3) {
-          // Something like email.0.value - use the third part
-          const itemType = parts[0]; // email, phone, etc.
-          const property = parts[2]; // value, label, etc.
-          return `${formatBasicName(itemType)} ${formatBasicName(property)} (${parts[1]})`;
-        }
-      }
-      
-      // For custom field objects that have properties
-      if (/[a-f0-9]{20,}/i.test(rootObject)) {
-        const customFieldName = getCustomFieldNameFromCache(rootObject);
-        return `${customFieldName} - ${formatBasicName(property)}`;
-      }
-      
-      // Generic nested property
-      return `${formatBasicName(rootObject)} - ${formatBasicName(property)}`;
+      // General case
+      return `${parentName} - ${propertyName}`;
     }
-    
-    // More than 2 parts (like email.0.value)
-    if (parts.length > 2) {
-      const collection = parts[0]; // email, phone, etc.
-      const index = parts[1]; // usually a number
-      const property = parts[2]; // value, label, etc.
-      
-      // For lists of emails, phones, etc.
-      if (collection === 'email' || collection === 'phone') {
-        return `${formatBasicName(collection)} ${formatBasicName(property)} #${Number(index) + 1}`;
-      }
-      
-      // For other nested properties
-      return `${formatBasicName(collection)} - ${formatBasicName(property)} (${index})`;
+    // Deeper nesting (e.g., email.0.value) - less common, basic format
+    else if (parts.length > 2) {
+       const collection = parts[0];
+       const index = parts[1];
+       const property = parts[2];
+       return `${formatBasicName(collection)} ${formatBasicName(property)} #${Number(index) + 1}`;
     }
   }
-  
-  // Check for custom field with hash ID and component
+
+  // 2. Handle Custom Field Components (e.g., 'HASHID_locality')
   if (/[a-f0-9]{20,}_[a-z_]+/i.test(key)) {
-    // This is a custom field component (address part, etc.)
     const hashMatch = key.match(/([a-f0-9]{20,})_([a-z_]+)/i);
     if (hashMatch) {
       const hashId = hashMatch[1];
       const component = hashMatch[2];
       
-      // Get base field name from cache
-      let baseName = getCustomFieldNameFromCache(hashId);
+      // Get the RAW base name from cache
+      let baseName = getRawFieldNameFromCache(hashId) || 'Custom Field';
       
-      // Handle address components
-      if (component === 'subpremise') {
-        return `${baseName} - Suite/Apt`;
-      } else if (component === 'street_number') {
-        return `${baseName} - Street Number`;
-      } else if (component === 'route') {
-        return `${baseName} - Street Name`;
-      } else if (component === 'locality') {
-        return `${baseName} - City`;
-      } else if (component === 'sublocality') {
-        return `${baseName} - District`;
-      } else if (component === 'admin_area_level_1') {
-        return `${baseName} - State/Province`;
-      } else if (component === 'admin_area_level_2') {
-        return `${baseName} - County`;
-      } else if (component === 'country') {
-        return `${baseName} - Country`;
-      } else if (component === 'postal_code') {
-        return `${baseName} - ZIP/Postal Code`;
-      } else if (component === 'formatted_address') {
-        return `${baseName} - Complete Address`;
+      // Define component suffixes
+      const componentSuffixes = {
+        'subpremise': 'Suite/Apt',
+        'street_number': 'Street Number',
+        'route': 'Street Name',
+        'locality': 'City',
+        'sublocality': 'District',
+        'admin_area_level_1': 'State/Province',
+        'admin_area_level_2': 'County',
+        'country': 'Country',
+        'postal_code': 'ZIP/Postal Code',
+        'formatted_address': 'Complete Address',
+        'until': 'End Time/Date', // Date/Time range
+        'timezone_id': 'Timezone', // Time
+        'currency': 'Currency' // Monetary
+      };
+
+      // Return formatted name: "Base Name - Component Suffix"
+      if (componentSuffixes[component]) {
+         return `${baseName} - ${componentSuffixes[component]}`;
       }
-      
-      // Handle time and date components
-      if (component === 'until') {
-        return `${baseName} - End Time/Date`;
-      } else if (component === 'timezone_id') {
-        return `${baseName} - Timezone`;
-      }
-      
-      // Handle currency and other components
-      if (component === 'currency') {
-        return `${baseName} - Currency`;
-      }
-      
-      // Generic component
+      // Fallback for unknown components
       return `${baseName} - ${formatBasicName(component)}`;
     }
   }
-  
-  // Main custom field (just the hash ID)
+
+  // 3. Handle Base Custom Fields (HASHID only)
   if (/^[a-f0-9]{20,}$/i.test(key)) {
-    return getCustomFieldNameFromCache(key);
+    return getRawFieldNameFromCache(key) || 'Custom Field';
+  }
+
+  // 4. Handle Standard Pipedrive Fields (using cache if available, then specific overrides)
+  const cachedName = getRawFieldNameFromCache(key);
+  if (cachedName) {
+    // Apply specific overrides for clarity even if cached
+    if (key === 'title' && cachedName === 'Title') return 'Deal Title';
+    if (key === 'person_id') return 'Contact'; // Prefer Contact over Person
+    if (key === 'org_id') return 'Organization';
+    if (key === 'owner_id') return 'Owner';
+    if (key === 'user_id') return 'User';
+    if (key === 'creator_user_id') return 'Creator';
+    if (key === 'stage_id') return 'Pipeline Stage';
+    if (key === 'pipeline_id') return 'Pipeline';
+    return cachedName; // Use the name directly from Pipedrive API
   }
   
-  // Custom field with hash embedded in it
-  if (/[a-f0-9]{20,}/i.test(key)) {
-    const hashMatch = key.match(/([a-f0-9]{20,})/i);
-    if (hashMatch) {
-      return getCustomFieldNameFromCache(hashMatch[1]);
-    }
+  // Specific overrides if not found in cache (or cache is empty)
+  const specificOverrides = {
+    'id': 'Pipedrive ID',
+    'name': 'Name',
+    'title': 'Deal Title',
+    'value': 'Deal Value',
+    'currency': 'Currency',
+    'status': 'Status',
+    'stage_id': 'Pipeline Stage',
+    'pipeline_id': 'Pipeline',
+    'expected_close_date': 'Expected Close Date',
+    'won_time': 'Won Date',
+    'lost_time': 'Lost Date',
+    'close_time': 'Closed Date',
+    'add_time': 'Created Date',
+    'update_time': 'Last Updated',
+    'active': 'Active Status',
+    'deleted': 'Deleted Status',
+    'visible_to': 'Visibility',
+    'owner_id': 'Owner',
+    'owner_name': 'Owner Name', // Covered by nested logic, but good fallback
+    'org_id': 'Organization',
+    'org_name': 'Organization Name', // Covered by nested logic
+    'person_id': 'Contact', // Prefer Contact over Person
+    'person_name': 'Contact Name', // Covered by nested logic
+    'user_id': 'User',
+    'creator_user_id': 'Creator',
+    'cc_email': 'CC Email',
+    'next_activity_date': 'Next Activity Date',
+    'next_activity_time': 'Next Activity Time',
+    'next_activity_id': 'Next Activity ID',
+    'last_activity_id': 'Last Activity ID',
+    'last_activity_date': 'Last Activity Date'
+    // Add more standard fields as needed
+  };
+  if (specificOverrides[key]) {
+    return specificOverrides[key];
   }
-  
-  // Standard Pipedrive fields
-  if (key === 'id') return 'Pipedrive ID';
-  if (key === 'name') return 'Name';
-  if (key === 'title') return 'Deal Title';
-  if (key === 'value') return 'Deal Value';
-  if (key === 'currency') return 'Currency';
-  if (key === 'status') return 'Status';
-  if (key === 'stage_id') return 'Pipeline Stage';
-  if (key === 'pipeline_id') return 'Pipeline';
-  if (key === 'expected_close_date') return 'Expected Close Date';
-  if (key === 'won_time') return 'Won Date';
-  if (key === 'lost_time') return 'Lost Date';
-  if (key === 'close_time') return 'Closed Date';
-  if (key === 'add_time') return 'Created Date';
-  if (key === 'update_time') return 'Last Updated';
-  if (key === 'active') return 'Active Status';
-  if (key === 'deleted') return 'Deleted Status';
-  if (key === 'visible_to') return 'Visibility';
-  if (key === 'owner_name') return 'Owner Name';
-  if (key === 'cc_email') return 'CC Email';
-  if (key === 'org_name') return 'Organization Name';
-  if (key === 'person_name') return 'Contact Name';
-  if (key === 'next_activity_date') return 'Next Activity Date';
-  if (key === 'next_activity_time') return 'Next Activity Time';
-  if (key === 'next_activity_id') return 'Next Activity ID';
-  if (key === 'last_activity_id') return 'Last Activity ID';
-  if (key === 'last_activity_date') return 'Last Activity Date';
-  
-  // Default formatting
+
+  // 5. Fallback: Basic Formatting
   return formatBasicName(key);
 }
 
@@ -179,10 +152,10 @@ function formatColumnName(name) {
  * @param {string} hashId - The hash ID of the custom field
  * @return {string} The formatted name of the custom field
  */
-function getCustomFieldNameFromCache(hashId) {
+function getCustomFieldNameFromCache(key) {
   if (typeof fieldDefinitionsCache.customFields !== 'undefined' && 
-      fieldDefinitionsCache.customFields[hashId]) {
-    return fieldDefinitionsCache.customFields[hashId];
+      fieldDefinitionsCache.customFields[key]) {
+    return fieldDefinitionsCache.customFields[key];
   }
   
   // If not in cache, use a generic name
@@ -804,220 +777,98 @@ function include(filename) {
 /**
  * Initializes the custom field definitions cache with field names from Pipedrive
  * @param {string} entityType - The entity type (deals, persons, etc.)
- * @return {Object} - The field definitions cache
+ * @return {Object} - The field definitions cache (stores raw field names)
  */
 function initializeCustomFieldsCache(entityType) {
   try {
-    if (!fieldDefinitionsCache.customFields) {
-      fieldDefinitionsCache.customFields = {};
+    // Initialize cache object if it doesn't exist
+    if (typeof fieldDefinitionsCache.rawNames === 'undefined') {
+      fieldDefinitionsCache.rawNames = {};
+      Logger.log('Initialized new rawNames cache.');
     }
     
-    // Get field definitions based on entity type
-    let fields = [];
-    
-    switch (entityType) {
-      case 'deals':
-      case ENTITY_TYPES.DEALS:
-        fields = getDealFields();
-        break;
-      case 'persons':
-      case ENTITY_TYPES.PERSONS:
-        fields = getPersonFields();
-        break;
-      case 'organizations':
-      case ENTITY_TYPES.ORGANIZATIONS:
-        fields = getOrganizationFields();
-        break;
-      case 'activities':
-      case ENTITY_TYPES.ACTIVITIES:
-        fields = getActivityFields();
-        break;
-      case 'leads':
-      case ENTITY_TYPES.LEADS:
-        fields = getLeadFields();
-        break;
-      case 'products':
-      case ENTITY_TYPES.PRODUCTS:
-        fields = getProductFields();
-        break;
-      default:
-        // Try to get fields for all entity types if not specified
-        fields = [
-          ...getDealFields(),
-          ...getPersonFields(),
-          ...getOrganizationFields(),
-          ...getActivityFields(),
-          ...getLeadFields(),
-          ...getProductFields()
-        ];
+    // Determine which fields to fetch based on entityType
+    let fieldsToFetch = [];
+    if (entityType) {
+      switch (entityType.toLowerCase()) {
+        case 'deals': fieldsToFetch.push(() => getDealFields(true)); break;
+        case 'persons': fieldsToFetch.push(() => getPersonFields(true)); break;
+        case 'organizations': fieldsToFetch.push(() => getOrganizationFields(true)); break;
+        case 'activities': fieldsToFetch.push(() => getActivityFields(true)); break;
+        case 'leads': fieldsToFetch.push(() => getLeadFields(true)); break;
+        case 'products': fieldsToFetch.push(() => getProductFields(true)); break;
+        default: Logger.log(`Unknown specific entity type for cache: ${entityType}`); break;
+      }
+    } else {
+      // If no entityType, fetch all (useful for initial load or general formatting)
+      Logger.log('No specific entity type, fetching fields for all types (forcing refresh).');
+      fieldsToFetch = [
+        () => getDealFields(true),
+        () => getPersonFields(true),
+        () => getOrganizationFields(true),
+        () => getActivityFields(true),
+        () => getLeadFields(true),
+        () => getProductFields(true)
+      ];
     }
     
-    Logger.log(`Processing ${fields.length} fields for entity type ${entityType} to build field cache`);
-    
-    // Process all fields including regular and custom fields
-    for (const field of fields) {
-      if (field.key && field.name) {
-        // Add entity type prefix for standard Pipedrive fields to avoid confusion
-        let displayName = field.name;
-        
-        // Add prefix for standard fields to better categorize them
-        if (!field.edit_flag && !(/[a-f0-9]{20,}/i.test(field.key))) {
-          const entityPrefix = getEntityPrefix(entityType);
-          if (!displayName.startsWith(entityPrefix)) {
-            displayName = `${entityPrefix} ${displayName}`;
-          }
-        }
-        
-        // Store both custom fields (hash IDs) and regular fields
-        fieldDefinitionsCache.customFields[field.key] = displayName;
-        
-        // Also handle field keys with hash IDs embedded in them
-        if (/[a-f0-9]{20,}/i.test(field.key)) {
-          // Extract the hash part
-          const hashMatch = field.key.match(/([a-f0-9]{20,})/i);
-          if (hashMatch && hashMatch[1]) {
-            const hashId = hashMatch[1];
-            fieldDefinitionsCache.customFields[hashId] = displayName;
-            
-            // Also add entries for address components
-            if (field.field_type === 'address') {
-              const addressComponents = [
-                '_formatted_address',
-                '_subpremise',
-                '_street_number',
-                '_route',
-                '_locality',
-                '_sublocality',
-                '_admin_area_level_1',
-                '_admin_area_level_2',
-                '_country',
-                '_postal_code'
-              ];
-              
-              // Add component-specific names
-              addressComponents.forEach(component => {
-                const componentKey = `${hashId}${component}`;
-                let componentName = '';
-                
-                switch (component) {
-                  case '_formatted_address':
-                    componentName = `${displayName} - Complete Address`;
-                    break;
-                  case '_subpremise':
-                    componentName = `${displayName} - Suite/Apt`;
-                    break;
-                  case '_street_number':
-                    componentName = `${displayName} - Street Number`;
-                    break;
-                  case '_route':
-                    componentName = `${displayName} - Street Name`;
-                    break;
-                  case '_locality':
-                    componentName = `${displayName} - City`;
-                    break;
-                  case '_sublocality':
-                    componentName = `${displayName} - District/Borough`;
-                    break;
-                  case '_admin_area_level_1':
-                    componentName = `${displayName} - State/Province`;
-                    break;
-                  case '_admin_area_level_2':
-                    componentName = `${displayName} - County`;
-                    break; 
-                  case '_country':
-                    componentName = `${displayName} - Country`;
-                    break;
-                  case '_postal_code':
-                    componentName = `${displayName} - ZIP/Postal Code`;
-                    break;
-                  default:
-                    componentName = `${displayName} - ${component.substring(1)}`;
-                }
-                
-                fieldDefinitionsCache.customFields[componentKey] = componentName;
-              });
+    let totalFieldsProcessed = 0;
+    fieldsToFetch.forEach(fetchFn => {
+      const fields = fetchFn();
+      totalFieldsProcessed += fields.length;
+      // Process fetched fields
+      for (const field of fields) {
+        if (field.key && field.name) {
+          // Store the RAW field name from Pipedrive API
+          fieldDefinitionsCache.rawNames[field.key] = field.name;
+          
+          // Also store the base name for custom fields under their HASH ID key
+          if (/[a-f0-9]{20,}/i.test(field.key)) {
+            const hashMatch = field.key.match(/([a-f0-9]{20,})/i);
+            if (hashMatch && hashMatch[1]) {
+              const hashId = hashMatch[1];
+              // Store the base name if we haven't already stored something for this hashId
+              // (This prevents component keys like HASHID_locality overwriting the base HASHID entry)
+              if (!fieldDefinitionsCache.rawNames[hashId]) {
+                 fieldDefinitionsCache.rawNames[hashId] = field.name;
+              }
             }
           }
         }
       }
-    }
+    });
     
-    // Also process embedded fields like org_id, person_id, etc.
-    const embeddedFields = {
-      'org_id': 'Organization',
-      'person_id': 'Contact',
-      'user_id': 'User',
-      'creator_user_id': 'Creator',
-      'owner_id': 'Owner'
-    };
+    Logger.log(`Processed ${totalFieldsProcessed} fields. Raw names cache size: ${Object.keys(fieldDefinitionsCache.rawNames).length}`);
     
-    for (const [key, name] of Object.entries(embeddedFields)) {
-      fieldDefinitionsCache.customFields[key] = name;
-      
-      // Add nested fields
-      const nestedFields = {
-        'name': `${name} Name`,
-        'email': `${name} Email`,
-        'phone': `${name} Phone`,
-        'address': `${name} Address`,
-        'active_flag': `${name} Active Status`
-      };
-      
-      for (const [nestedKey, nestedName] of Object.entries(nestedFields)) {
-        fieldDefinitionsCache.customFields[`${key}.${nestedKey}`] = nestedName;
-      }
-    }
-    
-    Logger.log(`Initialized custom fields cache with ${Object.keys(fieldDefinitionsCache.customFields).length} fields`);
-    
-    // Add some diagnostic logging
-    const sampleEntries = Object.entries(fieldDefinitionsCache.customFields).slice(0, 5);
-    Logger.log(`Sample field mappings: ${JSON.stringify(sampleEntries)}`);
-    
-    return fieldDefinitionsCache.customFields;
+    return fieldDefinitionsCache.rawNames; // Return the cache object
   } catch (e) {
-    Logger.log(`Error initializing custom fields cache: ${e.message}`);
-    Logger.log(`Error stack: ${e.stack}`);
-    return {};
+    Logger.log(`Error in initializeCustomFieldsCache: ${e.message}`);
+    Logger.log(`Stack: ${e.stack}`);
+    // Ensure cache object exists even on error
+    if (typeof fieldDefinitionsCache.rawNames === 'undefined') {
+       fieldDefinitionsCache.rawNames = {};
+    }
+    return fieldDefinitionsCache.rawNames;
   }
 }
 
 /**
- * Gets the entity prefix for better field categorization
- * @param {string} entityType - The entity type
- * @return {string} The entity prefix
+ * Gets a raw field name from the cache
+ * @param {string} key - The field key
+ * @return {string | null} The raw field name or null if not found
  */
-function getEntityPrefix(entityType) {
-  switch (entityType) {
-    case 'deals':
-    case ENTITY_TYPES.DEALS:
-      return 'Deal';
-    case 'persons':
-    case ENTITY_TYPES.PERSONS:
-      return 'Contact';
-    case 'organizations':
-    case ENTITY_TYPES.ORGANIZATIONS:
-      return 'Organization';
-    case 'activities':
-    case ENTITY_TYPES.ACTIVITIES:
-      return 'Activity';
-    case 'leads':
-    case ENTITY_TYPES.LEADS:
-      return 'Lead';
-    case 'products':
-    case ENTITY_TYPES.PRODUCTS:
-      return 'Product';
-    default:
-      return 'Pipedrive';
-  }
+function getRawFieldNameFromCache(key) {
+  // Handle potential case differences if keys are sometimes inconsistent
+  if (!fieldDefinitionsCache.rawNames) return null;
+  return fieldDefinitionsCache.rawNames[key] || fieldDefinitionsCache.rawNames[key.toLowerCase()] || null;
 }
 
 /**
- * Gets a formatted column name for use in the UI
- * This is a wrapper function for formatColumnName that can be called from the UI
+ * Gets the formatted column name for a given key
  * @param {string} key - The column key to format
  * @return {string} The formatted column name
  */
 function getFormattedColumnName(key) {
+  // Formatting logic now happens in formatColumnName, cache should be initialized beforehand.
   return formatColumnName(key);
-} 
+}

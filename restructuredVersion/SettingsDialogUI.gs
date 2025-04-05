@@ -2736,6 +2736,9 @@ function improveColumnNamesForUI(columns, entityType) {
   try {
     Logger.log(`Improving column names for ${columns.length} columns of type ${entityType}`);
     
+    // Ensure the cache is properly initialized first for the given entity type
+    initializeCustomFieldsCache(entityType);
+    
     // Process each column
     return columns.map(column => {
       // Skip if it already has a custom name set
@@ -2743,62 +2746,27 @@ function improveColumnNamesForUI(columns, entityType) {
         return column;
       }
       
-      // Use our formatColumnName function for consistent naming
+      // Rely entirely on formatColumnName for the correct name
       column.name = formatColumnName(column.key);
-      
-      // For hash-based custom fields, ensure we have helpful grouping
-      if (/[a-f0-9]{20,}/i.test(column.key)) {
-        // Make sure this field isn't duplicated with slightly different names
-        
-        // For address component fields, apply standardized names
-        if (column.key.includes('_subpremise')) {
-          column.name = `${column.name} - Suite/Apt`;
-        } else if (column.key.includes('_street_number')) {
-          column.name = `${column.name} - Street Number`;
-        } else if (column.key.includes('_route')) {
-          column.name = `${column.name} - Street Name`;
-        } else if (column.key.includes('_locality')) {
-          column.name = `${column.name} - City`;
-        } else if (column.key.includes('_sublocality')) {
-          column.name = `${column.name} - District`;
-        } else if (column.key.includes('_admin_area_level_1')) {
-          column.name = `${column.name} - State/Province`;
-        } else if (column.key.includes('_admin_area_level_2')) {
-          column.name = `${column.name} - County`;
-        } else if (column.key.includes('_country')) {
-          column.name = `${column.name} - Country`;
-        } else if (column.key.includes('_postal_code')) {
-          column.name = `${column.name} - ZIP/Postal`;
-        } else if (column.key.includes('_formatted_address')) {
-          column.name = `${column.name} - Full Address`;
-        }
-        
-        // For time fields
-        if (column.key.includes('_timezone_id')) {
-          column.name = `${column.name} - Timezone`;
-        } else if (column.key.includes('_until')) {
-          column.name = `${column.name} - End Time/Date`;
-        }
-        
-        // For currency fields
-        if (column.key.includes('_currency')) {
-          column.name = `${column.name} - Currency`;
-        }
-      }
       
       // For nested fields
       if (column.isNested) {
         // Update name to reflect parent relationship
         const parentKey = column.parentKey;
         
-        // Try to get the parent's formatted name
-        let parentName = '';
-        
-        // Find parent in columns
-        const parent = columns.find(col => col.key === parentKey);
-        if (parent && parent.name) {
-          parentName = parent.name;
-          column.name = `${parentName} - ${column.name}`;
+        if (parentKey) { // Check if parentKey is valid
+          let parentName = '';
+          
+          // Get parent name using formatColumnName to ensure consistency
+          parentName = formatColumnName(parentKey);
+          
+          // Avoid redundant parent name prefixes if already present
+          if (!column.name.startsWith(parentName)) {
+            column.name = `${parentName} - ${column.name}`;
+          }
+        } else {
+          // If parent key exists but we couldn't format it, use a fallback
+          column.name = `${formatBasicName(parentKey)} - ${column.name}`;
         }
       }
       
