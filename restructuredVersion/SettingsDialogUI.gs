@@ -1790,6 +1790,8 @@ function saveColumnPreferences(entityType, sheetName, columns) {
     
     // Make sure columns includes all necessary data
     const columnsToSave = columns.map(col => {
+      // DEBUG: Log each column object being mapped
+      // Logger.log(`SAVE_DEBUG: Mapping column: key=${col.key}, name=${col.name}, customName=${col.customName}`);
       return {
         key: col.key,
         name: col.name || formatColumnName(col.key),
@@ -1798,6 +1800,12 @@ function saveColumnPreferences(entityType, sheetName, columns) {
         parentKey: col.parentKey
       };
     });
+
+    // DEBUG: Log the final array being prepared for saving
+    Logger.log(`SAVE_DEBUG: Final columnsToSave array prepared (first 5): ${JSON.stringify(columnsToSave.slice(0,5))}`);
+    if (columnsToSave.length > 0) {
+        Logger.log(`SAVE_DEBUG: First column in columnsToSave: key=${columnsToSave[0].key}, name=${columnsToSave[0].name}, customName=${columnsToSave[0].customName}`);
+    }
     
     // Generate key for saving the preferences
     const userEmail = Session.getEffectiveUser().getEmail();

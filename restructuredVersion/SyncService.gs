@@ -352,6 +352,9 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
       return formatColumnName(column.key || column);
     });
     
+    // DEBUG: Log the headers created directly from column preferences
+    Logger.log(`DEBUG: Initial headers created from preferences (before makeHeadersUnique): ${JSON.stringify(headers)}`);
+    
     // Use the makeHeadersUnique function to ensure header uniqueness
     const uniqueHeaders = makeHeadersUnique(headers, columns);
     
@@ -414,6 +417,9 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
     scriptProperties.setProperty(`LAST_SYNC_${sheetName}`, timestamp);
     
     Logger.log(`Successfully synced ${items.length} items from Pipedrive to sheet "${sheetName}"`);
+    
+    // Mark Phase 3 as completed
+    updateSyncStatus('3', 'completed', 'Data successfully written to sheet', 100);
     
     setSyncRunning(false);
     
@@ -545,7 +551,7 @@ function writeDataToSheet(items, options) {
         
         // Add Sync Status cell for two-way sync
         if (twoWaySyncEnabled) {
-          rowData.push("In Sync"); // Default status
+          rowData.push("Synced"); // Default status
         }
         
         // Add the row to our data array
@@ -3966,86 +3972,68 @@ function validateIdField(data, fieldName) {
  */
 SyncService.getTeamAwareColumnPreferences = function(entityType, sheetName) {
   try {
-    // Get from script properties directly since UI module might not be available
-    const scriptProperties = PropertiesService.getScriptProperties();
+    Logger.log(`SYNC_DEBUG: Getting team-aware preferences for ${entityType} in ${sheetName}`);
+    const properties = PropertiesService.getScriptProperties();
     const userEmail = Session.getEffectiveUser().getEmail();
-    
-    // Try to get user's team ID first for team-shared preferences
-    let teamKey = null;
     let columnsJson = null;
-    
+    let usedKey = '';
+
+    // 1. Try Team Key
     try {
-      // Check if the getUserTeam function is available
-      if (typeof getUserTeam === 'function') {
-        // Get the user's team information
-        const userTeam = getUserTeam(userEmail);
-        if (userTeam && userTeam.teamId) {
-          // Check for team-based preferences first
-          teamKey = `COLUMNS_${sheetName}_${entityType}_TEAM_${userTeam.teamId}`;
-          Logger.log(`Looking for team preferences with key: ${teamKey}`);
-          
-          columnsJson = scriptProperties.getProperty(teamKey);
-          if (columnsJson) {
-            Logger.log(`Found team-based preferences for ${sheetName} (${columnsJson.length} chars)`);
-          }
+      const userTeam = getUserTeam(userEmail); // Assumes getUserTeam is available
+      if (userTeam && userTeam.teamId) {
+        const teamKey = `COLUMNS_${sheetName}_${entityType}_TEAM_${userTeam.teamId}`;
+        Logger.log(`SYNC_DEBUG: Trying team key: ${teamKey}`);
+        columnsJson = properties.getProperty(teamKey);
+        if (columnsJson) {
+          Logger.log(`SYNC_DEBUG: Found preferences using team key.`);
+          usedKey = teamKey;
+        } else {
+          Logger.log(`SYNC_DEBUG: No preferences found with team key.`);
         }
+      } else {
+        Logger.log(`SYNC_DEBUG: User ${userEmail} not in a team.`);
       }
     } catch (teamError) {
-      Logger.log(`Error getting team info: ${teamError.message}, continuing with other keys`);
+      Logger.log(`SYNC_DEBUG: Error checking team: ${teamError.message}`);
     }
-    
-    // If no team preferences, try user-specific preferences
+
+    // 2. Try Personal Key if Team Key failed
     if (!columnsJson) {
-      const userKey = `COLUMNS_${sheetName}_${entityType}_${userEmail}`;
-      Logger.log(`Looking for user preferences with key: ${userKey}`);
-      columnsJson = scriptProperties.getProperty(userKey);
-      
+      const personalKey = `COLUMNS_${sheetName}_${entityType}_${userEmail}`;
+      Logger.log(`SYNC_DEBUG: Trying personal key: ${personalKey}`);
+      columnsJson = properties.getProperty(personalKey);
       if (columnsJson) {
-        Logger.log(`Found user-specific preferences for ${sheetName} (${columnsJson.length} chars)`);
+        Logger.log(`SYNC_DEBUG: Found preferences using personal key.`);
+        usedKey = personalKey;
+      } else {
+        Logger.log(`SYNC_DEBUG: No preferences found with personal key.`);
       }
     }
-    
-    // If neither team nor user preferences found, try old format
-    if (!columnsJson) {
-      const columnSettingsKey = `COLUMNS_${sheetName}_${entityType}`;
-      Logger.log(`Looking for legacy preferences with key: ${columnSettingsKey}`);
-      columnsJson = scriptProperties.getProperty(columnSettingsKey);
-      
-      if (columnsJson) {
-        Logger.log(`Found legacy preferences for ${sheetName} (${columnsJson.length} chars)`);
-      }
-    }
-    
+
+    // 3. Log raw JSON and attempt parse
     if (columnsJson) {
+      Logger.log(`SYNC_DEBUG: Raw JSON retrieved with key "${usedKey}": ${columnsJson.substring(0, 500)}...`);
       try {
-        const parsedColumns = JSON.parse(columnsJson);
-        Logger.log(`Retrieved ${parsedColumns.length} column preferences`);
-        
-        // IMPORTANT: Update column names with improved formatting
-        const updatedColumns = parsedColumns.map(column => {
-          // Only update name if no custom name has been set
-          if (!column.customName) {
-            // Get improved display name using the enhanced formatColumnName function
-            column.name = formatColumnName(column.key);
-          }
-          return column;
-        });
-        
-        // Log first few columns for debugging
-        if (updatedColumns.length > 0) {
-          Logger.log(`First 3 columns: ${JSON.stringify(updatedColumns.slice(0, 3))}`);
+        const savedColumns = JSON.parse(columnsJson);
+        Logger.log(`SYNC_DEBUG: Parsed ${savedColumns.length} columns. First 3: ${JSON.stringify(savedColumns.slice(0, 3))}`);
+        // Log details of the first column to check for customName
+        if (savedColumns.length > 0) {
+             Logger.log(`SYNC_DEBUG: First column details: key=${savedColumns[0].key}, name=${savedColumns[0].name}, customName=${savedColumns[0].customName}`);
         }
-        
-        return updatedColumns;
+        return savedColumns;
       } catch (parseError) {
-        Logger.log(`Error parsing column preferences: ${parseError.message}`);
+        Logger.log(`SYNC_DEBUG: Error parsing saved columns JSON: ${parseError.message}`);
+        return []; // Return empty on parse error
       }
+    } else {
+      Logger.log(`SYNC_DEBUG: No preferences JSON found to parse.`);
+      return []; // Return empty if no JSON found
     }
-    
-    return [];
-  } catch (e) {
-    Logger.log(`Error in SyncService.getTeamAwareColumnPreferences: ${e.message}`);
-    return [];
+
+  } catch (error) {
+    Logger.log(`Error in getTeamAwareColumnPreferences: ${error.message}`);
+    return []; // Return empty on general error
   }
 };
 
