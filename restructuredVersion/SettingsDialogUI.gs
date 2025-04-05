@@ -2128,7 +2128,39 @@ function getColumnsDataForEntity(entityType, sheetName) {
     // Get sample data to extract available columns
     try {
       // Initialize the custom fields cache to get proper field names
-      initializeCustomFieldsCache(entityType);
+      const customFieldCache = initializeCustomFieldsCache(entityType);
+      Logger.log(`Initialized custom field cache with ${Object.keys(customFieldCache || {}).length} fields`);
+      
+      // Get field definitions based on entity type to get proper field names
+      let fieldDefinitions = [];
+      switch (entityType) {
+        case ENTITY_TYPES.DEALS:
+          fieldDefinitions = getDealFields();
+          break;
+        case ENTITY_TYPES.PERSONS:
+          fieldDefinitions = getPersonFields();
+          break;
+        case ENTITY_TYPES.ORGANIZATIONS:
+          fieldDefinitions = getOrganizationFields();
+          break;
+        case ENTITY_TYPES.ACTIVITIES:
+          fieldDefinitions = getActivityFields();
+          break;
+        case ENTITY_TYPES.LEADS:
+          fieldDefinitions = getLeadFields();
+          break;
+        case ENTITY_TYPES.PRODUCTS:
+          fieldDefinitions = getProductFields();
+          break;
+      }
+      
+      // Map field keys to their friendly names
+      const fieldNameMap = {};
+      fieldDefinitions.forEach(field => {
+        if (field.key && field.name) {
+          fieldNameMap[field.key] = field.name;
+        }
+      });
       
       // Get sample data based on filter
       const filterId = PropertiesService.getScriptProperties().getProperty(`FILTER_ID_${sheetName}`) || '';
@@ -2164,6 +2196,22 @@ function getColumnsDataForEntity(entityType, sheetName) {
         Logger.log(`No sample data found for ${entityType}, using fallback columns`);
         availableColumns = getFallbackColumns(entityType);
       }
+      
+      // IMPORTANT: Apply our improved column naming algorithm
+      Logger.log(`Improving column names for ${availableColumns.length} available columns...`);
+      availableColumns = improveColumnNamesForUI(availableColumns, entityType);
+      
+      // Also apply improved naming to selected columns
+      if (selectedColumns && selectedColumns.length > 0) {
+        Logger.log(`Improving column names for ${selectedColumns.length} selected columns...`);
+        selectedColumns.forEach(column => {
+          // Only update if no custom name is set
+          if (!column.customName) {
+            column.name = formatColumnName(column.key);
+          }
+        });
+      }
+      
     } catch (e) {
       Logger.log(`Error getting sample data: ${e.message}`);
       // Provide fallback columns if there's an error
@@ -2190,65 +2238,339 @@ function extractColumnsFromData(data, entityType) {
   try {
     const columns = [];
     const processedKeys = new Set();
+    const processedAddressFields = new Set(); // To prevent duplicate address components
     
     // Always include the ID column first
     columns.push({
       key: 'id',
-      name: 'ID',
+      name: 'Pipedrive ID',
       isNested: false,
       required: true,
       readOnly: false
     });
     processedKeys.add('id');
     
-    // Process all fields in the data object
-    function processObject(obj, prefix = '', parentKey = '') {
-      for (const key in obj) {
-        if (typeof obj[key] === 'object' && obj[key] !== null) {
-          // Nested object
-          const nestedPrefix = prefix ? `${prefix}.${key}` : key;
-          
-          // For certain objects, we want to add the object itself as a column
-          if (key === 'owner' || key === 'creator' || key === 'person' || 
-              key === 'org' || key === 'organization' || key === 'user') {
-                
-            const fullKey = prefix ? `${prefix}.${key}` : key;
+    // Get field definitions for proper naming
+    let fieldDefinitions = [];
+    switch (entityType) {
+      case ENTITY_TYPES.DEALS:
+        fieldDefinitions = getDealFields();
+        break;
+      case ENTITY_TYPES.PERSONS:
+        fieldDefinitions = getPersonFields();
+        break;
+      case ENTITY_TYPES.ORGANIZATIONS:
+        fieldDefinitions = getOrganizationFields();
+        break;
+      case ENTITY_TYPES.ACTIVITIES:
+        fieldDefinitions = getActivityFields();
+        break;
+      case ENTITY_TYPES.LEADS:
+        fieldDefinitions = getLeadFields();
+        break;
+      case ENTITY_TYPES.PRODUCTS:
+        fieldDefinitions = getProductFields();
+        break;
+    }
+    
+    // Map field keys to their friendly names
+    const fieldNameMap = {};
+    fieldDefinitions.forEach(field => {
+      if (field.key && field.name) {
+        fieldNameMap[field.key] = field.name;
+      }
+    });
+    
+    // Function to check if a key is a base hash key (without address components)
+    function isBaseHashKey(key) {
+      return /^[a-f0-9]{20,}$/i.test(key);
+    }
+    
+    // Function to check if a key is a hash key with a component
+    function isHashWithComponent(key) {
+      return /[a-f0-9]{20,}_[a-z_]+/i.test(key);
+    }
+    
+    // Function to extract field name from field definitions if available
+    function getFieldName(key) {
+      // For hash-based custom fields, try to find a nicely formatted name
+      if (/[a-f0-9]{20,}/i.test(key)) {
+        const hashMatch = key.match(/([a-f0-9]{20,})/i);
+        if (hashMatch && hashMatch[1]) {
+          // Look in the custom fields cache for this hash ID
+          if (typeof fieldDefinitionsCache.customFields !== 'undefined' && 
+              fieldDefinitionsCache.customFields[hashMatch[1]]) {
+            const baseName = fieldDefinitionsCache.customFields[hashMatch[1]];
             
-            if (!processedKeys.has(fullKey)) {
-              columns.push({
-                key: fullKey,
-                name: formatFieldName(key),
-                isNested: !!prefix,
-                parentKey: prefix || undefined,
-                readOnly: isReadOnlyField(fullKey, entityType)
+            // For components, add descriptive suffix
+            if (key.includes('_subpremise')) return `${baseName} - Suite/Apt`;
+            if (key.includes('_street_number')) return `${baseName} - Street Number`;
+            if (key.includes('_route')) return `${baseName} - Street Name`;
+            if (key.includes('_locality')) return `${baseName} - City`;
+            if (key.includes('_sublocality')) return `${baseName} - District`;
+            if (key.includes('_admin_area_level_1')) return `${baseName} - State/Province`;
+            if (key.includes('_admin_area_level_2')) return `${baseName} - County`;
+            if (key.includes('_country')) return `${baseName} - Country`;
+            if (key.includes('_postal_code')) return `${baseName} - ZIP/Postal`;
+            if (key.includes('_formatted_address')) return `${baseName} - Full Address`;
+            if (key.includes('_timezone_id')) return `${baseName} - Timezone`;
+            if (key.includes('_until')) return `${baseName} - End Time/Date`;
+            if (key.includes('_currency')) return `${baseName} - Currency`;
+            
+            // Base key case
+            return baseName;
+          }
+        }
+      }
+      
+      // For nested fields like person_id.name
+      if (key.includes('.')) {
+        const parts = key.split('.');
+        if (parts.length === 2) {
+          const root = parts[0];
+          const property = parts[1];
+          
+          // Format based on patterns
+          if (root === 'person_id') return `Contact - ${formatBasicName(property)}`;
+          if (root === 'org_id') return `Organization - ${formatBasicName(property)}`;
+          if (root === 'user_id') return `User - ${formatBasicName(property)}`;
+          if (root === 'creator_user_id') return `Creator - ${formatBasicName(property)}`;
+        }
+      }
+      
+      // Check field name mappings from field definitions
+      if (fieldNameMap[key]) {
+        return fieldNameMap[key];
+      }
+      
+      // Default to formatted column name
+      return formatColumnName(key);
+    }
+    
+    // First process all regular fields (excluding address components and nested objects)
+    for (const key in data) {
+      // Skip already processed keys
+      if (processedKeys.has(key)) continue;
+      
+      // Skip fields with dots
+      if (key.includes('.')) continue;
+      
+      // Check if it's a hash key with components (like address parts)
+      if (isHashWithComponent(key)) {
+        // Group address components for processing later
+        if (key.includes('_street_number') || 
+            key.includes('_route') || 
+            key.includes('_locality') || 
+            key.includes('_sublocality') ||
+            key.includes('_admin_area') ||
+            key.includes('_country') ||
+            key.includes('_postal_code') ||
+            key.includes('_formatted_address') ||
+            key.includes('_subpremise')) {
+          
+          // Extract the base hash ID
+          const hashMatch = key.match(/([a-f0-9]{20,})/i);
+          if (hashMatch && hashMatch[1]) {
+            const baseHashId = hashMatch[1];
+            
+            // Only process if we haven't processed this hash ID's address components yet
+            if (!processedAddressFields.has(baseHashId)) {
+              processedAddressFields.add(baseHashId);
+              
+              // First add the main address field
+              if (!processedKeys.has(baseHashId)) {
+                columns.push({
+                  key: baseHashId,
+                  name: getFieldName(baseHashId),
+                  isNested: false,
+                  readOnly: false
+                });
+                processedKeys.add(baseHashId);
+              }
+              
+              // Add each component separately
+              const addressComponents = [
+                '_subpremise',
+                '_street_number',
+                '_route',
+                '_locality',
+                '_sublocality',
+                '_admin_area_level_1',
+                '_admin_area_level_2',
+                '_country',
+                '_postal_code',
+                '_formatted_address'
+              ];
+              
+              for (const component of addressComponents) {
+                const fullKey = `${baseHashId}${component}`;
+                
+                // Only add if this component exists in the data
+                if (fullKey in data) {
+                  columns.push({
+                    key: fullKey,
+                    name: getFieldName(fullKey),
+                    isNested: false,
+                    readOnly: false
+                  });
+                  processedKeys.add(fullKey);
+                }
+              }
+            }
+            continue;
+          }
+        }
+        
+        // Other component fields (currency, timezone, etc.)
+        if (!processedKeys.has(key)) {
+          columns.push({
+            key: key,
+            name: getFieldName(key),
+            isNested: false,
+            readOnly: false
+          });
+          processedKeys.add(key);
+        }
+        continue;
+      }
+      
+      // Process basic hash custom fields (without components)
+      if (isBaseHashKey(key) && !processedKeys.has(key)) {
+        columns.push({
+          key: key,
+          name: getFieldName(key),
+          isNested: false,
+          readOnly: false
+        });
+        processedKeys.add(key);
+        continue;
+      }
+      
+      // Process regular fields
+      if (!processedKeys.has(key)) {
+        // Skip fields we don't want to expose
+        if (['name',
+             'add_time',
+             'update_time', 
+             'id'].includes(key)) {
+          if (processedKeys.has(key)) {
+            continue;
+          }
+        }
+        
+        // For objects, they'll be processed in the recursive pass below
+        if (typeof data[key] === 'object' && data[key] !== null) {
+          continue;
+        }
+        
+        // Add the field
+        columns.push({
+          key: key,
+          name: getFieldName(key),
+          isNested: false,
+          readOnly: false
+        });
+        processedKeys.add(key);
+      }
+    }
+    
+    // Now process nested objects
+    for (const key in data) {
+      const value = data[key];
+      
+      // Only process objects
+      if (typeof value === 'object' && value !== null) {
+        // Process object fields differently depending on type
+        if (Array.isArray(value)) {
+          // For arrays of objects with standard structure (email, phone, etc.)
+          if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
+            // For email/phone arrays from person_id
+            if ((key === 'email' || key === 'phone') && value[0].label && value[0].value) {
+              // For email array, add a field for each type (work, home, etc.)
+              value.forEach((item, index) => {
+                if (item.label && item.value) {
+                  const itemKey = `${key}.${index}`;
+                  // Also add nested fields for all properties
+                  for (const prop in item) {
+                    const nestedKey = `${itemKey}.${prop}`;
+                    if (!processedKeys.has(nestedKey)) {
+                      columns.push({
+                        key: nestedKey,
+                        name: `${formatBasicName(key)} ${formatBasicName(prop)} (${index})`,
+                        isNested: true,
+                        parentKey: key,
+                        readOnly: false
+                      });
+                      processedKeys.add(nestedKey);
+                    }
+                  }
+                }
               });
-              processedKeys.add(fullKey);
             }
           }
-          
-          // Process the nested object
-          processObject(obj[key], nestedPrefix, prefix || key);
-        } else {
-          // Regular field
-          const fullKey = prefix ? `${prefix}.${key}` : key;
-          
-          if (!processedKeys.has(fullKey)) {
-            columns.push({
-              key: fullKey,
-              name: formatFieldName(key),
-              isNested: !!prefix,
-              parentKey: prefix || undefined,
-              readOnly: isReadOnlyField(fullKey, entityType)
-            });
-            processedKeys.add(fullKey);
+        } else if (value !== null) {
+          // Regular nested object
+          // For standard fields with objects like org_id, person_id, user_id
+          if (['org_id', 'person_id', 'user_id', 'creator_user_id', 'owner_id'].includes(key)) {
+            // First add the main object field
+            if (!processedKeys.has(key)) {
+              columns.push({
+                key: key,
+                name: getFieldName(key),
+                isNested: false,
+                readOnly: false
+              });
+              processedKeys.add(key);
+            }
+            
+            // Add all properties as nested fields
+            for (const prop in value) {
+              const nestedKey = `${key}.${prop}`;
+              if (!processedKeys.has(nestedKey)) {
+                columns.push({
+                  key: nestedKey,
+                  name: getFieldName(nestedKey),
+                  isNested: true,
+                  parentKey: key,
+                  readOnly: false
+                });
+                processedKeys.add(nestedKey);
+              }
+            }
+          }
+          // For custom object fields (hash-based)
+          else if (isBaseHashKey(key)) {
+            // First add the main object field
+            if (!processedKeys.has(key)) {
+              columns.push({
+                key: key,
+                name: getFieldName(key),
+                isNested: false,
+                readOnly: false
+              });
+              processedKeys.add(key);
+            }
+            
+            // Add all properties as nested fields
+            for (const prop in value) {
+              const nestedKey = `${key}.${prop}`;
+              if (!processedKeys.has(nestedKey)) {
+                columns.push({
+                  key: nestedKey,
+                  name: `${getFieldName(key)} - ${formatBasicName(prop)}`,
+                  isNested: true,
+                  parentKey: key,
+                  readOnly: false
+                });
+                processedKeys.add(nestedKey);
+              }
+            }
           }
         }
       }
     }
     
-    processObject(data);
-    
-    // Sort columns: ID first, then non-nested, then nested alphabetically by parent
+    // Sort columns logically
     columns.sort((a, b) => {
       if (a.key === 'id') return -1;
       if (b.key === 'id') return 1;
@@ -2265,6 +2587,7 @@ function extractColumnsFromData(data, entityType) {
       return a.name.localeCompare(b.name);
     });
     
+    Logger.log(`Extracted ${columns.length} columns for entity type ${entityType}`);
     return columns;
   } catch (e) {
     Logger.log(`Error extracting columns: ${e.message}`);
@@ -2401,4 +2724,89 @@ function isReadOnlyField(key, entityType) {
  */
 function getFormattedColumnName(key) {
   return formatColumnName(key);
+}
+
+/**
+ * Improves column names for UI display
+ * @param {Array} columns - Array of column objects
+ * @param {string} entityType - Entity type for context
+ * @return {Array} Array of columns with improved names
+ */
+function improveColumnNamesForUI(columns, entityType) {
+  try {
+    Logger.log(`Improving column names for ${columns.length} columns of type ${entityType}`);
+    
+    // Process each column
+    return columns.map(column => {
+      // Skip if it already has a custom name set
+      if (column.customName) {
+        return column;
+      }
+      
+      // Use our formatColumnName function for consistent naming
+      column.name = formatColumnName(column.key);
+      
+      // For hash-based custom fields, ensure we have helpful grouping
+      if (/[a-f0-9]{20,}/i.test(column.key)) {
+        // Make sure this field isn't duplicated with slightly different names
+        
+        // For address component fields, apply standardized names
+        if (column.key.includes('_subpremise')) {
+          column.name = `${column.name} - Suite/Apt`;
+        } else if (column.key.includes('_street_number')) {
+          column.name = `${column.name} - Street Number`;
+        } else if (column.key.includes('_route')) {
+          column.name = `${column.name} - Street Name`;
+        } else if (column.key.includes('_locality')) {
+          column.name = `${column.name} - City`;
+        } else if (column.key.includes('_sublocality')) {
+          column.name = `${column.name} - District`;
+        } else if (column.key.includes('_admin_area_level_1')) {
+          column.name = `${column.name} - State/Province`;
+        } else if (column.key.includes('_admin_area_level_2')) {
+          column.name = `${column.name} - County`;
+        } else if (column.key.includes('_country')) {
+          column.name = `${column.name} - Country`;
+        } else if (column.key.includes('_postal_code')) {
+          column.name = `${column.name} - ZIP/Postal`;
+        } else if (column.key.includes('_formatted_address')) {
+          column.name = `${column.name} - Full Address`;
+        }
+        
+        // For time fields
+        if (column.key.includes('_timezone_id')) {
+          column.name = `${column.name} - Timezone`;
+        } else if (column.key.includes('_until')) {
+          column.name = `${column.name} - End Time/Date`;
+        }
+        
+        // For currency fields
+        if (column.key.includes('_currency')) {
+          column.name = `${column.name} - Currency`;
+        }
+      }
+      
+      // For nested fields
+      if (column.isNested) {
+        // Update name to reflect parent relationship
+        const parentKey = column.parentKey;
+        
+        // Try to get the parent's formatted name
+        let parentName = '';
+        
+        // Find parent in columns
+        const parent = columns.find(col => col.key === parentKey);
+        if (parent && parent.name) {
+          parentName = parent.name;
+          column.name = `${parentName} - ${column.name}`;
+        }
+      }
+      
+      return column;
+    });
+  } catch (e) {
+    Logger.log(`Error improving column names: ${e.message}`);
+    // Return original columns if there's an error
+    return columns;
+  }
 }

@@ -344,82 +344,16 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
         return column.customName;
       }
       
-      if (typeof column === 'object' && column.key) {
-        // Special handling for ID columns
-        if (column.key === 'id') {
-          // Get the entity type name
-          const entityNameMap = {
-            [ENTITY_TYPES.DEALS]: "Deal",
-            [ENTITY_TYPES.PERSONS]: "Person",
-            [ENTITY_TYPES.ORGANIZATIONS]: "Organization", 
-            [ENTITY_TYPES.ACTIVITIES]: "Activity",
-            [ENTITY_TYPES.LEADS]: "Lead",
-            [ENTITY_TYPES.PRODUCTS]: "Product"
-          };
-          
-          const entityName = entityNameMap[entityType] || formatColumnName(entityType);
-          return `Pipedrive ${entityName} ID`;
-        }
-        
-        // Special handling for email and phone fields
-        if (typeof column.key === 'string' && column.key.includes('.')) {
-          const parts = column.key.split('.');
-          
-          // Format email.work as "Email Work" and phone.mobile as "Phone Mobile"
-          if ((parts[0] === 'email' || parts[0] === 'phone') && parts.length > 1) {
-            const fieldType = formatColumnName(parts[0]);  // "Email" or "Phone"
-            
-            // Handle array index notation (e.g., email.0.value)
-            if (parts[1] === '0' && parts.length > 2 && parts[2] === 'value') {
-              return `${fieldType} Other`;
-            }
-            
-            // Handle specific types (work, home, etc.)
-            if (parts[1].toLowerCase() !== 'primary') {
-              const labelType = formatColumnName(parts[1]);   // "Work", "Home", etc.
-              return `${fieldType} ${labelType}`;
-            }
-          }
-        }
-        
-        // For base email/phone fields, use capitalized name with "(Primary)"
-        if (column.key === 'email' || column.key === 'phone') {
-          const fieldType = formatColumnName(column.key);
-          return `${fieldType} (Primary)`;
-        }
-        
-        // Use the name if provided for other fields
-        if (column.name) {
-          return column.name;
-        }
-        
-        // Default to formatted key
-        return formatColumnName(column.key);
+      if (typeof column === 'object' && column.name) {
+        return column.name;
       }
       
-      // Fall back to string value
-      return typeof column === 'string' ? formatColumnName(column) : String(column);
+      // Default to formatted key
+      return formatColumnName(column.key || column);
     });
     
-    // Ensure header names are unique
-    const uniqueHeaders = [];
-    const seenHeaders = new Map(); // Use Map to track count of each header
-    
-    headers.forEach(header => {
-      if (seenHeaders.has(header)) {
-        // Skip duplicate primary email/phone headers
-        if (header.includes('(Primary)')) {
-          return;
-        }
-        
-        const count = seenHeaders.get(header);
-        seenHeaders.set(header, count + 1);
-        uniqueHeaders.push(`${header} (${count + 1})`);
-      } else {
-        seenHeaders.set(header, 1);
-        uniqueHeaders.push(header);
-      }
-    });
+    // Use the makeHeadersUnique function to ensure header uniqueness
+    const uniqueHeaders = makeHeadersUnique(headers, columns);
     
     // Filter out any empty or undefined headers
     const finalHeaders = uniqueHeaders.filter(header => header && header.trim());
@@ -553,340 +487,221 @@ function writeDataToSheet(items, options) {
     const currentSyncColumn = scriptProperties.getProperty(twoWaySyncTrackingColumnKey);
     
     // Store previous position if we have a current one
-    if (twoWaySyncEnabled && currentSyncColumn) {
+    if (currentSyncColumn) {
       scriptProperties.setProperty(previousSyncColumnKey, currentSyncColumn);
-      Logger.log(`Stored previous sync column position: ${currentSyncColumn}`);
     }
     
-    // For preservation of status data - key is entity ID, value is status
-    let statusByIdMap = new Map();
-    let statusColumnIndex = -1;
+    // Add Sync Status column if two-way sync is enabled
+    let syncStatusColumn = -1;
     
-    // FIRST: Write ALL Pipedrive headers to the sheet (before adding Sync Status)
-    // This ensures ALL column headers from Pipedrive are properly set
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
-    
-    // NOW: If two-way sync is enabled, handle Sync Status column
     if (twoWaySyncEnabled) {
-      // The Sync Status will be added AFTER all Pipedrive columns
-      const statusHeader = 'Sync Status';
-      const lastColumn = headers.length;
+      headers.push("Sync Status");
+      syncStatusColumn = headers.length;
+      Logger.log(`Added Sync Status column at position: ${syncStatusColumn}`);
       
-      // Add Sync Status column at the end
-      statusColumnIndex = lastColumn;
-      sheet.getRange(1, lastColumn + 1).setValue(statusHeader);
-      sheet.getRange(1, lastColumn + 1).setFontWeight('bold');
+      // Store the new position for future reference
+      const colLetter = columnToLetter(syncStatusColumn);
+      scriptProperties.setProperty(twoWaySyncTrackingColumnKey, colLetter);
+      Logger.log(`Set Sync Status column tracking to position ${colLetter}`);
+    }
+    
+    // Ensure all headers are unique and properly descriptive
+    const uniqueHeaders = makeHeadersUnique(headers, options.columns);
+    
+    // If we have data and headers, write them to the sheet
+    if (items.length > 0 && uniqueHeaders.length > 0) {
+      // First, write the header row (bold)
+      sheet.getRange(1, 1, 1, uniqueHeaders.length).setValues([uniqueHeaders]);
+      sheet.getRange(1, 1, 1, uniqueHeaders.length).setFontWeight("bold");
       
-      Logger.log(`Added Sync Status column at position: ${lastColumn + 1}`);
+      // Format the headers nicely
+      sheet.setFrozenRows(1);
       
-      // Store status column position for tracking
-      const statusColumnLetter = columnToLetter(lastColumn + 1);
-      scriptProperties.setProperty(twoWaySyncTrackingColumnKey, statusColumnLetter);
-      Logger.log(`Set Sync Status column tracking to position ${statusColumnLetter}`);
+      // Prepare the data rows
+      const dataRows = [];
       
-      // Clean up any previous Sync Status columns
-      if (previousColumnPosition && previousColumnPosition !== statusColumnLetter) {
-        cleanupPreviousSyncStatusColumn(sheet, statusColumnLetter);
+      // Process each item
+      for (const item of items) {
+        const rowData = [];
+        
+        // Get data for each column
+        for (let i = 0; i < options.columns.length; i++) {
+          const column = options.columns[i];
+          let key, value;
+          
+          if (typeof column === 'object' && column.key) {
+            key = column.key;
+          } else {
+            key = column;
+          }
+          
+          // Get the value using our helper function
+          value = getValueByPath(item, key);
+          
+          // Format the value if needed
+          const formattedValue = formatValue(value, key, options.optionMappings);
+          rowData.push(formattedValue);
+        }
+        
+        // Add Sync Status cell for two-way sync
+        if (twoWaySyncEnabled) {
+          rowData.push("In Sync"); // Default status
+        }
+        
+        // Add the row to our data array
+        dataRows.push(rowData);
       }
       
-      // Get current status values to preserve them
+      // Write all data at once (much faster than row by row)
+      if (dataRows.length > 0) {
+        sheet.getRange(2, 1, dataRows.length, uniqueHeaders.length).setValues(dataRows);
+      }
+      
+      // Auto-resize columns for better visibility
       try {
-        // Get stored status data for this sheet
-        const statusDataKey = `SYNC_STATUS_DATA_${sheetName}`;
-        const storedStatusData = scriptProperties.getProperty(statusDataKey);
+        sheet.autoResizeColumns(1, uniqueHeaders.length);
+      } catch (e) {
+        Logger.log(`Error auto-resizing columns: ${e.message}`);
+      }
+    }
+    
+    // Load saved Sync Status values if needed
+    if (twoWaySyncEnabled && items.length > 0) {
+      try {
+        // Get the saved sync status data
+        const savedStatusData = getSavedSyncStatusData(sheetName);
         
-        if (storedStatusData) {
-          try {
-            const parsedStatus = JSON.parse(storedStatusData);
+        if (savedStatusData && Object.keys(savedStatusData).length > 0) {
+          Logger.log(`Loaded ${Object.keys(savedStatusData).length} stored status values`);
+          
+          // Get the ID column (always first column)
+          const idColumnIdx = 0;
+          
+          // Get the sync status column
+          const statusColumnIdx = syncStatusColumn - 1;
+          
+          // Get all current data
+          const dataRange = sheet.getRange(2, 1, items.length, uniqueHeaders.length);
+          const currentValues = dataRange.getValues();
+          
+          // Track which values were updated
+          let updateCount = 0;
+          let statusCellsToUpdate = [];
+          
+          // Loop through all rows
+          for (let i = 0; i < currentValues.length; i++) {
+            const row = currentValues[i];
+            const id = row[idColumnIdx];
             
-            // Populate the statusByIdMap from stored data
-            if (parsedStatus && typeof parsedStatus === 'object') {
-              Object.keys(parsedStatus).forEach(id => {
-                statusByIdMap.set(id, parsedStatus[id]);
-              });
+            // Check if we have a saved status for this ID
+            if (savedStatusData[id]) {
+              row[statusColumnIdx] = savedStatusData[id];
+              updateCount++;
               
-              Logger.log(`Loaded ${statusByIdMap.size} stored status values`);
+              // Add to the batch update
+              statusCellsToUpdate.push([savedStatusData[id]]);
             }
-          } catch (parseError) {
-            Logger.log(`Error parsing stored status data: ${parseError.message}`);
+          }
+          
+          // If we have cells to update, do it in a batch
+          if (updateCount > 0) {
+            const statusRange = sheet.getRange(2, syncStatusColumn, updateCount, 1);
+            statusRange.setValues(statusCellsToUpdate);
           }
         }
       } catch (e) {
-        Logger.log(`Error loading stored status values: ${e.message}`);
+        Logger.log(`Error loading sync status values: ${e.message}`);
       }
     }
     
-    // Process items and write data rows
-    const dataRows = items.map(item => {
-      // Create a row with empty values for all columns plus status column if needed
-      const totalColumns = twoWaySyncEnabled ? headers.length + 1 : headers.length;
-      const row = Array(totalColumns).fill('');
-      
-      // For each Pipedrive column, extract and format the value
-      options.columns.forEach((column, index) => {
-        // Skip if index is beyond our header count
-        if (index >= headers.length) {
-          return;
-        }
-        
-        const columnKey = typeof column === 'object' ? column.key : column;
-        
-        // Add special logging for address fields
-        if (columnKey && (columnKey === 'address' || columnKey.startsWith('address.') ||
-            // Add this condition to catch custom field address components
-            columnKey.includes('_subpremise') || columnKey.includes('_locality') || 
-            columnKey.includes('_sublocality') || // Add explicit check for sublocality
-            columnKey.includes('_street_number') || columnKey.includes('_route') || 
-            columnKey.includes('_formatted_address'))) {
-          Logger.log(`Processing address field: ${columnKey}`);
-          
-          // For custom field address components (they have a hash ID pattern)
-          if (columnKey.includes('_')) {
-            const fieldBase = columnKey.split('_')[0]; // Get the base field ID
-            const componentType = columnKey.split('_').slice(1).join('_'); // Get the component type
-            
-            // Log friendly name for the component type
-            let friendlyComponentName = componentType;
-            if (componentType === 'subpremise') friendlyComponentName = 'Apartment/Suite';
-            if (componentType === 'street_number') friendlyComponentName = 'Street Number';
-            if (componentType === 'route') friendlyComponentName = 'Street';
-            if (componentType === 'sublocality') friendlyComponentName = 'District/Borough';
-            if (componentType === 'locality') friendlyComponentName = 'City';
-            if (componentType === 'admin_area_level_1') friendlyComponentName = 'State/Province';
-            if (componentType === 'admin_area_level_2') friendlyComponentName = 'County';
-            if (componentType === 'postal_code') friendlyComponentName = 'ZIP/Postal Code';
-            
-            Logger.log(`Processing address component: ${componentType} (${friendlyComponentName})`);
-            
-            // Direct access to these fields in the item - they're at the top level in API
-            if (item[columnKey] !== undefined) {
-              Logger.log(`Found custom address component directly: ${columnKey} = ${item[columnKey]}`);
-              Logger.log(`Component type: ${componentType} (${friendlyComponentName})`);
-              row[index] = formatValue(item[columnKey], columnKey, options.optionMappings);
-              return;
-            }
-            
-            // If this is sublocality or locality, make sure we're properly distinguishing between them
-            if (componentType === 'sublocality' || componentType === 'locality') {
-              Logger.log(`Processing special component type: ${componentType}`);
-              Logger.log(`Looking for value at item[${columnKey}]`);
-              
-              // Make sure we're correctly identifying both fields
-              if (item[`${fieldBase}_${componentType}`] !== undefined) {
-                const value = item[`${fieldBase}_${componentType}`];
-                Logger.log(`Found ${componentType} value directly: ${value}`);
-                row[index] = formatValue(value, columnKey, options.optionMappings);
-                return;
-              }
-            }
-          }
-          
-          // For address component fields
-          if (columnKey.startsWith('address.')) {
-            const addressComponent = columnKey.replace('address.', '');
-            Logger.log(`Looking for address component: ${addressComponent}`);
-            
-            if (item.address && typeof item.address === 'object') {
-              Logger.log(`Full address structure: ${JSON.stringify(item.address)}`);
-              
-              // Check if the address component exists
-              if (item.address[addressComponent] !== undefined) {
-                Logger.log(`Found address component ${addressComponent} with value: ${item.address[addressComponent]}`);
-                
-                // Store directly as flattened property
-                const value = item.address[addressComponent];
-                row[index] = formatValue(value, columnKey, options.optionMappings);
-                Logger.log(`Set row[${index}] (${headers[index]}) to value: ${row[index]}`);
-                
-                // Skip the standard processing for this field
-                return;
-              } else {
-                Logger.log(`Address component ${addressComponent} NOT FOUND in address structure`);
-                
-                // Check if this component exists as a direct field in the item
-                if (item[columnKey] !== undefined) {
-                  Logger.log(`Found address component as direct field: ${columnKey} = ${item[columnKey]}`);
-                  const value = item[columnKey];
-                  row[index] = formatValue(value, columnKey, options.optionMappings);
-                  Logger.log(`Set row[${index}] (${headers[index]}) to value: ${row[index]}`);
-                  return;
-                }
-              }
-            } else {
-              Logger.log(`No object address structure found, using fallback - address is: ${JSON.stringify(item.address)}`);
-              
-              // Try direct property
-              if (item[columnKey] !== undefined) {
-                Logger.log(`Found direct property ${columnKey} = ${item[columnKey]}`);
-                const value = item[columnKey];
-                row[index] = formatValue(value, columnKey, options.optionMappings);
-                Logger.log(`Set row[${index}] (${headers[index]}) to value: ${row[index]}`);
-                return;
-              }
-            }
-          }
-        }
-        
-        // Standard handling for non-address fields
-        const value = getValueByPath(item, columnKey);
-        row[index] = formatValue(value, columnKey, options.optionMappings);
-        
-        // Log the value for all fields
-        Logger.log(`Field: ${columnKey}, Value: ${row[index]}`);
-      });
-      
-      // If two-way sync is enabled, add the status value in the last column
-      if (twoWaySyncEnabled && statusColumnIndex !== -1) {
-        // Get the item ID (assuming first column is ID)
-        const id = row[0] ? row[0].toString() : '';
-        
-        // If we have a saved status for this ID, use it, otherwise use "Not modified"
-        if (id && statusByIdMap.has(id)) {
-          row[statusColumnIndex] = statusByIdMap.get(id);
-        } else {
-          row[statusColumnIndex] = 'Not modified';
-        }
-      }
-      
-      return row;
-    });
-    
-    // Calculate the total number of columns we need to write
-    const totalColumns = twoWaySyncEnabled ? headers.length + 1 : headers.length;
-    
-    // Write all data rows at once
-    if (dataRows.length > 0) {
-      sheet.getRange(2, 1, dataRows.length, totalColumns).setValues(dataRows);
-      
-      // Update sync status to show that data has been written to the sheet
-      // This ensures the UI reflects that actual data writing is complete
-      updateSyncStatus('3', 'completed', 'Data successfully written to spreadsheet', 100);
-      Logger.log('Data successfully written to sheet - updating sync status');
-    }
-    
-    // If two-way sync is enabled, set up data validation and formatting for the status column
-    if (twoWaySyncEnabled && statusColumnIndex !== -1) {
-      try {
-        // Status column is always going to be at the end
-        const statusColumnPosition = headers.length + 1;
-        
-        // Style the header cell
-        const headerCell = sheet.getRange(1, statusColumnPosition);
-        headerCell
-          .setValue('Sync Status')
-          .setBackground('#E8F0FE')
-          .setFontWeight('bold')
-          .setNote('This column tracks changes for two-way sync with Pipedrive');
-        
-        // Add data validation for all cells in the column
-        const lastRow = Math.max(sheet.getLastRow(), 2);
-        if (lastRow > 1) {
-          const dataRange = sheet.getRange(2, statusColumnPosition, lastRow - 1, 1);
-          const rule = SpreadsheetApp.newDataValidation()
-            .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
-            .build();
-          dataRange.setDataValidation(rule);
-          
-          // Set default values for empty cells - force all cells to have default values
-          const values = dataRange.getValues();
-          const newValues = values.map(row => {
-            const currentValue = row[0];
-            if (!currentValue || 
-                (currentValue !== 'Modified' && 
-                 currentValue !== 'Not modified' && 
-                 currentValue !== 'Synced' && 
-                 currentValue !== 'Error')) {
-              return ['Not modified'];
-            }
-            return [currentValue];
-          });
-          dataRange.setValues(newValues);
-          
-          // Style the status column
-          dataRange
-            .setBackground('#F8F9FA')
-            .setBorder(null, true, null, true, false, false, '#DADCE0', SpreadsheetApp.BorderStyle.SOLID);
-          
-          // Set up conditional formatting for the status column
-          const rules = sheet.getConditionalFormatRules();
-          
-          // Rule for "Modified" status - red background
-          const modifiedRule = SpreadsheetApp.newConditionalFormatRule()
-            .whenTextEqualTo('Modified')
-            .setBackground('#FCE8E6')
-            .setFontColor('#D93025')
-            .setRanges([dataRange])
-            .build();
-          
-          // Rule for "Synced" status - green background
-          const syncedRule = SpreadsheetApp.newConditionalFormatRule()
-            .whenTextEqualTo('Synced')
-            .setBackground('#E6F4EA')
-            .setFontColor('#137333')
-            .setRanges([dataRange])
-            .build();
-          
-          // Rule for "Error" status - orange background
-          const errorRule = SpreadsheetApp.newConditionalFormatRule()
-            .whenTextEqualTo('Error')
-            .setBackground('#FEF7E0')
-            .setFontColor('#EA8600')
-            .setRanges([dataRange])
-            .build();
-          
-          // Apply all rules
-          rules.push(modifiedRule);
-          rules.push(syncedRule);
-          rules.push(errorRule);
-          sheet.setConditionalFormatRules(rules);
-          
-          // Save current status values for future reference
-          try {
-            const statusData = {};
-            
-            // Save only rows with data in case of ID changes
-            for (let i = 0; i < dataRows.length; i++) {
-              const id = dataRows[i][0].toString();
-              const status = dataRows[i][statusColumnIndex];
-              
-              if (id && status) {
-                statusData[id] = status;
-              }
-            }
-            
-            // Store the status data in script properties
-            const statusDataKey = `SYNC_STATUS_DATA_${sheetName}`;
-            scriptProperties.setProperty(statusDataKey, JSON.stringify(statusData));
-            Logger.log(`Saved ${Object.keys(statusData).length} status values for future reference`);
-          } catch (storageError) {
-            Logger.log(`Error saving status data: ${storageError.message}`);
-          }
-        }
-      } catch (e) {
-        Logger.log(`Error setting up status column: ${e.message}`);
-      }
-    }
-    
-    // Final cleanup: do a thorough scan for any remaining old Sync Status columns
-    if (twoWaySyncEnabled) {
-      // Get the current status column letter for the final cleanup
-      const finalStatusColumnLetter = columnToLetter(headers.length + 1);
-      Logger.log(`Running final cleanup scan. Current Sync Status column: ${finalStatusColumnLetter}`);
-      
-      // This will find and clean any other columns with Sync Status headers
-      cleanupPreviousSyncStatusColumn(sheet, finalStatusColumnLetter);
-    }
-    
-    // Auto-resize columns to fit content
-    sheet.autoResizeColumns(1, totalColumns);
-    
-    Logger.log('Successfully wrote data to sheet');
+    return true;
   } catch (error) {
     Logger.log(`Error in writeDataToSheet: ${error.message}`);
-    Logger.log(`Stack trace: ${error.stack}`);
-    throw error;
+    return false;
   }
+}
+
+/**
+ * Makes header names unique and descriptive
+ * @param {Array} headers - Original header names
+ * @param {Array} columns - Column configuration objects
+ * @return {Array} Unique header names
+ */
+function makeHeadersUnique(headers, columns) {
+  // Map to track header occurrences and corresponding column keys
+  const headerMap = new Map();
+  const resultHeaders = [];
+  
+  headers.forEach((header, index) => {
+    // Skip entirely empty headers
+    if (!header) {
+      resultHeaders.push(`Column ${index + 1}`);
+      return;
+    }
+    
+    let originalHeader = header;
+    
+    // Get the column key if available (to help with categorization)
+    let columnKey = '';
+    if (columns && columns[index] && columns[index].key) {
+      columnKey = columns[index].key;
+    }
+    
+    // If this is the first occurrence of the header
+    if (!headerMap.has(header)) {
+      headerMap.set(header, { count: 1, columnKeys: [columnKey] });
+      resultHeaders.push(header);
+    } else {
+      // This is a duplicate header
+      const headerInfo = headerMap.get(header);
+      headerInfo.count++;
+      headerInfo.columnKeys.push(columnKey);
+      headerMap.set(header, headerInfo);
+      
+      // Attempt to make a more descriptive name based on column key
+      if (columnKey && columnKey.includes('_')) {
+        // For keys with components like hash_component
+        if (columnKey.includes('_subpremise')) {
+          resultHeaders.push(`${header} - Suite/Apt`);
+        } else if (columnKey.includes('_street_number')) {
+          resultHeaders.push(`${header} - Street Number`);
+        } else if (columnKey.includes('_route')) {
+          resultHeaders.push(`${header} - Street Name`);
+        } else if (columnKey.includes('_locality')) {
+          resultHeaders.push(`${header} - City`);
+        } else if (columnKey.includes('_country')) {
+          resultHeaders.push(`${header} - Country`);
+        } else if (columnKey.includes('_postal_code')) {
+          resultHeaders.push(`${header} - ZIP/Postal`);
+        } else if (columnKey.includes('_formatted_address')) {
+          resultHeaders.push(`${header} - Full Address`);
+        } else if (columnKey.includes('_timezone_id')) {
+          resultHeaders.push(`${header} - Timezone`);
+        } else if (columnKey.includes('_until')) {
+          resultHeaders.push(`${header} - End Time/Date`);
+        } else if (columnKey.includes('_currency')) {
+          resultHeaders.push(`${header} - Currency`);
+        } else {
+          // Default numbering if no special case applies
+          resultHeaders.push(`${header} (${headerInfo.count})`);
+        }
+      } else if (columnKey && columnKey.includes('.')) {
+        // For nested fields like person_id.name
+        const parts = columnKey.split('.');
+        if (parts.length === 2) {
+          resultHeaders.push(`${header} - ${formatBasicName(parts[1])}`);
+        } else {
+          resultHeaders.push(`${header} (${headerInfo.count})`);
+        }
+      } else {
+        // Default numbering if no special case applies
+        resultHeaders.push(`${header} (${headerInfo.count})`);
+      }
+    }
+  });
+  
+  Logger.log(`Created ${resultHeaders.length} unique headers from ${headers.length} original headers`);
+  return resultHeaders;
 }
 
 /**
@@ -4206,12 +4021,22 @@ SyncService.getTeamAwareColumnPreferences = function(entityType, sheetName) {
         const parsedColumns = JSON.parse(columnsJson);
         Logger.log(`Retrieved ${parsedColumns.length} column preferences`);
         
+        // IMPORTANT: Update column names with improved formatting
+        const updatedColumns = parsedColumns.map(column => {
+          // Only update name if no custom name has been set
+          if (!column.customName) {
+            // Get improved display name using the enhanced formatColumnName function
+            column.name = formatColumnName(column.key);
+          }
+          return column;
+        });
+        
         // Log first few columns for debugging
-        if (parsedColumns.length > 0) {
-          Logger.log(`First 3 columns: ${JSON.stringify(parsedColumns.slice(0, 3))}`);
+        if (updatedColumns.length > 0) {
+          Logger.log(`First 3 columns: ${JSON.stringify(updatedColumns.slice(0, 3))}`);
         }
         
-        return parsedColumns;
+        return updatedColumns;
       } catch (parseError) {
         Logger.log(`Error parsing column preferences: ${parseError.message}`);
       }

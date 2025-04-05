@@ -1842,7 +1842,7 @@
           }
           
           // Handle custom fields with generic names
-          if (col.name === 'Custom Field' && col.key && /[a-f0-9]{20,}/i.test(col.key)) {
+          if ((col.name === 'Custom Field' || /^[a-f0-9]{20,}$/i.test(col.key)) && col.key && /[a-f0-9]{20,}/i.test(col.key)) {
             // Try to get a better name from the server
             google.script.run.withSuccessHandler(function(betterName) {
               if (betterName && betterName !== 'Custom Field') {
@@ -1864,6 +1864,43 @@
               const lastPart = keyParts[keyParts.length - 1];
               if (lastPart && lastPart !== 'label_ids' && !/^[a-f0-9]{20,}$/i.test(lastPart)) {
                 col.name = lastPart.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+              }
+            } else if (col.name === 'Custom Field') {
+              // Extract key part if it's an address component
+              const addrComponentMatch = col.key.match(/([a-f0-9]{20,})_(subpremise|street_number|route|locality|admin_area|country|postal_code)/i);
+              if (addrComponentMatch) {
+                const component = addrComponentMatch[2];
+                switch(component) {
+                  case 'subpremise':
+                    col.name = 'Suite/Apartment';
+                    break;
+                  case 'street_number':
+                    col.name = 'Street Number';
+                    break;
+                  case 'route':
+                    col.name = 'Street Name';
+                    break;
+                  case 'locality':
+                    col.name = 'City';
+                    break;
+                  case 'sublocality':
+                    col.name = 'District/Borough';
+                    break;
+                  case 'admin_area_level_1':
+                    col.name = 'State/Province';
+                    break;
+                  case 'country':
+                    col.name = 'Country';
+                    break;
+                  case 'postal_code':
+                    col.name = 'ZIP/Postal Code';
+                    break;
+                  default:
+                    col.name = 'Address Component';
+                }
+              } else {
+                // As a last resort, give it a more friendly name than "Custom Field"
+                col.name = 'Pipedrive Field';
               }
             }
           }
@@ -1961,26 +1998,68 @@
           if (parentObj && parentObj.name) {
             parentName = parentObj.name;
           } else {
-            // If not found, format the key directly using our global helper
-            try {
-              // Call through to server-side formatting if possible
+            // If it has a hash ID, try to get a better name
+            if (/[a-f0-9]{20,}/i.test(parentKey)) {
+              // Try to extract the hash part for the API call
+              const hashMatch = parentKey.match(/([a-f0-9]{20,})/i);
+              if (hashMatch && hashMatch[1]) {
+                const hashId = hashMatch[1];
+                
+                // Call through to server-side formatting if possible for the hash ID
+                google.script.run.withSuccessHandler(formattedName => {
+                  if (formattedName && formattedName !== 'Custom Field') {
+                    const categoryHeader = document.querySelector(`.category[data-parent-key="${parentKey}"]`);
+                    if (categoryHeader) {
+                      categoryHeader.textContent = formattedName;
+                    }
+                  }
+                }).getFormattedColumnName(hashId);
+              }
+            
+              // Call through to server-side formatting for the key
               google.script.run.withSuccessHandler(formattedName => {
                 const categoryHeader = document.querySelector(`.category[data-parent-key="${parentKey}"]`);
                 if (categoryHeader) {
                   categoryHeader.textContent = formattedName;
                 }
               }).getFormattedColumnName(parentKey);
-              
-              // Also do basic formatting on client side immediately
-              parentName = parentKey.split('.').pop()
-                .replace(/_/g, ' ')
-                .replace(/\b\w/g, l => l.toUpperCase());
-            } catch (e) {
-              console.error('Error formatting parent key:', e);
+            }
+            
+            // Also do basic formatting on client side immediately
+            if (/^org_/i.test(parentKey)) {
+              parentName = "Organization";
+            } else if (/^person_/i.test(parentKey)) {
+              parentName = "Person";
+            } else if (/^user_/i.test(parentKey)) {
+              parentName = "User";
+            } else if (parentKey === "creator_user_id") {
+              parentName = "Creator";  
+            } else if (parentKey === "org_id") {
+              parentName = "Organization";
+            } else if (parentKey === "person_id") {
+              parentName = "Person";
+            } else {
               // Basic fallback formatting
               parentName = parentKey.split('.').pop()
                 .replace(/_/g, ' ')
                 .replace(/\b\w/g, l => l.toUpperCase());
+              
+              // If it still contains a hash ID, replace with something more descriptive
+              if (/[a-f0-9]{20,}/i.test(parentName)) {
+                // Check if we have a hash ID with a more descriptive name in available columns
+                const matchingCol = window.originalAvailableColumns.find(col => 
+                  col.key.includes(parentKey) && col.name && 
+                  col.name !== 'Custom Field' && col.name !== 'Pipedrive Field'
+                );
+                
+                if (matchingCol) {
+                  // Extract the base name without any components
+                  parentName = matchingCol.name.split(' - ')[0];
+                } else {
+                  // Use field type if available
+                  parentName = "Custom Field";
+                }
+              }
             }
           }
           
