@@ -2111,3 +2111,282 @@ function renderColumnSelectorHtml(availableColumns, selectedColumns, entityType,
 function formatEntityTypeName(entityType) {
   return ColumnSelectorUI.formatEntityTypeName(entityType);
 } 
+
+/**
+ * Gets column data for a specific entity type - called from the UI
+ * @param {string} entityType - The entity type to get columns for
+ * @param {string} sheetName - The name of the sheet
+ * @return {Object} Object with available and selected columns
+ */
+function getColumnsDataForEntity(entityType, sheetName) {
+  try {
+    Logger.log(`Getting column data for entity type ${entityType} in sheet ${sheetName}`);
+    
+    let availableColumns = [];
+    const selectedColumns = getColumnPreferences(entityType, sheetName) || [];
+    
+    // Get sample data to extract available columns
+    try {
+      // Get sample data based on filter
+      const filterId = PropertiesService.getScriptProperties().getProperty(`FILTER_ID_${sheetName}`) || '';
+      
+      let sampleData = [];
+      switch (entityType) {
+        case ENTITY_TYPES.DEALS:
+          sampleData = PipedriveAPI.getDealsWithFilter(filterId, 1);
+          break;
+        case ENTITY_TYPES.PERSONS:
+          sampleData = PipedriveAPI.getPersonsWithFilter(filterId, 1);
+          break;
+        case ENTITY_TYPES.ORGANIZATIONS:
+          sampleData = PipedriveAPI.getOrganizationsWithFilter(filterId, 1);
+          break;
+        case ENTITY_TYPES.ACTIVITIES:
+          sampleData = PipedriveAPI.getActivitiesWithFilter(filterId, 1);
+          break;
+        case ENTITY_TYPES.LEADS:
+          sampleData = PipedriveAPI.getLeadsWithFilter(filterId, 1);
+          break;
+        case ENTITY_TYPES.PRODUCTS:
+          sampleData = PipedriveAPI.getProductsWithFilter(filterId, 1);
+          break;
+      }
+      
+      if (sampleData && sampleData.length > 0) {
+        Logger.log(`Got sample data for ${entityType}, extracting columns`);
+        // Extract column information from the sample data
+        availableColumns = extractColumnsFromData(sampleData[0], entityType);
+      } else {
+        // If no sample data, provide at least the ID column and some basic fields
+        Logger.log(`No sample data found for ${entityType}, using fallback columns`);
+        availableColumns = getFallbackColumns(entityType);
+      }
+    } catch (e) {
+      Logger.log(`Error getting sample data: ${e.message}`);
+      // Provide fallback columns if there's an error
+      availableColumns = getFallbackColumns(entityType);
+    }
+    
+    return {
+      availableColumns: availableColumns,
+      selectedColumns: selectedColumns
+    };
+  } catch (e) {
+    Logger.log(`Error in getColumnsDataForEntity: ${e.message}`);
+    throw new Error(`Failed to get column data: ${e.message}`);
+  }
+}
+
+/**
+ * Extracts column information from a data object
+ * @param {Object} data - The data object to extract columns from
+ * @param {string} entityType - The entity type
+ * @return {Array} Array of column objects
+ */
+function extractColumnsFromData(data, entityType) {
+  try {
+    const columns = [];
+    const processedKeys = new Set();
+    
+    // Always include the ID column first
+    columns.push({
+      key: 'id',
+      name: 'ID',
+      isNested: false,
+      required: true,
+      readOnly: false
+    });
+    processedKeys.add('id');
+    
+    // Process all fields in the data object
+    function processObject(obj, prefix = '', parentKey = '') {
+      for (const key in obj) {
+        if (typeof obj[key] === 'object' && obj[key] !== null) {
+          // Nested object
+          const nestedPrefix = prefix ? `${prefix}.${key}` : key;
+          
+          // For certain objects, we want to add the object itself as a column
+          if (key === 'owner' || key === 'creator' || key === 'person' || 
+              key === 'org' || key === 'organization' || key === 'user') {
+                
+            const fullKey = prefix ? `${prefix}.${key}` : key;
+            
+            if (!processedKeys.has(fullKey)) {
+              columns.push({
+                key: fullKey,
+                name: formatFieldName(key),
+                isNested: !!prefix,
+                parentKey: prefix || undefined,
+                readOnly: isReadOnlyField(fullKey, entityType)
+              });
+              processedKeys.add(fullKey);
+            }
+          }
+          
+          // Process the nested object
+          processObject(obj[key], nestedPrefix, prefix || key);
+        } else {
+          // Regular field
+          const fullKey = prefix ? `${prefix}.${key}` : key;
+          
+          if (!processedKeys.has(fullKey)) {
+            columns.push({
+              key: fullKey,
+              name: formatFieldName(key),
+              isNested: !!prefix,
+              parentKey: prefix || undefined,
+              readOnly: isReadOnlyField(fullKey, entityType)
+            });
+            processedKeys.add(fullKey);
+          }
+        }
+      }
+    }
+    
+    processObject(data);
+    
+    // Sort columns: ID first, then non-nested, then nested alphabetically by parent
+    columns.sort((a, b) => {
+      if (a.key === 'id') return -1;
+      if (b.key === 'id') return 1;
+      
+      if (!a.isNested && b.isNested) return -1;
+      if (a.isNested && !b.isNested) return 1;
+      
+      if (a.isNested && b.isNested) {
+        if (a.parentKey !== b.parentKey) {
+          return a.parentKey.localeCompare(b.parentKey);
+        }
+      }
+      
+      return a.name.localeCompare(b.name);
+    });
+    
+    return columns;
+  } catch (e) {
+    Logger.log(`Error extracting columns: ${e.message}`);
+    return getFallbackColumns(entityType);
+  }
+}
+
+/**
+ * Format a field name for display
+ * @param {string} key - The field key
+ * @return {string} Formatted field name
+ */
+function formatFieldName(key) {
+  // Use the robust formatColumnName function from Utilities
+  return formatColumnName(key);
+}
+
+/**
+ * Provides fallback columns when no data is available
+ * @param {string} entityType - The entity type
+ * @return {Array} Array of basic column objects
+ */
+function getFallbackColumns(entityType) {
+  const columns = [
+    { key: 'id', name: 'ID', isNested: false, required: true }
+  ];
+  
+  // Add common fields based on entity type
+  switch (entityType) {
+    case ENTITY_TYPES.DEALS:
+      columns.push(
+        { key: 'title', name: 'Title', isNested: false },
+        { key: 'value', name: 'Value', isNested: false },
+        { key: 'status', name: 'Status', isNested: false },
+        { key: 'stage_id', name: 'Stage ID', isNested: false }
+      );
+      break;
+    case ENTITY_TYPES.PERSONS:
+      columns.push(
+        { key: 'name', name: 'Name', isNested: false },
+        { key: 'email', name: 'Email', isNested: false },
+        { key: 'phone', name: 'Phone', isNested: false }
+      );
+      break;
+    case ENTITY_TYPES.ORGANIZATIONS:
+      columns.push(
+        { key: 'name', name: 'Name', isNested: false },
+        { key: 'address', name: 'Address', isNested: false }
+      );
+      break;
+    case ENTITY_TYPES.ACTIVITIES:
+      columns.push(
+        { key: 'subject', name: 'Subject', isNested: false },
+        { key: 'type', name: 'Type', isNested: false },
+        { key: 'due_date', name: 'Due Date', isNested: false }
+      );
+      break;
+    case ENTITY_TYPES.LEADS:
+      columns.push(
+        { key: 'title', name: 'Title', isNested: false },
+        { key: 'value', name: 'Value', isNested: false }
+      );
+      break;
+    case ENTITY_TYPES.PRODUCTS:
+      columns.push(
+        { key: 'name', name: 'Name', isNested: false },
+        { key: 'code', name: 'Code', isNested: false },
+        { key: 'prices', name: 'Prices', isNested: false }
+      );
+      break;
+    default:
+      columns.push({ key: 'name', name: 'Name', isNested: false });
+  }
+  
+  return columns;
+}
+
+/**
+ * Check if a field is read-only based on field path and entity type
+ * @param {string} key - The field key
+ * @param {string} entityType - The current entity type
+ * @return {boolean} True if the field is read-only
+ */
+function isReadOnlyField(key, entityType) {
+  // Entity-specific read-only checks
+  if (key) {
+    // Organization fields are only editable when in Organization entity type
+    if ((key.startsWith('org.') || key.startsWith('org_') ||
+         key.startsWith('organization.') || key.startsWith('organization_')) &&
+        entityType !== ENTITY_TYPES.ORGANIZATIONS) {
+      return true;
+    }
+    
+    // Person fields are only editable when in Person entity type
+    if ((key.startsWith('person.') || key.startsWith('person_')) &&
+        entityType !== ENTITY_TYPES.PERSONS) {
+      return true;
+    }
+    
+    // Deal fields are only editable when in Deal entity type
+    if ((key.startsWith('deal.') || key.startsWith('deal_')) &&
+        entityType !== ENTITY_TYPES.DEALS) {
+      return true;
+    }
+    
+    // Common read-only fields across all entity types
+    if (key === 'creator_user_id' ||
+        key === 'followers_count' ||
+        key === 'participants_count' ||
+        key === 'activities_count' ||
+        key === 'done_activities_count' ||
+        key === 'undone_activities_count' ||
+        key === 'files_count' ||
+        key === 'notes_count' ||
+        key === 'email_messages_count' ||
+        key === 'people_count' ||
+        key === 'products_count' ||
+        key === 'formatted_value' ||
+        key === 'weighted_value' ||
+        key === 'formatted_weighted_value' ||
+        key === 'weighted_value_currency' ||
+        key.startsWith('formatted_')) {
+      return true;
+    }
+  }
+  
+  return false;
+}

@@ -1421,45 +1421,55 @@
     let entityTypeName = typeof window.entityTypeName !== 'undefined' ? window.entityTypeName : '';
 
     // Add this tab switching functionality
-      document.addEventListener('DOMContentLoaded', function() {
-        const tabs = document.querySelectorAll('.tab');
-        
-        tabs.forEach(tab => {
-          tab.addEventListener('click', () => {
-            // Remove active class from all tabs
-            tabs.forEach(t => t.classList.remove('active'));
-            
-            // Add active class to clicked tab
-            tab.classList.add('active');
-            
-            // Hide all tab content
-            document.querySelectorAll('.tab-content').forEach(content => {
-              content.classList.remove('active');
-            });
-            
-            // Show selected tab content
-            const tabId = tab.getAttribute('data-tab');
-            document.getElementById(tabId + '-tab').classList.add('active');
+    document.addEventListener('DOMContentLoaded', function() {
+      const tabs = document.querySelectorAll('.tab');
+      
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          // Remove active class from all tabs
+          tabs.forEach(t => t.classList.remove('active'));
+          
+          // Add active class to clicked tab
+          tab.classList.add('active');
+          
+          // Hide all tab content
+          document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+          });
+          
+          // Show selected tab content
+          const tabId = tab.getAttribute('data-tab');
+          document.getElementById(tabId + '-tab').classList.add('active');
 
-            // Initialize columns data if switching to columns tab
-            if (tabId === 'columns' && (!availableColumns || availableColumns.length === 0)) {
+          // Initialize columns data if switching to columns tab
+          if (tabId === 'columns') {
+            console.log("Switching to columns tab, checking data availability");
+            
+            if (!window.availableColumns || window.availableColumns.length === 0) {
+              console.log("Available columns not found, fetching data from server");
+              // Fetch column data if not already loaded
+              fetchColumnsData();
+            } else {
+              console.log("Using existing columns data:", window.availableColumns.length + " columns available");
+              // Just initialize with existing data
               initializeColumns();
               renderLists();
             }
-          });
-        });
-        
-        // Set initial active tab based on parameter passed from server
-        const initialTab = '<?= initialTab ?>' || 'settings';
-        
-        // Find the tab with that data-tab attribute
-        tabs.forEach(tab => {
-          if (tab.getAttribute('data-tab') === initialTab) {
-            // Simulate a click on this tab
-            tab.click();
           }
         });
       });
+      
+      // Set initial active tab based on parameter passed from server
+      const initialTab = '<?= initialTab ?>' || 'settings';
+      
+      // Find the tab with that data-tab attribute
+      tabs.forEach(tab => {
+        if (tab.getAttribute('data-tab') === initialTab) {
+          // Simulate a click on this tab
+          tab.click();
+        }
+      });
+    });
 
     // Load filters immediately for the currently selected entity type
     document.addEventListener('DOMContentLoaded', function () {
@@ -1778,13 +1788,21 @@
     function initializeColumns() {
       // Debug information
       console.log("Working with availableColumns:", availableColumns ? availableColumns.length : "none");
+      
+      // Make sure we're working with the latest data
       if (!availableColumns || availableColumns.length === 0) {
-        console.error("No available columns found! This is a problem.");
+        console.log("Local variable empty, checking window.availableColumns");
+        if (window.availableColumns && window.availableColumns.length > 0) {
+          console.log("Found data in window.availableColumns, using that");
+          availableColumns = window.availableColumns;
+        } else {
+          console.error("No available columns found! This is a problem.");
+        }
       } else {
-        console.log("First few available columns:", availableColumns.slice(0, 5));
+        console.log("Using existing local availableColumns variable");
       }
-
-      // Initialize originalAvailableColumns as a window property to ensure it's globally accessible
+      
+      // Now that we have the data, create a copy for the original columns
       window.originalAvailableColumns = availableColumns ? JSON.parse(JSON.stringify(availableColumns)) : [];
       console.log("Original available columns copy created with length:", window.originalAvailableColumns.length);
     }
@@ -2266,7 +2284,12 @@
 
     // Event listeners
     window.onload = function () {
-      // Initialize application first
+      console.log("Window loaded, initializing application...");
+      
+      // Initialize columns first
+      loadData();
+      
+      // Then initialize the application
       initApp();
 
       // Set up event listeners
@@ -2318,18 +2341,25 @@
           // Just assign to local variables for ease of use
           availableColumns = window.availableColumns;
           selectedColumns = window.selectedColumns;
-          return;
+          
+          console.log('Local variables updated: availableColumns =', 
+                     availableColumns.length, ', selectedColumns =', 
+                     selectedColumns.length);
+          
+          return true;
         }
         
         // If we get here, we don't have data yet
         console.error('No data available from server. Using empty arrays as fallback.');
         availableColumns = [];
         selectedColumns = [];
+        return false;
       } catch (error) {
         console.error('Error in loadData function:', error);
         // Initialize with empty arrays to prevent further errors
         availableColumns = [];
         selectedColumns = [];
+        return false;
       }
     }
 
@@ -2357,20 +2387,16 @@
       try {
         console.log("Initializing column selector app...");
 
-        // Make sure we have availableColumns
-        if (typeof availableColumns === 'undefined') {
-          console.warn("availableColumns is not defined, creating empty array");
-          window.availableColumns = [];
+        // Make sure we have loaded our data
+        if (availableColumns && availableColumns.length > 0) {
+          console.log("Using already loaded columns:", availableColumns.length);
+        } else if (window.availableColumns && window.availableColumns.length > 0) {
+          console.log("Using window.availableColumns:", window.availableColumns.length);
+          availableColumns = window.availableColumns;
+          selectedColumns = window.selectedColumns || [];
+        } else {
+          console.warn("No column data available on init - will fetch when needed");
         }
-
-        // Make sure we have selectedColumns
-        if (typeof selectedColumns === 'undefined') {
-          console.warn("selectedColumns is not defined, creating empty array");
-          window.selectedColumns = [];
-        }
-
-        // Load data from server
-        loadData();
 
         // Initialize the original columns array
         initializeColumns();
@@ -2607,6 +2633,52 @@
         '\n• The column order here determines the order in your sheet';
 
       alert(helpContent);
+    }
+
+    // Function to fetch column data from the server
+    function fetchColumnsData() {
+      console.log("Fetching column data from server for entity type:", entityType);
+      
+      // Show loading state
+      const availableList = document.getElementById('availableList');
+      const selectedList = document.getElementById('selectedList');
+      
+      availableList.innerHTML = '<div style="padding: 20px; text-align: center;"><div class="loader" style="display: inline-block; margin-right: 10px;"></div> Loading column data...</div>';
+      
+      // Reset selected columns display
+      selectedList.innerHTML = '<div style="padding: 20px; text-align: center;">Column data is being loaded...</div>';
+      
+      // Get entity type and sheet name
+      const currentEntityType = window.entityType || document.getElementById('entityType')?.value;
+      const currentSheetName = window.sheetName || "<?= activeSheetName ?>";
+      
+      if (!currentEntityType) {
+        availableList.innerHTML = '<div style="padding: 20px; text-align: center; color: #d93025;">Error: No entity type specified</div>';
+        return;
+      }
+      
+      // Call server to get column data
+      google.script.run
+        .withSuccessHandler(function(result) {
+          console.log("Successfully fetched column data from server:", result);
+          
+          // Set the data on window for global access
+          window.availableColumns = result.availableColumns || [];
+          window.selectedColumns = result.selectedColumns || [];
+          
+          // Update local variables to match window properties
+          availableColumns = window.availableColumns;
+          selectedColumns = window.selectedColumns;
+          
+          // Initialize columns
+          initializeColumns();
+          renderLists();
+        })
+        .withFailureHandler(function(error) {
+          console.error("Failed to fetch column data:", error);
+          availableList.innerHTML = `<div style="padding: 20px; text-align: center; color: #d93025;">Failed to load column data: ${error.message || error}</div>`;
+        })
+        .getColumnsDataForEntity(currentEntityType, currentSheetName);
     }
   </script>
 </body>
