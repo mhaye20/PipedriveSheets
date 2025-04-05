@@ -2442,23 +2442,32 @@ function processNestedObject(obj, parentKey, parentCategory, relatedEntityType, 
  * Placeholder: In a real scenario, this might fetch from Pipedrive API or use constants.
  */
 function getStandardFieldKeys(entityType) {
-    // Example basic fields - expand this based on Pipedrive documentation or API calls
-    const common = ['id', 'name', 'owner_id', 'org_id', 'person_id', 'add_time', 'update_time', 'visible_to'];
+    // Fields available via API v2 (or common v1) based on documentation provided
+    const common = ['id', 'owner_id', 'add_time', 'update_time', 'visible_to', 'label_ids']; // Common across multiple entities
+    
     switch (entityType) {
         case ENTITY_TYPES.DEALS:
-            return [...common, 'title', 'value', 'currency', 'pipeline_id', 'stage_id', 'status', 'expected_close_date', 'lost_reason', 'won_time', 'lost_time', 'close_time'];
+            // V2 PATCH /deals/{id}
+            return [...common, 'title', 'person_id', 'org_id', 'pipeline_id', 'stage_id', 'value', 'currency', 'stage_change_time', 'status', 'probability', 'lost_reason', 'close_time', 'won_time', 'lost_time', 'expected_close_date'];
         case ENTITY_TYPES.PERSONS:
-            return [...common, 'email', 'phone', 'first_name', 'last_name']; // 'name' is often calculated
+            // V2 PATCH /persons/{id}
+            return [...common, 'name', 'org_id', 'emails', 'phones']; // emails/phones are arrays
         case ENTITY_TYPES.ORGANIZATIONS:
-            return [...common, 'address', 'label'];
+            // V2 PATCH /organizations/{id}
+            return [...common, 'name', 'address']; // 'address' might be complex object, handled in extraction
         case ENTITY_TYPES.ACTIVITIES:
-            return [...common, 'subject', 'type', 'due_date', 'due_time', 'duration', 'note', 'done', 'deal_id', 'assigned_to_user_id']; // Removed 'name'
+            // V2 PATCH /activities/{id}
+            return [...common, 'subject', 'type', 'deal_id', 'lead_id', 'person_id', 'org_id', 'project_id', 'due_date', 'due_time', 'duration', 'busy', 'done', 'location', 'participants', 'attendees', 'public_description', 'priority', 'note'];
         case ENTITY_TYPES.LEADS:
-            return [...common, 'title', 'note', 'lead_value', 'expected_close_date']; // Removed 'name'
+            // V1 PATCH /leads/{id} - Note: Inherits Deal custom fields
+            return [...common, 'title', 'person_id', 'organization_id', 'is_archived', 'value', 'expected_close_date', 'was_seen', 'channel', 'channel_id', 'note']; // 'value' is object {amount, currency}
         case ENTITY_TYPES.PRODUCTS:
-            return [...common, 'code', 'unit', 'tax', 'prices', 'description'];
-        default: return common;
-  }
+             // V2 PATCH /products/{id}
+            return [...common, 'name', 'code', 'description', 'unit', 'tax', 'category', 'is_linkable', 'prices', 'billing_frequency', 'billing_frequency_cycles']; // 'prices' is array
+        default: 
+            // Fallback with most common fields if type unknown
+            return ['id', 'name', 'owner_id', 'org_id', 'person_id', 'add_time', 'update_time'];
+    }
 }
 
 /**
