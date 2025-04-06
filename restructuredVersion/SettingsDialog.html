@@ -1110,27 +1110,95 @@
     }
 
     .status {
-      margin-top: 16px;
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-100px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      min-width: 300px;
+      max-width: 420px;
       padding: 12px 16px;
       border-radius: 8px;
-      font-size: 13px;
-      display: none;
+      font-size: 14px;
       font-weight: 500;
-      animation: fadeIn 0.3s;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), 
+                  opacity 0.3s ease;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .status.active {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .status-icon {
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      margin-right: 12px;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-size: contain;
+    }
+
+    .status-message {
+      flex-grow: 1;
+      line-height: 1.4;
+    }
+
+    .status-close {
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+      margin-left: 10px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 18px;
+      opacity: 0.7;
+      transition: opacity 0.2s, background-color 0.2s;
+    }
+
+    .status-close:hover {
+      opacity: 1;
+      background-color: rgba(0, 0, 0, 0.1);
     }
 
     .status.success {
       background-color: #e6f4ea;
       color: var(--success-color);
       border-left: 4px solid var(--success-color);
-      display: block;
+    }
+
+    .status.success .status-icon {
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%2334a853"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>');
     }
 
     .status.error {
       background-color: #fce8e6;
       color: var(--error-color);
       border-left: 4px solid var(--error-color);
-      display: block;
+    }
+
+    .status.error .status-icon {
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%23ea4335"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>');
+    }
+
+    .status.info {
+      background-color: #e8f0fe;
+      color: #1a73e8;
+      border-left: 4px solid #1a73e8;
+    }
+
+    .status.info .status-icon {
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%231a73e8"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>');
     }
 
     .hidden {
@@ -1219,6 +1287,40 @@
         opacity: 0;
       }
     }
+
+    /* Add this CSS for button loading states */
+    .button-loading {
+      position: relative;
+      pointer-events: none;
+      color: transparent !important;
+    }
+
+    .button-loading:after {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      top: 50%;
+      left: 50%;
+      margin: -10px 0 0 -10px;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 0.8s linear infinite;
+      box-sizing: border-box;
+    }
+
+    .button-primary.button-loading:after,
+    .primary-btn.button-loading:after {
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+    }
+
+    .button-secondary.button-loading:after,
+    .secondary-btn.button-loading:after {
+      border: 2px solid rgba(26, 115, 232, 0.2);
+      border-top-color: var(--primary-color);
+    }
   </style>
   <?!= dataScript ?>
 </head>
@@ -1229,6 +1331,13 @@
   <div class="tabs">
     <div class="tab active" data-tab="settings">Filter Settings</div>
     <div class="tab" data-tab="columns">Column Selection</div>
+  </div>
+
+  <!-- Shared status notification that works for all tabs -->
+  <div id="status" class="status">
+    <div class="status-icon"></div>
+    <div class="status-message"></div>
+    <div class="status-close">&times;</div>
   </div>
 
   <div id="settings-tab" class="tab-content active">
@@ -1288,10 +1397,7 @@
 
     <input type="hidden" id="sheetName" value="<?= activeSheetName ?>" />
 
-    <div id="status" class="status"></div>
-
     <div class="button-container">
-      <span class="loading" id="saveLoading"><span class="loader"></span> Saving...</span>
       <button type="button" id="saveBtn" class="button-primary" onclick="saveSettings()">Save Settings</button>
     </div>
 
@@ -1302,8 +1408,6 @@
 
     <div class="header">
       <h3>Column Selection</h3>
-
-      <div id="statusIndicator" class="indicator"></div>
 
       <div class="sheet-info">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
@@ -1392,9 +1496,6 @@
         <button class="secondary-btn" id="helpBtn">Help & Tips</button>
       </div>
       <div class="action-btns">
-        <div class="loading" id="saveLoading">
-          <span class="loader"></span>
-        </div>
         <button class="secondary-btn" id="cancelBtn">Cancel</button>
         <button class="primary-btn" id="columnsTabSaveBtn">Save & Close</button>
       </div>
@@ -1642,34 +1743,70 @@
     });
 
     function showStatus(type, message) {
+      // Always use the main status element, regardless of which tab we're on
       const statusElement = document.getElementById('status');
-      statusElement.textContent = message;
+      
+      // Make sure we have the status element
+      if (!statusElement) {
+        console.error('Status element not found!');
+        return;
+      }
+      
+      // Update the message
+      const messageElement = statusElement.querySelector('.status-message');
+      if (messageElement) {
+        messageElement.textContent = message;
+      } else {
+        // Fallback if message element not found
+        statusElement.textContent = message;
+      }
+      
+      // Reset classes
       statusElement.className = 'status';
       statusElement.classList.add(type);
-
-      // Add animation
-      statusElement.style.animation = 'none';
-      void statusElement.offsetWidth; // Trigger reflow
-      statusElement.style.animation = 'fadeIn 0.3s';
-
-      statusElement.style.display = 'block';
-
+      
+      // Remove active class first (if it exists) to restart animation
+      statusElement.classList.remove('active');
+      
+      // Add active class after a brief delay to trigger animation
+      setTimeout(() => {
+        statusElement.classList.add('active');
+      }, 10);
+      
+      // Set up close button if it exists
+      const closeButton = statusElement.querySelector('.status-close');
+      if (closeButton) {
+        closeButton.onclick = function() {
+          hideStatus();
+        };
+      }
+      
       // Auto-hide success messages after a delay
       if (type === 'success') {
-        setTimeout(function () {
-          statusElement.style.opacity = '0';
-          statusElement.style.transform = 'translateY(-10px)';
-          statusElement.style.transition = 'opacity 0.5s, transform 0.5s';
-
-          setTimeout(function () {
-            statusElement.style.display = 'none';
-            statusElement.style.opacity = '';
-            statusElement.style.transform = '';
-            statusElement.style.transition = '';
-          }, 500);
+        setTimeout(function() {
+          hideStatus();
         }, 3000);
       }
+      
+      // Log the status message for debugging
+      console.log(`Status (${type}): ${message}`);
     }
+    
+    function hideStatus() {
+      const statusElement = document.getElementById('status');
+      if (statusElement) {
+        statusElement.classList.remove('active');
+      }
+    }
+    
+    // Ensure close button functionality is initialized
+    document.addEventListener('DOMContentLoaded', function() {
+      const statusElement = document.getElementById('status');
+      const closeButton = statusElement.querySelector('.status-close');
+      closeButton.onclick = function() {
+        hideStatus();
+      };
+    });
 
     function saveSettings() {
       const entityType = document.getElementById('entityType').value;
@@ -1695,33 +1832,56 @@
         return;
       }
 
-      // Show loading animation
-      document.getElementById('saveLoading').style.display = 'inline-flex';
+      // Get the save button
       const saveBtn = document.getElementById('saveBtn');
+      
+      // Add loading state - visually transform the button
+      saveBtn.classList.add('button-loading');
       saveBtn.disabled = true;
-
-      // Add ripple effect to button
-      const ripple = document.createElement('span');
-      ripple.className = 'ripple';
-      const rect = saveBtn.getBoundingClientRect();
-      ripple.style.width = ripple.style.height = Math.max(rect.width, rect.height) + 'px';
-      ripple.style.left = (event.clientX - rect.left - ripple.offsetWidth / 2) + 'px';
-      ripple.style.top = (event.clientY - rect.top - ripple.offsetHeight / 2) + 'px';
-      saveBtn.appendChild(ripple);
+      
+      // Add ripple effect
+      addRippleToElement(saveBtn, event);
 
       google.script.run
         .withSuccessHandler(function () {
-          document.getElementById('saveLoading').style.display = 'none';
+          // Remove loading state
+          saveBtn.classList.remove('button-loading');
           saveBtn.disabled = false;
+          
+          // Show success message
           showStatus('success', 'Settings saved successfully!');
           setTimeout(() => google.script.host.close(), 1500);
         })
         .withFailureHandler(function (error) {
-          document.getElementById('saveLoading').style.display = 'none';
+          // Remove loading state
+          saveBtn.classList.remove('button-loading');
           saveBtn.disabled = false;
+          
+          // Show error message
           showStatus('error', 'Error saving settings: ' + error.message);
         })
         .saveSettings('', entityType, filterId, '', sheetName);
+    }
+
+    /* Add a helper function for ripple effect */
+    function addRippleToElement(element, event) {
+      if (!element || !event) return;
+      
+      const ripple = document.createElement('span');
+      ripple.className = 'ripple';
+      
+      const rect = element.getBoundingClientRect();
+      const size = Math.max(rect.width, rect.height);
+      
+      ripple.style.width = ripple.style.height = size + 'px';
+      ripple.style.left = (event.clientX - rect.left - size / 2) + 'px';
+      ripple.style.top = (event.clientY - rect.top - size / 2) + 'px';
+      
+      element.appendChild(ripple);
+      
+      setTimeout(() => {
+        ripple.remove();
+      }, 600);
     }
 
     function reconnect() {
@@ -2405,18 +2565,6 @@
       }
     }
 
-    function showStatus(type, message) {
-      const indicator = document.getElementById('statusIndicator');
-      indicator.className = 'indicator ' + type;
-      indicator.textContent = message;
-      indicator.style.display = 'block';
-
-      // Auto-hide after a delay
-      setTimeout(function () {
-        indicator.style.display = 'none';
-      }, 2000);
-    }
-
     // Event listeners
     window.onload = function () {
       console.log("Window loaded, initializing application...");
@@ -2679,71 +2827,59 @@
 
     // Add the saveColumns and showHelp functions
     function saveColumns() {
+      // Validate - must have at least one column and ID column must be first
       if (selectedColumns.length === 0) {
         showStatus('error', 'Please select at least one column');
         return;
       }
-
-      console.log('Save button clicked, sending data to server');
-      console.log(`Sending ${selectedColumns.length} columns to save`);
-
-      // Ensure the ID column is always included
+      
+      // Make sure we have the ID column
       if (!selectedColumns.some(col => col.key === 'id')) {
-        // Find the ID column in the original columns
+        // Add the ID column if it's missing
         const idColumn = window.originalAvailableColumns.find(col => col.key === 'id');
         if (idColumn) {
-          // Add ID column at the beginning of the array
-          selectedColumns.unshift(JSON.parse(JSON.stringify(idColumn)));
+          selectedColumns.unshift(idColumn);
           showStatus('info', 'ID column automatically added as it is required');
-          // Re-render to show the changes
-          renderSelectedList();
+          renderSelectedList(); // Update the UI
         }
       }
-
-      // Update any address component display names before saving
-      selectedColumns.forEach(col => {
-        if (col.key && (col.key.includes('sublocality') || col.key.includes('locality'))) {
-          // Make sure names match display labels
-          if (col.key.includes('sublocality')) {
-            col.name = col.name.replace('District/sublocality', 'District/Borough');
-            col.name = col.name.replace('Neighborhood', 'District/Borough');
-            if (col.customName && col.customName.includes('District/sublocality')) {
-              col.customName = col.customName.replace('District/sublocality', 'District/Borough');
-            }
-          }
-          if (col.key.includes('locality') && !col.key.includes('sublocality')) {
-            col.name = col.name.replace('City/town/village/locality', 'City');
-            if (col.customName && col.customName.includes('City/town/village/locality')) {
-              col.customName = col.customName.replace('City/town/village/locality', 'City');
-            }
-          }
-        }
-      });
-
-      // Log email and phone columns specifically
-      const emailColumns = selectedColumns.filter(col => col.key.startsWith('email.'));
-      const phoneColumns = selectedColumns.filter(col => col.key.startsWith('phone.'));
-
-      console.log('Email columns:', emailColumns);
-      console.log('Phone columns:', phoneColumns);
-
-      // Show loading animation
-      document.getElementById('saveLoading').style.display = 'flex';
-      document.getElementById('columnsTabSaveBtn').disabled = true;
-      document.getElementById('cancelBtn').disabled = true;
-
+      
+      // Get both save and cancel buttons
+      const saveBtn = document.getElementById('columnsTabSaveBtn');
+      const cancelBtn = document.getElementById('cancelBtn');
+      
+      // Add loading state to save button
+      saveBtn.classList.add('button-loading');
+      saveBtn.disabled = true;
+      cancelBtn.disabled = true;
+      
+      // Add ripple effect if we have an event
+      if (event) {
+        addRippleToElement(saveBtn, event);
+      }
+      
+      // Get current entity type and sheet name
+      const entityType = window.entityType || document.getElementById('entityType')?.value;
+      const sheetName = window.sheetName || document.getElementById('sheetName')?.value;
+      
       console.log('Calling handleSaveColumns with:', {
         columns: selectedColumns.map(c => ({ key: c.key, name: c.name, customName: c.customName })),
         entityType,
         sheetName
       });
-
+      
       google.script.run
         .withSuccessHandler((result) => {
           console.log('Save successful, result:', result);
-          document.getElementById('saveLoading').style.display = 'none';
+          
+          // Remove loading state
+          saveBtn.classList.remove('button-loading');
+          saveBtn.disabled = false;
+          cancelBtn.disabled = false;
+          
+          // Show success message
           showStatus('success', 'Column preferences saved successfully!');
-
+          
           // Close after a short delay to show the success message
           setTimeout(() => {
             google.script.host.close();
@@ -2751,9 +2887,13 @@
         })
         .withFailureHandler((error) => {
           console.error('Save failed:', error);
-          document.getElementById('saveLoading').style.display = 'none';
-          document.getElementById('columnsTabSaveBtn').disabled = false;
-          document.getElementById('cancelBtn').disabled = false;
+          
+          // Remove loading state
+          saveBtn.classList.remove('button-loading');
+          saveBtn.disabled = false;
+          cancelBtn.disabled = false;
+          
+          // Show error message
           showStatus('error', 'Error: ' + error.message);
         })
         .handleSaveColumns(selectedColumns, entityType, sheetName);
