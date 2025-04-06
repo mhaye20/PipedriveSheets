@@ -416,6 +416,9 @@ function syncPipedriveDataToSheet(entityType, skipPush = false, sheetName = null
     const timestamp = new Date().toISOString();
     scriptProperties.setProperty(`LAST_SYNC_${sheetName}`, timestamp);
     
+    // Ensure we have a valid header-to-field mapping for future pushChangesToPipedrive calls
+    ensureHeaderFieldMapping(sheetName, entityType);
+    
     Logger.log(`Successfully synced ${items.length} items from Pipedrive to sheet "${sheetName}"`);
     
     // Mark Phase 3 as completed
@@ -571,6 +574,13 @@ function writeDataToSheet(items, options) {
       }
     }
     
+    // Ensure we have a valid header-to-field mapping based on the current headers
+    try {
+      ensureHeaderFieldMapping(sheetName, options.entityType);
+    } catch (mappingError) {
+      Logger.log(`Error creating header-to-field mapping: ${mappingError.message}`);
+    }
+    
     // Load saved Sync Status values if needed
     if (twoWaySyncEnabled && items.length > 0) {
       try {
@@ -639,6 +649,12 @@ function makeHeadersUnique(headers, columns) {
   const resultHeaders = [];
   
   headers.forEach((header, index) => {
+    // Check if this is a custom name from column config
+    let isCustomName = false;
+    if (columns && columns[index] && columns[index].customName) {
+      isCustomName = true;
+    }
+    
     // Skip entirely empty headers
     if (!header) {
       resultHeaders.push(`Column ${index + 1}`);
@@ -663,6 +679,12 @@ function makeHeadersUnique(headers, columns) {
       headerInfo.count++;
       headerInfo.columnKeys.push(columnKey);
       headerMap.set(header, headerInfo);
+      
+      // For custom names, preserve them but add a number suffix to make unique
+      if (isCustomName) {
+        resultHeaders.push(`${header} (${headerInfo.count})`);
+        return;
+      }
       
       // Attempt to make a more descriptive name based on column key
       if (columnKey && columnKey.includes('_')) {
@@ -2422,26 +2444,11 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
 
     const subdomain = scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') || DEFAULT_PIPEDRIVE_SUBDOMAIN;
 
-    // Get the original column configuration that maps headers to field keys
-    const columnSettingsKey = `COLUMNS_${activeSheetName}_${entityType}`;
-    const savedColumnsJson = scriptProperties.getProperty(columnSettingsKey);
-    let columnConfig = [];
-
-    if (savedColumnsJson) {
-      columnConfig = JSON.parse(savedColumnsJson);
-    }
-
-    const headerToFieldKeyMap = {};
-    for (const column of columnConfig) {
-      if (column.key && column.name) {
-        if (column.customName) {
-          headerToFieldKeyMap[column.customName] = column.key;
-        } else {
-          headerToFieldKeyMap[column.name] = column.key;
-        }
-      }
-    }
-
+    // UPDATED: Get the stored header-to-field mapping using our new helper function
+    // This ensures we always have a valid mapping, even if it's the first time or columns have changed
+    const headerToFieldKeyMap = ensureHeaderFieldMapping(activeSheetName, entityType);
+    Logger.log(`Using header-to-field mapping with ${Object.keys(headerToFieldKeyMap).length} entries`);
+    
     // Get field mappings
     Logger.log(`Getting field mappings for entity type: ${entityType}`);
     
@@ -2489,7 +2496,7 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
       Logger.log(`Found ID column "${headers[idColumnIndex]}" at index ${idColumnIndex}`);
     }
 
-    // Get field mappings based on entity type
+    // Get fallback field mappings based on entity type in case we need them
     const fieldMappings = getFieldMappingsForEntity(entityType);
 
     // Track rows that need updating
@@ -2582,18 +2589,161 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
           // Get the field key for this header - first try the stored column config
           let fieldKey = headerToFieldKeyMap[header] || fieldMappings[header];
           
-          // If no mapping found, try common field name variations
+          // IMPROVED: If still no mapping found, try looking for similar headers in our mapping
+          if (!fieldKey) {
+            // Try case-insensitive match
+            const headerLower = header.toLowerCase();
+            for (const mappedHeader in headerToFieldKeyMap) {
+              if (mappedHeader.toLowerCase() === headerLower) {
+                fieldKey = headerToFieldKeyMap[mappedHeader];
+                Logger.log(`Found case-insensitive match for "${header}" -> "${mappedHeader}" = ${fieldKey}`);
+                
+                // Save this match for next time
+                headerToFieldKeyMap[header] = fieldKey;
+                break;
+              }
+            }
+            
+            // If still no match, try to match by removing common prefixes/suffixes and spaces
+            if (!fieldKey) {
+              // Normalize header by removing spaces, parentheses, etc.
+              const normalizedHeader = headerLower.replace(/\s+/g, '').replace(/[()]/g, '');
+              
+              for (const mappedHeader in headerToFieldKeyMap) {
+                const normalizedMappedHeader = mappedHeader.toLowerCase().replace(/\s+/g, '').replace(/[()]/g, '');
+                if (normalizedHeader === normalizedMappedHeader) {
+                  fieldKey = headerToFieldKeyMap[mappedHeader];
+                  Logger.log(`Found normalized match for "${header}" -> "${mappedHeader}" = ${fieldKey}`);
+                  
+                  // Save this match for next time
+                  headerToFieldKeyMap[header] = fieldKey;
+                  break;
+                }
+              }
+            }
+            
+            // If still no match, try to find common field patterns in the header
+            if (!fieldKey) {
+              // Common patterns for ID fields
+              if (headerLower.includes('id') && !headerLower.includes('hide')) {
+                if (headerLower.includes('deal')) fieldKey = 'id';
+                else if (headerLower.includes('pipedrive')) fieldKey = 'id';
+                else if (headerLower === 'id') fieldKey = 'id';
+                
+                if (fieldKey) {
+                  Logger.log(`Mapped "${header}" to Pipedrive field "id" using ID pattern match`);
+                  headerToFieldKeyMap[header] = fieldKey;
+                }
+              }
+              
+              // Common patterns for Deal Title
+              if (!fieldKey && (headerLower.includes('title') || headerLower.includes('deal name'))) {
+                fieldKey = 'title';
+                Logger.log(`Mapped "${header}" to Pipedrive field "title" using title pattern match`);
+                headerToFieldKeyMap[header] = fieldKey;
+              }
+              
+              // Common patterns for Organization
+              if (!fieldKey && (headerLower.includes('organization') || headerLower.includes('company'))) {
+                // Check for name pattern
+                if (headerLower.includes('name')) {
+                  fieldKey = 'org_id.name';
+                  Logger.log(`Mapped "${header}" to Pipedrive field "org_id.name" using organization name pattern`);
+                } else {
+                  fieldKey = 'org_id';
+                  Logger.log(`Mapped "${header}" to Pipedrive field "org_id" using organization pattern`);
+                }
+                headerToFieldKeyMap[header] = fieldKey;
+              }
+              
+              // Common patterns for Person/Contact
+              if (!fieldKey && (headerLower.includes('person') || headerLower.includes('contact'))) {
+                // Check for name pattern
+                if (headerLower.includes('name')) {
+                  fieldKey = 'person_id.name';
+                  Logger.log(`Mapped "${header}" to Pipedrive field "person_id.name" using person name pattern`);
+                } else {
+                  fieldKey = 'person_id';
+                  Logger.log(`Mapped "${header}" to Pipedrive field "person_id" using person pattern`);
+                }
+                headerToFieldKeyMap[header] = fieldKey;
+              }
+              
+              // Common patterns for Owner
+              if (!fieldKey && headerLower.includes('owner')) {
+                // Check for name pattern
+                if (headerLower.includes('name')) {
+                  fieldKey = 'owner_id.name';
+                  Logger.log(`Mapped "${header}" to Pipedrive field "owner_id.name" using owner name pattern`);
+                } else {
+                  fieldKey = 'owner_id';
+                  Logger.log(`Mapped "${header}" to Pipedrive field "owner_id" using owner pattern`);
+                }
+                headerToFieldKeyMap[header] = fieldKey;
+              }
+              
+              // Common patterns for Value/Amount
+              if (!fieldKey && (headerLower.includes('value') || headerLower.includes('amount'))) {
+                fieldKey = 'value';
+                Logger.log(`Mapped "${header}" to Pipedrive field "value" using value pattern match`);
+                headerToFieldKeyMap[header] = fieldKey;
+              }
+              
+              // Common patterns for Currency
+              if (!fieldKey && headerLower.includes('currency')) {
+                fieldKey = 'currency';
+                Logger.log(`Mapped "${header}" to Pipedrive field "currency" using currency pattern match`);
+                headerToFieldKeyMap[header] = fieldKey;
+              }
+              
+              // Common patterns for Status
+              if (!fieldKey && headerLower.includes('status')) {
+                fieldKey = 'status';
+                Logger.log(`Mapped "${header}" to Pipedrive field "status" using status pattern match`);
+                headerToFieldKeyMap[header] = fieldKey;
+              }
+              
+              // Common patterns for Pipeline
+              if (!fieldKey && headerLower.includes('pipeline')) {
+                fieldKey = 'pipeline_id';
+                Logger.log(`Mapped "${header}" to Pipedrive field "pipeline_id" using pipeline pattern match`);
+                headerToFieldKeyMap[header] = fieldKey;
+              }
+              
+              // Common patterns for Stage
+              if (!fieldKey && headerLower.includes('stage')) {
+                fieldKey = 'stage_id';
+                Logger.log(`Mapped "${header}" to Pipedrive field "stage_id" using stage pattern match`);
+                headerToFieldKeyMap[header] = fieldKey;
+              }
+            }
+          }
+          
+          // If still no mapping found, try common field name variations
           if (!fieldKey) {
             // Handle common date field variations
             const headerLower = header.toLowerCase();
             if (headerLower === 'due date' || headerLower === 'duedate') {
               fieldKey = 'due_date';
               Logger.log(`Mapped "${header}" to Pipedrive field "due_date" using common field mapping`);
+              headerToFieldKeyMap[header] = fieldKey;
             }
             else if (headerLower === 'due time' || headerLower === 'duetime') {
               fieldKey = 'due_time';
               Logger.log(`Mapped "${header}" to Pipedrive field "due_time" using common field mapping`);
+              headerToFieldKeyMap[header] = fieldKey;
             }
+            else if (headerLower.includes('close date') || headerLower.includes('expected close')) {
+              fieldKey = 'expected_close_date';
+              Logger.log(`Mapped "${header}" to Pipedrive field "expected_close_date" using common field mapping`);
+              headerToFieldKeyMap[header] = fieldKey;
+            }
+          }
+          
+          // Save the updated mapping if we've added new mappings
+          if (Object.keys(headerToFieldKeyMap).length > 0) {
+            const mappingKey = `HEADER_TO_FIELD_MAP_${activeSheetName}_${entityType}`;
+            scriptProperties.setProperty(mappingKey, JSON.stringify(headerToFieldKeyMap));
           }
 
           if (fieldKey) {
@@ -3073,7 +3223,7 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
         }
         
         // Set up the request body
-        const requestBody = rowData.data;
+        const requestBody = filterReadOnlyFields(rowData.data, entityType);
         
         // Make the API request
         const response = UrlFetchApp.fetch(updateUrl, {
@@ -4334,4 +4484,558 @@ function logDebugInfo() {
   } else {
     Logger.log(`No ${entityType} found with this filter. Please check the filter ID.`);
   }
+}
+
+/**
+ * Detects if columns have been shifted, renamed, or reordered in a sheet
+ * and updates the header-to-field mapping accordingly
+ * @return {boolean} True if shift detected and fixed, false otherwise
+ */
+function detectColumnShifts() {
+  try {
+    // Get the active sheet
+    const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const activeSheetName = activeSheet.getName();
+    
+    // Get script properties
+    const scriptProperties = PropertiesService.getScriptProperties();
+    
+    // Get sheet-specific entity type
+    const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
+    const entityType = scriptProperties.getProperty(sheetEntityTypeKey);
+    
+    // If no entity type set for this sheet, exit
+    if (!entityType) {
+      Logger.log(`No entity type set for sheet "${activeSheetName}", skipping column shift detection`);
+      return false;
+    }
+    
+    // Get the current headers from the sheet
+    const headers = activeSheet.getRange(1, 1, 1, activeSheet.getLastColumn()).getValues()[0];
+    
+    // Make sure we have a valid header-to-field mapping
+    const headerToFieldMap = ensureHeaderFieldMapping(activeSheetName, entityType);
+    
+    // Track if we've updated the mapping
+    let updated = false;
+    
+    // Check if the current headers match the stored mapping
+    // We'll log each header to see if it exists in our mapping
+    Logger.log(`Checking ${headers.length} headers against stored mapping with ${Object.keys(headerToFieldMap).length} entries`);
+    
+    // Count headers found in mapping
+    let headersFoundInMapping = 0;
+    
+    // Identify headers not found in mapping
+    const headersNotInMapping = [];
+    
+    headers.forEach(header => {
+      if (header && typeof header === 'string') {
+        if (headerToFieldMap[header]) {
+          // This header is already in our mapping
+          headersFoundInMapping++;
+        } else {
+          // This header is not in our mapping - could be a renamed column
+          headersNotInMapping.push(header);
+          
+          // Try case-insensitive match
+          const headerLower = header.toLowerCase();
+          let matchFound = false;
+          
+          // First look for exact case-insensitive match
+          for (const mappedHeader in headerToFieldMap) {
+            if (mappedHeader.toLowerCase() === headerLower) {
+              // Found a case-insensitive match, update the mapping
+              const fieldKey = headerToFieldMap[mappedHeader];
+              headerToFieldMap[header] = fieldKey;
+              updated = true;
+              matchFound = true;
+              Logger.log(`Found case-insensitive match for "${header}" -> "${mappedHeader}" = ${fieldKey}`);
+              break;
+            }
+          }
+          
+          // If no exact match, try normalized match (remove spaces, punctuation, etc.)
+          if (!matchFound) {
+            const normalizedHeader = headerLower
+              .replace(/\s+/g, '') // Remove all whitespace
+              .replace(/[^\w\d]/g, ''); // Remove non-alphanumeric characters
+            
+            for (const mappedHeader in headerToFieldMap) {
+              const normalizedMappedHeader = mappedHeader.toLowerCase()
+                .replace(/\s+/g, '')
+                .replace(/[^\w\d]/g, '');
+              
+              if (normalizedHeader === normalizedMappedHeader) {
+                // Found a normalized match
+                const fieldKey = headerToFieldMap[mappedHeader];
+                headerToFieldMap[header] = fieldKey;
+                updated = true;
+                Logger.log(`Found normalized match for "${header}" -> "${mappedHeader}" = ${fieldKey}`);
+                break;
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    Logger.log(`Found ${headersFoundInMapping} headers in mapping out of ${headers.length} total headers`);
+    
+    if (headersNotInMapping.length > 0) {
+      Logger.log(`Headers not found in mapping: ${headersNotInMapping.join(', ')}`);
+    }
+    
+    // If we updated the mapping, save it
+    if (updated) {
+      const mappingKey = `HEADER_TO_FIELD_MAP_${activeSheetName}_${entityType}`;
+      scriptProperties.setProperty(mappingKey, JSON.stringify(headerToFieldMap));
+      Logger.log(`Updated header-to-field mapping with ${Object.keys(headerToFieldMap).length} entries`);
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    Logger.log(`Error in detectColumnShifts: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Ensures that a valid header-to-field mapping exists for the given sheet and entity type
+ * @param {string} sheetName - The name of the sheet
+ * @param {string} entityType - The entity type (deals, persons, etc.)
+ * @return {Object} The header-to-field mapping
+ */
+function ensureHeaderFieldMapping(sheetName, entityType) {
+  try {
+    const scriptProperties = PropertiesService.getScriptProperties();
+    
+    // Check if the mapping already exists
+    const mappingKey = `HEADER_TO_FIELD_MAP_${sheetName}_${entityType}`;
+    const mappingJson = scriptProperties.getProperty(mappingKey);
+    let headerToFieldKeyMap = {};
+    
+    if (mappingJson) {
+      try {
+        headerToFieldKeyMap = JSON.parse(mappingJson);
+        Logger.log(`Loaded existing header-to-field mapping with ${Object.keys(headerToFieldKeyMap).length} entries`);
+      } catch (e) {
+        Logger.log(`Error parsing existing mapping: ${e.message}`);
+        headerToFieldKeyMap = {};
+      }
+    }
+    
+    // If mapping exists and has entries, return it
+    if (Object.keys(headerToFieldKeyMap).length > 0) {
+      return headerToFieldKeyMap;
+    }
+    
+    Logger.log(`Creating new header-to-field mapping for ${sheetName} (${entityType})`);
+    
+    // Get column preferences for this sheet/entity
+    const columnConfig = getColumnPreferences(entityType, sheetName);
+    
+    if (!columnConfig || columnConfig.length === 0) {
+      // Try with SyncService method if available
+      try {
+        if (typeof SyncService !== 'undefined' && typeof SyncService.getTeamAwareColumnPreferences === 'function') {
+          Logger.log(`Trying SyncService.getTeamAwareColumnPreferences`);
+          const teamColumns = SyncService.getTeamAwareColumnPreferences(entityType, sheetName);
+          if (teamColumns && teamColumns.length > 0) {
+            Logger.log(`Found ${teamColumns.length} columns using team-aware method`);
+            
+            // Create mapping from these columns
+            teamColumns.forEach(col => {
+              if (col.key) {
+                const displayName = col.customName || col.name || formatColumnName(col.key);
+                headerToFieldKeyMap[displayName] = col.key;
+                Logger.log(`Added mapping: "${displayName}" -> "${col.key}"`);
+              }
+            });
+            
+            // Save the mapping
+            if (Object.keys(headerToFieldKeyMap).length > 0) {
+              scriptProperties.setProperty(mappingKey, JSON.stringify(headerToFieldKeyMap));
+              Logger.log(`Saved mapping with ${Object.keys(headerToFieldKeyMap).length} entries`);
+              return headerToFieldKeyMap;
+            }
+          }
+        }
+      } catch (teamError) {
+        Logger.log(`Error using team-aware column preferences: ${teamError.message}`);
+      }
+      
+      // If still no columns, use default columns
+      Logger.log(`No column config found, using default columns`);
+      const defaultColumns = getDefaultColumns(entityType);
+      
+      // Create mapping from default columns
+      defaultColumns.forEach(col => {
+        // For default columns, key and display name are the same
+        const key = typeof col === 'object' ? col.key : col;
+        const displayName = formatColumnName(key);
+        headerToFieldKeyMap[displayName] = key;
+        Logger.log(`Added default mapping: "${displayName}" -> "${key}"`);
+      });
+    } else {
+      // Create mapping from column config
+      Logger.log(`Creating mapping from ${columnConfig.length} column preferences`);
+      
+      columnConfig.forEach(col => {
+        if (col.key) {
+          const displayName = col.customName || col.name || formatColumnName(col.key);
+          headerToFieldKeyMap[displayName] = col.key;
+          Logger.log(`Added mapping: "${displayName}" -> "${col.key}"`);
+        }
+      });
+    }
+    
+    // Also add common field mappings that might not be in column config
+    const commonMappings = {
+      'ID': 'id',
+      'Pipedrive ID': 'id',
+      'Deal Title': 'title',
+      'Organization': 'org_id',
+      'Organization Name': 'org_id.name',
+      'Person': 'person_id',
+      'Person Name': 'person_id.name',
+      'Owner': 'owner_id',
+      'Owner Name': 'owner_id.name',
+      'Value': 'value',
+      'Stage': 'stage_id',
+      'Pipeline': 'pipeline_id'
+    };
+    
+    Object.keys(commonMappings).forEach(displayName => {
+      if (!headerToFieldKeyMap[displayName]) {
+        headerToFieldKeyMap[displayName] = commonMappings[displayName];
+        Logger.log(`Added common mapping: "${displayName}" -> "${commonMappings[displayName]}"`);
+      }
+    });
+    
+    // Save the mapping
+    scriptProperties.setProperty(mappingKey, JSON.stringify(headerToFieldKeyMap));
+    Logger.log(`Saved header-to-field mapping with ${Object.keys(headerToFieldKeyMap).length} entries`);
+    
+    return headerToFieldKeyMap;
+  } catch (error) {
+    Logger.log(`Error in ensureHeaderFieldMapping: ${error.message}`);
+    return {}; // Return empty mapping in case of error
+  }
+}
+
+/**
+ * Gets default columns for a given entity type
+ * @param {string} entityType - The entity type
+ * @return {Array} Array of default column keys
+ */
+function getDefaultColumns(entityType) {
+  // Use the DEFAULT_COLUMNS constant if it exists
+  if (typeof DEFAULT_COLUMNS !== 'undefined') {
+    if (DEFAULT_COLUMNS[entityType]) {
+      return DEFAULT_COLUMNS[entityType];
+    } else if (DEFAULT_COLUMNS.COMMON) {
+      return DEFAULT_COLUMNS.COMMON;
+    }
+  }
+  
+  // Fallback default columns by entity type
+  switch (entityType) {
+    case 'deals':
+      return ['id', 'title', 'value', 'currency', 'status', 'stage_id', 'pipeline_id', 'person_id', 'org_id', 'owner_id'];
+    case 'persons':
+      return ['id', 'name', 'email', 'phone', 'org_id', 'owner_id'];
+    case 'organizations':
+      return ['id', 'name', 'address', 'owner_id'];
+    case 'activities':
+      return ['id', 'subject', 'type', 'due_date', 'due_time', 'person_id', 'org_id', 'deal_id', 'owner_id'];
+    case 'leads':
+      return ['id', 'title', 'value', 'person_id', 'organization_id', 'owner_id'];
+    case 'products':
+      return ['id', 'name', 'code', 'unit', 'price', 'owner_id'];
+    default:
+      return ['id', 'name', 'owner_id'];
+  }
+}
+
+/**
+ * Filters out read-only fields from the data before sending to Pipedrive API
+ * @param {Object} data - The data object to filter
+ * @param {string} entityType - The entity type
+ * @return {Object} Filtered data object
+ */
+function filterReadOnlyFields(data, entityType) {
+  if (!data) return data;
+  
+  const filteredData = {};
+  // Initialize custom_fields object
+  filteredData.custom_fields = {};
+  
+  // Fields ending with these patterns are typically read-only
+  const readOnlyPatterns = [
+    /\.name$/, 
+    /\.email$/, 
+    /\.value$/, 
+    /\.active_flag$/, 
+    /\.phone$/, 
+    /\.pic_hash$/
+  ]; 
+  const allowedNameFields = ['first_name', 'last_name']; // These are explicitly allowed
+  
+  // Custom read-only fields by entity type
+  const readOnlyFields = [
+    // User/owner related
+    'owner_name',
+    'owner_email',
+    'user_id.email',
+    'user_id.name',
+    'user_id.active_flag',
+    'creator_user_id.email',
+    'creator_user_id.name',
+    
+    // Organization/Person related
+    'org_name',
+    'person_name',
+    
+    // System fields
+    'cc_email',
+    'weighted_value',
+    'formatted_value',
+    'source_channel',
+    'source_origin',
+    'origin',  // Added based on the error
+    'channel',
+    
+    // Activities and stats
+    'next_activity_time',
+    'next_activity_id',
+    'last_activity_id',
+    'last_activity_date',
+    'activities_count',
+    'done_activities_count',
+    'undone_activities_count',
+    'files_count',
+    'notes_count',
+    'followers_count',
+    
+    // Timestamps and system IDs
+    'add_time',
+    'update_time',
+    'stage_order_nr',
+    'rotten_time'
+  ];
+  
+  // Track nested relationship fields
+  const relationships = {
+    'owner_id.name': 'owner_id',
+    'org_id.name': 'org_id',
+    'person_id.name': 'person_id',
+    'creator_user_id.name': 'creator_user_id',
+    'user_id.name': 'user_id',
+    'deal_id.name': 'deal_id',
+    'deal_id.title': 'deal_id',
+    'stage_id.name': 'stage_id',
+    'pipeline_id.name': 'pipeline_id'
+  };
+  
+  // Pattern for custom field IDs (long hex string)
+  const customFieldPattern = /^[a-f0-9]{20,}$/i;
+  // Pattern for custom field components (like _locality, _street, etc.)
+  const customFieldComponentPattern = /^[a-f0-9]{20,}_[a-z_]+$/i;
+  
+  // First, extract IDs from relationship fields if possible
+  for (const nestedField in relationships) {
+    const parentField = relationships[nestedField];
+    
+    // If we have the relationship field but not the parent field, look up the ID
+    if (data[nestedField] && !data[parentField]) {
+      Logger.log(`Found ${nestedField} without corresponding ${parentField}`);
+      
+      // Try to extract ID from the name based on entity type and field
+      // This is complex and may need to be enhanced with API lookups
+      if (nestedField.includes('owner_id') || nestedField.includes('user_id')) {
+        // For user-related fields, try to find a user ID matching this name
+        const userId = lookupUserIdByName(data[nestedField]);
+        if (userId) {
+          Logger.log(`Resolved ${nestedField} "${data[nestedField]}" to ID: ${userId}`);
+          data[parentField] = userId;
+        }
+      }
+      // Add other entity lookups as needed
+    }
+  }
+  
+  // First pass - identify custom fields and organize data
+  const customFields = {};
+  const addressComponents = {};
+  const addressValues = {};
+  
+  for (const key in data) {
+    // First, handle custom fields with their special format
+    if (customFieldPattern.test(key)) {
+      // It's a base custom field (could be an address field base value)
+      Logger.log(`Found custom field with ID: ${key}`);
+      
+      // Store both in customFields for regular fields and in addressValues for address fields
+      customFields[key] = data[key];
+      addressValues[key] = data[key]; // Store the full address value
+      continue;
+    }
+    else if (customFieldComponentPattern.test(key)) {
+      // It's a custom field component (like address_locality)
+      const parts = key.match(/^([a-f0-9]{20,})_(.+)$/i);
+      if (parts && parts.length === 3) {
+        const fieldId = parts[1];
+        const component = parts[2];
+        
+        // Skip if this is in read-only fields
+        if (readOnlyFields.includes(key)) {
+          Logger.log(`Filtering out read-only custom field component: ${key}`);
+          continue;
+        }
+        
+        // Store address components separately for proper handling
+        if (!addressComponents[fieldId]) {
+          addressComponents[fieldId] = {};
+        }
+        addressComponents[fieldId][component] = data[key];
+        Logger.log(`Stored address component: ${fieldId}.${component} = ${data[key]}`);
+      }
+      continue;
+    }
+  }
+  
+  // Now filter out the read-only fields
+  for (const key in data) {
+    // Skip custom fields and address components - we handled those separately
+    if (customFieldPattern.test(key) || customFieldComponentPattern.test(key)) {
+      continue;
+    }
+    
+    // Skip if this is a known read-only field
+    if (readOnlyFields.includes(key)) {
+      Logger.log(`Filtering out read-only field: ${key}`);
+      continue;
+    }
+    
+    // Check if this field matches any read-only pattern
+    let isReadOnly = false;
+    for (const pattern of readOnlyPatterns) {
+      if (pattern.test(key) && !allowedNameFields.includes(key)) {
+        isReadOnly = true;
+        break;
+      }
+    }
+    
+    if (isReadOnly) {
+      const parentField = Object.keys(relationships).find(rel => rel === key);
+      
+      if (parentField) {
+        Logger.log(`Filtering out relationship field: ${key} - should use ${relationships[parentField]} instead`);
+      } else {
+        Logger.log(`Filtering out read-only field matching pattern: ${key}`);
+      }
+      continue;
+    }
+    
+    // Special handling for nested properties
+    if (key.includes('.')) {
+      // Only allow specific nested fields that are known to be updatable
+      const allowedNestedFields = [
+        'address.street', 
+        'address.city', 
+        'address.state', 
+        'address.postal_code',
+        'address.country'
+      ];
+      
+      if (!allowedNestedFields.includes(key)) {
+        Logger.log(`Filtering out nested field: ${key} - nested fields are generally read-only`);
+        continue;
+      }
+    }
+    
+    // Include this field in the filtered data
+    filteredData[key] = data[key];
+  }
+  
+  // Handle custom fields
+  if (Object.keys(customFields).length > 0) {
+    Logger.log(`Handling ${Object.keys(customFields).length} custom fields`);
+    for (const fieldId in customFields) {
+      filteredData.custom_fields[fieldId] = customFields[fieldId];
+    }
+  }
+  
+  // Handle address components - for address fields, we may need special handling
+  if (Object.keys(addressComponents).length > 0) {
+    Logger.log(`Handling address components for ${Object.keys(addressComponents).length} address fields`);
+    
+    // For address fields, Pipedrive expects an object structure with a 'value' property
+    for (const fieldId in addressComponents) {
+      // Create an address object with components
+      const addressObject = addressComponents[fieldId];
+      
+      // Ensure the address object has a 'value' property
+      if (!addressObject.value && addressValues[fieldId]) {
+        addressObject.value = addressValues[fieldId];
+        Logger.log(`Added main address value to components: ${addressValues[fieldId]}`);
+      } else if (!addressObject.value) {
+        // If we don't have a value, we need to construct one from the components
+        // or set a default value to satisfy the API
+        let constructedValue = '';
+        
+        // Try to construct an address from components
+        if (addressObject.street_number && addressObject.route) {
+          constructedValue = `${addressObject.street_number} ${addressObject.route}`;
+          if (addressObject.locality) constructedValue += `, ${addressObject.locality}`;
+          if (addressObject.admin_area_level_1) constructedValue += `, ${addressObject.admin_area_level_1}`;
+          if (addressObject.postal_code) constructedValue += ` ${addressObject.postal_code}`;
+          if (addressObject.country) constructedValue += `, ${addressObject.country}`;
+        } else if (addressObject.formatted_address) {
+          constructedValue = addressObject.formatted_address;
+        } else if (addressObject.locality) {
+          constructedValue = addressObject.locality;
+          if (addressObject.admin_area_level_1) constructedValue += `, ${addressObject.admin_area_level_1}`;
+        }
+        
+        if (constructedValue) {
+          addressObject.value = constructedValue;
+          Logger.log(`Constructed address value from components: ${constructedValue}`);
+        } else {
+          // As a last resort, use the component value directly
+          const firstComponent = Object.keys(addressObject)[0];
+          addressObject.value = addressObject[firstComponent];
+          Logger.log(`Using component ${firstComponent} as value: ${addressObject.value}`);
+        }
+      }
+      
+      // Add the complete address object to custom_fields using the field ID as the key
+      filteredData.custom_fields[fieldId] = addressObject;
+      
+      Logger.log(`Added address components as an object for field: ${fieldId} with components: ${Object.keys(addressObject).join(', ')}`);
+    }
+  }
+  
+  // Remove custom_fields if empty
+  if (Object.keys(filteredData.custom_fields).length === 0) {
+    delete filteredData.custom_fields;
+  }
+  
+  Logger.log(`Filtered data payload from ${Object.keys(data).length} fields to ${Object.keys(filteredData).length} top-level fields ${filteredData.custom_fields ? 'plus ' + Object.keys(filteredData.custom_fields).length + ' custom fields' : ''}`);
+  return filteredData;
+}
+
+/**
+ * Helper function to look up a user ID by name
+ * This is a placeholder - in a full implementation, you might cache user data
+ * @param {string} name - The name to look up
+ * @return {number|null} - The user ID if found, or null
+ */
+function lookupUserIdByName(name) {
+  // In a real implementation, this would query the Pipedrive API or use cached data
+  // For now, we'll just log that this function was called
+  Logger.log(`lookupUserIdByName called for "${name}" - this is a placeholder function`);
+  return null; // Placeholder, no lookup performed
 }

@@ -1844,6 +1844,26 @@ function saveColumnPreferences(entityType, sheetName, columns) {
     // Save to Script Properties
     properties.setProperty(columnsKey, columnsJson);
     
+    // NEW: Create and store a header-to-field key mapping for pushChangesToPipedrive
+    // This mapping will allow us to find the right Pipedrive field key regardless of header name changes
+    const headerToFieldKeyMap = {};
+    
+    columnsToSave.forEach(col => {
+      // If a column has a custom name, use that as the key in our mapping
+      if (col.customName) {
+        headerToFieldKeyMap[col.customName] = col.key;
+      } else {
+        // Otherwise use the standard formatted name
+        headerToFieldKeyMap[col.name] = col.key;
+      }
+    });
+    
+    // Save the header-to-field mapping
+    const mappingKey = `HEADER_TO_FIELD_MAP_${sheetName}_${entityType}`;
+    const mappingJson = JSON.stringify(headerToFieldKeyMap);
+    properties.setProperty(mappingKey, mappingJson);
+    Logger.log(`Saved header-to-field mapping with key: ${mappingKey}`);
+    
     // Verify the save
     try {
       const savedJson = properties.getProperty(columnsKey);
