@@ -4977,38 +4977,145 @@ function filterReadOnlyFields(data, entityType) {
       // Create an address object with components
       const addressObject = addressComponents[fieldId];
       
-      // Ensure the address object has a 'value' property
-      if (!addressObject.value && addressValues[fieldId]) {
+      // Check if we need to update the main address value based on component changes
+      if (addressObject.locality || addressObject.street_number || addressObject.route || 
+          addressObject.postal_code || addressObject.country || addressObject.admin_area_level_1) {
+        
+        // Get the original address if available
+        let originalAddress = addressValues[fieldId] || '';
+        let updatedAddress = originalAddress;
+        
+        // If we have locality (city) change, update in the main address
+        if (addressObject.locality) {
+          // Replace the city portion in the address
+          // This is a simplified approach - in a real implementation you might
+          // need more sophisticated address parsing
+          
+          // Try to find and replace the city in the address
+          // Common patterns: ", CityName," or " CityName," or ", CityName "
+          const cityPatterns = [
+            new RegExp(`, [^,]+,`, 'i'),  // Match ", AnyCity,"
+            new RegExp(` [^,]+,`, 'i'),   // Match " AnyCity,"
+          ];
+          
+          let cityReplaced = false;
+          for (const pattern of cityPatterns) {
+            if (pattern.test(originalAddress)) {
+              // Try to extract what we're replacing to log it
+              const match = originalAddress.match(pattern);
+              if (match && match[0]) {
+                Logger.log(`Found city pattern "${match[0]}" in address, replacing with locality "${addressObject.locality}"`);
+                
+                // Replace just the city part while keeping the commas/formatting
+                if (match[0].startsWith(', ')) {
+                  updatedAddress = originalAddress.replace(pattern, `, ${addressObject.locality},`);
+                } else if (match[0].startsWith(' ')) {
+                  updatedAddress = originalAddress.replace(pattern, ` ${addressObject.locality},`);
+                }
+                cityReplaced = true;
+                break;
+              }
+            }
+          }
+          
+          // If we couldn't find a clear city pattern to replace, construct a new address
+          if (!cityReplaced) {
+            Logger.log(`Could not identify city pattern in "${originalAddress}", constructing new address with components`);
+            
+            // Extract likely components from the original address
+            const parts = originalAddress.split(',').map(p => p.trim());
+            let street = parts[0] || '';
+            let state = '';
+            let zip = '';
+            let country = '';
+            
+            // Try to extract state and zip
+            if (parts.length > 1) {
+              // Look for a part that likely has state/zip
+              for (let i = 1; i < parts.length; i++) {
+                const part = parts[i];
+                // If this part has numbers, it likely contains a zip code
+                if (/\d/.test(part)) {
+                  const zipMatch = part.match(/\b\d{5}(?:-\d{4})?\b/);
+                  if (zipMatch) {
+                    zip = zipMatch[0];
+                    state = part.replace(zipMatch[0], '').trim();
+                  } else {
+                    // No clear zip - treat the whole part as state
+                    state = part;
+                  }
+                } else if (i < parts.length - 1) {
+                  // If not the last part and no numbers, likely a state
+                  state = part;
+                } else {
+                  // Last part with no numbers, likely country
+                  country = part;
+                }
+              }
+            }
+            
+            // Construct a new address using the updated city
+            updatedAddress = street;
+            updatedAddress += `, ${addressObject.locality}`;
+            if (state) updatedAddress += `, ${state}`;
+            if (zip) updatedAddress += ` ${zip}`;
+            if (country) updatedAddress += `, ${country}`;
+          }
+          
+          // Use the updated address that includes the new city
+          addressObject.value = updatedAddress;
+          Logger.log(`Updated address value to reflect city change: "${updatedAddress}"`);
+        }
+        // If we have other component changes (street, etc.), build a more complete updated address
+        else if (Object.keys(addressObject).length > 0 && !addressObject.value) {
+          // Construct a new address from scratch using available components
+          let newAddress = '';
+          
+          if (addressObject.street_number && addressObject.route) {
+            newAddress = `${addressObject.street_number} ${addressObject.route}`;
+          } else if (addressObject.route) {
+            newAddress = addressObject.route;
+          }
+          
+          if (addressObject.locality) {
+            if (newAddress) newAddress += `, ${addressObject.locality}`;
+            else newAddress = addressObject.locality;
+          }
+          
+          if (addressObject.admin_area_level_1) {
+            if (newAddress) newAddress += `, ${addressObject.admin_area_level_1}`;
+            else newAddress = addressObject.admin_area_level_1;
+          }
+          
+          if (addressObject.postal_code) {
+            if (newAddress) newAddress += ` ${addressObject.postal_code}`;
+            else newAddress = addressObject.postal_code;
+          }
+          
+          if (addressObject.country) {
+            if (newAddress) newAddress += `, ${addressObject.country}`;
+            else newAddress = addressObject.country;
+          }
+          
+          if (newAddress) {
+            addressObject.value = newAddress;
+            Logger.log(`Constructed new address from components: "${newAddress}"`);
+          } else {
+            // Fallback to original address
+            addressObject.value = originalAddress;
+            Logger.log(`Using original address as fallback: "${originalAddress}"`);
+          }
+        }
+      } 
+      // If no components that should affect the main address, use the original value
+      else if (!addressObject.value && addressValues[fieldId]) {
         addressObject.value = addressValues[fieldId];
-        Logger.log(`Added main address value to components: ${addressValues[fieldId]}`);
+        Logger.log(`Using original address value: ${addressValues[fieldId]}`);
       } else if (!addressObject.value) {
-        // If we don't have a value, we need to construct one from the components
-        // or set a default value to satisfy the API
-        let constructedValue = '';
-        
-        // Try to construct an address from components
-        if (addressObject.street_number && addressObject.route) {
-          constructedValue = `${addressObject.street_number} ${addressObject.route}`;
-          if (addressObject.locality) constructedValue += `, ${addressObject.locality}`;
-          if (addressObject.admin_area_level_1) constructedValue += `, ${addressObject.admin_area_level_1}`;
-          if (addressObject.postal_code) constructedValue += ` ${addressObject.postal_code}`;
-          if (addressObject.country) constructedValue += `, ${addressObject.country}`;
-        } else if (addressObject.formatted_address) {
-          constructedValue = addressObject.formatted_address;
-        } else if (addressObject.locality) {
-          constructedValue = addressObject.locality;
-          if (addressObject.admin_area_level_1) constructedValue += `, ${addressObject.admin_area_level_1}`;
-        }
-        
-        if (constructedValue) {
-          addressObject.value = constructedValue;
-          Logger.log(`Constructed address value from components: ${constructedValue}`);
-        } else {
-          // As a last resort, use the component value directly
-          const firstComponent = Object.keys(addressObject)[0];
-          addressObject.value = addressObject[firstComponent];
-          Logger.log(`Using component ${firstComponent} as value: ${addressObject.value}`);
-        }
+        // As a last resort, use a component value directly
+        const firstComponent = Object.keys(addressObject)[0];
+        addressObject.value = addressObject[firstComponent];
+        Logger.log(`Using component ${firstComponent} as value: ${addressObject.value}`);
       }
       
       // Add the complete address object to custom_fields using the field ID as the key
