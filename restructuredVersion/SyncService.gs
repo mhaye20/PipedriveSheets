@@ -3342,8 +3342,19 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
                     
                     // Check if the component exists in our pre-processed data
                     if (rowData.data[componentKey]) {
-                      requestBody.custom_fields[fieldId][component] = rowData.data[componentKey];
-                      Logger.log(`Added ${component}=${rowData.data[componentKey]} to address object`);
+                      // Always convert components to strings for Pipedrive API
+                      requestBody.custom_fields[fieldId][component] = String(rowData.data[componentKey]);
+                      Logger.log(`Added ${component}=${rowData.data[componentKey]} to address object (as string)`);
+                    }
+                  }
+                }
+                
+                // Perform a final check to ensure ALL components are strings
+                if (typeof requestBody.custom_fields[fieldId] === 'object' && requestBody.custom_fields[fieldId] !== null) {
+                  for (const component in requestBody.custom_fields[fieldId]) {
+                    if (component !== 'value' && requestBody.custom_fields[fieldId][component] !== undefined) {
+                      requestBody.custom_fields[fieldId][component] = String(requestBody.custom_fields[fieldId][component]);
+                      Logger.log(`Ensured ${component} is a string in address object`);
                     }
                   }
                 }
@@ -5688,11 +5699,31 @@ function filterReadOnlyFields(data, entityType) {
       // Create an address object with components
       const addressObject = addressComponents[fieldId];
       
-      // If we have other component changes (street, etc.), build a more complete updated address
-      if (Object.keys(addressObject).length > 0 && !addressObject.value) {
+      // Check if we have a direct update to the full address field
+      const hasFullAddressUpdate = addressValues[fieldId] !== undefined && addressValues[fieldId] !== '';
+      
+      // If we have a full address update, prioritize it but still include components
+      if (hasFullAddressUpdate) {
+        // Prioritize the full address value - ensure it's a string
+        addressObject.value = String(addressValues[fieldId]);
+        Logger.log(`PRIORITY: Using full address update for field ${fieldId}: "${addressObject.value}"`);
+        
+        // Add all the component changes as well
+        // This ensures component data doesn't get lost when Pipedrive processes the address
+        // We don't need to do anything special here as components are already in addressObject
+        
+        // But ensure all components are strings
+        for (const component in addressObject) {
+          if (component !== 'value') {
+            addressObject[component] = String(addressObject[component]);
+          }
+        }
+      }
+      // If we don't have a full address update but have component changes, build the address from components
+      else if (Object.keys(addressObject).length > 0 && !addressObject.value) {
         // Add the original address value if available
         if (addressValues[fieldId]) {
-          addressObject.value = addressValues[fieldId];
+          addressObject.value = String(addressValues[fieldId]);
           Logger.log(`Using original address value: ${addressValues[fieldId]}`);
         } else {
           // Construct a new address from scratch using available components
@@ -5729,6 +5760,13 @@ function filterReadOnlyFields(data, entityType) {
             Logger.log(`Constructed new address from components: "${newAddress}"`);
           }
         }
+        
+        // Ensure all components are strings
+        for (const component in addressObject) {
+          if (component !== 'value') {
+            addressObject[component] = String(addressObject[component]);
+          }
+        }
       }
       
       // Add the complete address object to custom_fields using the field ID as the key
@@ -5737,8 +5775,15 @@ function filterReadOnlyFields(data, entityType) {
       
       // Make sure admin_area_level_2 is included directly in the object
       if (addressObject.admin_area_level_2) {
-        filteredData.custom_fields[fieldId].admin_area_level_2 = addressObject.admin_area_level_2;
+        filteredData.custom_fields[fieldId].admin_area_level_2 = String(addressObject.admin_area_level_2);
         Logger.log(`Explicitly added admin_area_level_2=${addressObject.admin_area_level_2} to address object for API`);
+      }
+      
+      // Final check to ensure all values are strings in the address object
+      for (const component in filteredData.custom_fields[fieldId]) {
+        if (component !== 'value' && filteredData.custom_fields[fieldId][component] !== undefined) {
+          filteredData.custom_fields[fieldId][component] = String(filteredData.custom_fields[fieldId][component]);
+        }
       }
       
       // Log the final object to confirm it's properly structured
@@ -5806,7 +5851,8 @@ function handleAddressComponents(data) {
         }
         
         // Add the admin_area_level_2 component to the parent address
-        result.custom_fields[fieldId].admin_area_level_2 = result[key];
+        // Convert to string to ensure proper format for Pipedrive API
+        result.custom_fields[fieldId].admin_area_level_2 = String(result[key]);
         Logger.log(`Added admin_area_level_2 = ${result[key]} directly to address object in custom_fields.${fieldId}`);
         
         // Remove it from the root level
@@ -5821,8 +5867,9 @@ function handleAddressComponents(data) {
     /^[a-f0-9]{20,}_[a-z_]+$/i.test(key)
   );
   
+  // If no address components are found, return early
   if (addressComponentKeys.length === 0) {
-    return result; // No more address components found
+    return result; 
   }
   
   // Initialize custom_fields if needed
@@ -5850,8 +5897,8 @@ function handleAddressComponents(data) {
         };
       }
       
-      // Store the component
-      addressComponents[fieldId].components[component] = value;
+      // Store the component - convert to string to ensure proper format for Pipedrive API
+      addressComponents[fieldId].components[component] = String(value);
       
       // Remove from root level immediately
       delete result[key];
@@ -5863,16 +5910,75 @@ function handleAddressComponents(data) {
   for (const fieldId in addressComponents) {
     const addressData = addressComponents[fieldId];
     
-    // Create a new address object with all components
-    // For Deals API (v2), address fields must be objects with components
-    const addressObj = {
-      value: addressData.mainValue
-    };
+    // Create a new address object
+    let addressObj = {};
     
-    // Add all components to the address object
-    for (const component in addressData.components) {
-      addressObj[component] = addressData.components[component];
-      Logger.log(`Added ${component} to address object ${fieldId}: ${addressData.components[component]}`);
+    // Priority handling: Check if we have a full address field that's being updated
+    // If the main field ID exists in the data and isn't empty, prioritize it for the value property
+    const hasFullAddressUpdate = result[fieldId] !== undefined && result[fieldId] !== '';
+    
+    if (hasFullAddressUpdate) {
+      // Full address field is present and updated - prioritize it
+      addressObj.value = String(result[fieldId]);
+      Logger.log(`PRIORITY: Using full address update for field ${fieldId}: "${addressObj.value}"`);
+      
+      // Even though we're using the full address value, still include the components
+      // This ensures that component data doesn't get lost when Pipedrive processes the address
+      for (const component in addressData.components) {
+        // Ensure all components are strings for Pipedrive API
+        addressObj[component] = String(addressData.components[component]);
+        Logger.log(`Added component ${component} to address object while prioritizing full address`);
+      }
+    } 
+    else {
+      // No full address update - construct address from components
+      Logger.log(`No full address update found for field ${fieldId}, using components to build address`);
+      
+      // Start with existing value if available
+      addressObj.value = String(addressData.mainValue || '');
+      
+      // If we don't have a value but we have components, construct one
+      if (!addressObj.value && Object.keys(addressData.components).length > 0) {
+        // Construct a new address from scratch using available components
+        let newAddress = '';
+        
+        if (addressData.components.street_number && addressData.components.route) {
+          newAddress = `${addressData.components.street_number} ${addressData.components.route}`;
+        } else if (addressData.components.route) {
+          newAddress = addressData.components.route;
+        }
+        
+        if (addressData.components.locality) {
+          if (newAddress) newAddress += `, ${addressData.components.locality}`;
+          else newAddress = addressData.components.locality;
+        }
+        
+        if (addressData.components.admin_area_level_1) {
+          if (newAddress) newAddress += `, ${addressData.components.admin_area_level_1}`;
+          else newAddress = addressData.components.admin_area_level_1;
+        }
+        
+        if (addressData.components.postal_code) {
+          if (newAddress) newAddress += ` ${addressData.components.postal_code}`;
+          else newAddress = addressData.components.postal_code;
+        }
+        
+        if (addressData.components.country) {
+          if (newAddress) newAddress += `, ${addressData.components.country}`;
+          else newAddress = addressData.components.country;
+        }
+        
+        if (newAddress) {
+          addressObj.value = newAddress;
+          Logger.log(`Constructed new address from components: "${newAddress}"`);
+        }
+      }
+      
+      // Add all components to the address object - convert to string to ensure proper format for Pipedrive API
+      for (const component in addressData.components) {
+        addressObj[component] = String(addressData.components[component]);
+        Logger.log(`Added ${component} to address object ${fieldId}: ${addressData.components[component]}`);
+      }
     }
     
     // Add this address object to custom_fields
@@ -5884,10 +5990,16 @@ function handleAddressComponents(data) {
         value: result.custom_fields[fieldId] 
       };
       
-      // Re-add components
+      // Re-add components - convert to string to ensure proper format for Pipedrive API
       for (const component in addressData.components) {
-        result.custom_fields[fieldId][component] = addressData.components[component];
+        result.custom_fields[fieldId][component] = String(addressData.components[component]);
       }
+    }
+    
+    // If we're using the full address, also remove it from the root level to avoid duplication
+    if (hasFullAddressUpdate) {
+      delete result[fieldId];
+      Logger.log(`Removed full address ${fieldId} from root level after creating address object`);
     }
     
     Logger.log(`Created structured address object for ${fieldId}: ${JSON.stringify(result.custom_fields[fieldId])}`);
@@ -5906,7 +6018,8 @@ function handleAddressComponents(data) {
         
         // If parent exists in custom_fields, move component there
         if (result.custom_fields && result.custom_fields[fieldId]) {
-          result.custom_fields[fieldId][component] = result[key];
+          // Convert to string to ensure proper format for Pipedrive API
+          result.custom_fields[fieldId][component] = String(result[key]);
           Logger.log(`Moved remaining component ${component} to parent in final safety check`);
           delete result[key];
         }
