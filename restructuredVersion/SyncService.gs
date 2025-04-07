@@ -5761,38 +5761,44 @@ function filterReadOnlyFields(data, entityType) {
         } 
         // If no current data or original value, construct a new address from components
         else {
-          // Construct a new address from all available components (updated + preserved)
+          // Construct a new address from all available components (both preserved and updated)
           let newAddress = '';
           
+          // Start with street number and route (street name)
           if (addressObject.street_number && addressObject.route) {
             newAddress = `${addressObject.street_number} ${addressObject.route}`;
           } else if (addressObject.route) {
             newAddress = addressObject.route;
           }
           
+          // Add city (locality)
           if (addressObject.locality) {
             if (newAddress) newAddress += `, ${addressObject.locality}`;
             else newAddress = addressObject.locality;
           }
           
+          // Add state/province with comma
           if (addressObject.admin_area_level_1) {
             if (newAddress) newAddress += `, ${addressObject.admin_area_level_1}`;
             else newAddress = addressObject.admin_area_level_1;
           }
           
+          // Add postal code (no comma before postal code)
           if (addressObject.postal_code) {
             if (newAddress) newAddress += ` ${addressObject.postal_code}`;
             else newAddress = addressObject.postal_code;
           }
           
+          // Add country with comma
           if (addressObject.country) {
             if (newAddress) newAddress += `, ${addressObject.country}`;
             else newAddress = addressObject.country;
           }
           
+          // Set the value property to the constructed address
           if (newAddress) {
             addressObject.value = newAddress;
-            Logger.log(`Constructed new address from components: "${newAddress}"`);
+            Logger.log(`Constructed new address from components with proper commas: "${newAddress}"`);
           }
         }
         
@@ -5808,17 +5814,29 @@ function filterReadOnlyFields(data, entityType) {
           
           // Check if we can find a spot to inject the state (before postal code if present)
           if (fixedAddress.includes("12205")) {
-            fixedAddress = fixedAddress.replace("12205", "NY 12205");
-            Logger.log(`Added missing state before postal code: ${fixedAddress}`);
+            // Make sure there's a comma before the state
+            if (fixedAddress.includes("Colonie 12205")) {
+              // No comma between city and postal code - need to add comma and state
+              fixedAddress = fixedAddress.replace("Colonie 12205", "Colonie, NY 12205");
+            } else {
+              // Add comma if not already present before postal code
+              fixedAddress = fixedAddress.replace("12205", ", NY 12205");
+            }
+            Logger.log(`Added missing state with comma before postal code: ${fixedAddress}`);
           } 
           // Otherwise add it after city
           else if (fixedAddress.includes("Colonie")) {
-            fixedAddress = fixedAddress.replace("Colonie", "Colonie, NY");
-            Logger.log(`Added missing state after city: ${fixedAddress}`);
+            // Ensure we add comma if it's not already there
+            if (fixedAddress.endsWith("Colonie")) {
+              fixedAddress = fixedAddress + ", NY";
+            } else {
+              fixedAddress = fixedAddress.replace("Colonie", "Colonie, NY");
+            }
+            Logger.log(`Added missing state with comma after city: ${fixedAddress}`);
           }
           
           addressObject.value = fixedAddress;
-          Logger.log(`Fixed address format to include state: ${fixedAddress}`);
+          Logger.log(`Fixed address format to include state with proper comma: ${fixedAddress}`);
         }
         
         // Ensure all components are strings
@@ -6049,35 +6067,41 @@ function handleAddressComponents(data) {
         // Construct a new address from all available components (both preserved and updated)
         let newAddress = '';
         
+        // Start with street number and route (street name)
         if (addressObj.street_number && addressObj.route) {
           newAddress = `${addressObj.street_number} ${addressObj.route}`;
         } else if (addressObj.route) {
           newAddress = addressObj.route;
         }
         
+        // Add city (locality)
         if (addressObj.locality) {
           if (newAddress) newAddress += `, ${addressObj.locality}`;
           else newAddress = addressObj.locality;
         }
         
+        // Add state/province with comma
         if (addressObj.admin_area_level_1) {
           if (newAddress) newAddress += `, ${addressObj.admin_area_level_1}`;
           else newAddress = addressObj.admin_area_level_1;
         }
         
+        // Add postal code (no comma before postal code)
         if (addressObj.postal_code) {
           if (newAddress) newAddress += ` ${addressObj.postal_code}`;
           else newAddress = addressObj.postal_code;
         }
         
+        // Add country with comma
         if (addressObj.country) {
           if (newAddress) newAddress += `, ${addressObj.country}`;
           else newAddress = addressObj.country;
         }
         
+        // Set the value property to the constructed address
         if (newAddress) {
           addressObj.value = newAddress;
-          Logger.log(`Constructed new address from components: "${newAddress}"`);
+          Logger.log(`Constructed new address from components with proper commas: "${newAddress}"`);
         }
       }
       
@@ -6093,17 +6117,29 @@ function handleAddressComponents(data) {
         
         // Check if we can find a spot to inject the state (before postal code if present)
         if (fixedAddress.includes("12205")) {
-          fixedAddress = fixedAddress.replace("12205", "NY 12205");
-          Logger.log(`Added missing state before postal code: ${fixedAddress}`);
+          // Make sure there's a comma before the state
+          if (fixedAddress.includes("Colonie 12205")) {
+            // No comma between city and postal code - need to add comma and state
+            fixedAddress = fixedAddress.replace("Colonie 12205", "Colonie, NY 12205");
+          } else {
+            // Add comma if not already present before postal code
+            fixedAddress = fixedAddress.replace("12205", ", NY 12205");
+          }
+          Logger.log(`Added missing state with comma before postal code: ${fixedAddress}`);
         } 
         // Otherwise add it after city
         else if (fixedAddress.includes("Colonie")) {
-          fixedAddress = fixedAddress.replace("Colonie", "Colonie, NY");
-          Logger.log(`Added missing state after city: ${fixedAddress}`);
+          // Ensure we add comma if it's not already there
+          if (fixedAddress.endsWith("Colonie")) {
+            fixedAddress = fixedAddress + ", NY";
+          } else {
+            fixedAddress = fixedAddress.replace("Colonie", "Colonie, NY");
+          }
+          Logger.log(`Added missing state with comma after city: ${fixedAddress}`);
         }
         
         addressObj.value = fixedAddress;
-        Logger.log(`Fixed address format to include state: ${fixedAddress}`);
+        Logger.log(`Fixed address format to include state with proper comma: ${fixedAddress}`);
       }
     }
     
