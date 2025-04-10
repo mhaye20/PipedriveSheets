@@ -4317,6 +4317,72 @@ function columnToLetter(column) {
 }
 
 /**
+ * Formats date and time values for Pipedrive API
+ * @param {*} value - The date/time value to format
+ * @param {string} fieldType - Type of field ('date', 'time', 'daterange', 'timerange') 
+ * @return {string|object} Properly formatted value for Pipedrive API
+ */
+function formatDateTimeForPipedrive(value, fieldType) {
+  if (!value) return null;
+  
+  try {
+    // Convert to Date object if it's not already
+    let dateObj = value;
+    if (!(value instanceof Date)) {
+      if (typeof value === 'string') {
+        dateObj = new Date(value);
+      } else if (typeof value === 'number') {
+        dateObj = new Date(value);
+      }
+    }
+    
+    // Check if we have a valid date
+    if (isNaN(dateObj.getTime())) {
+      Logger.log(`Invalid date value: ${value}`);
+      return value; // Return original if we can't parse it
+    }
+    
+    // Format based on field type
+    switch (fieldType.toLowerCase()) {
+      case 'date':
+        // Format as YYYY-MM-DD
+        return dateObj.toISOString().split('T')[0];
+        
+      case 'time':
+        // Format as HH:MM
+        const hours = String(dateObj.getHours()).padStart(2, '0');
+        const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+        return `${hours}:${minutes}`;
+        
+      case 'daterange':
+        // Format as object with start/end dates
+        const dateStr = dateObj.toISOString().split('T')[0];
+        return {
+          start: dateStr,
+          end: dateStr // Use same date for both if only one date provided
+        };
+        
+      case 'timerange':
+        // Format as object with start/end times
+        const timeHours = String(dateObj.getHours()).padStart(2, '0');
+        const timeMinutes = String(dateObj.getMinutes()).padStart(2, '0');
+        const timeStr = `${timeHours}:${timeMinutes}`;
+        return {
+          start: timeStr,
+          end: timeStr // Use same time for both if only one time provided
+        };
+        
+      default:
+        // For unknown types, return ISO string without time part
+        return dateObj.toISOString().split('T')[0];
+    }
+  } catch (e) {
+    Logger.log(`Error formatting date/time value: ${e.message}`);
+    return value; // Return original value if formatting fails
+  }
+}
+
+/**
  * Helper function to find the Sync Status column index
  * @param {Sheet} sheet - The sheet to search in
  * @param {string} sheetName - The name of the sheet
