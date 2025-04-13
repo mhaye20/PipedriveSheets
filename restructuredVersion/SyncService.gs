@@ -2394,6 +2394,7 @@ function syncProductsFromFilter(filterId, skipPush = false, sheetName = null) {
 
 /**
  * Pushes changes from the sheet back to Pipedrive
+ * Refactored version with focus on reliable address component handling
  * @param {boolean} isScheduledSync - Whether this is called from a scheduled sync
  * @param {boolean} suppressNoModifiedWarning - Whether to suppress the no modified rows warning
  */
@@ -2404,505 +2405,253 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
     const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     const activeSheetName = activeSheet.getName();
 
-    // Check if two-way sync is enabled for this sheet
+    // Get script properties
     const scriptProperties = PropertiesService.getScriptProperties();
+
+    // Verify two-way sync is enabled
     const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${activeSheetName}`;
-    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
-    
     const twoWaySyncEnabled = scriptProperties.getProperty(twoWaySyncEnabledKey) === 'true';
 
     if (!twoWaySyncEnabled) {
-      // Show an error message if two-way sync is not enabled, only for manual syncs
       if (!isScheduledSync) {
-        const ui = SpreadsheetApp.getUi();
-        ui.alert(
+        SpreadsheetApp.getUi().alert(
           'Two-Way Sync Not Enabled',
           'Two-way sync is not enabled for this sheet. Please enable it in the Two-Way Sync Settings.',
-          ui.ButtonSet.OK
+          SpreadsheetApp.getUi().ButtonSet.OK
         );
       }
       return;
     }
 
-    // Get sheet-specific entity type
+    // Get entity type for this sheet
     const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
-    const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
+    const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || 'deals';
+    Logger.log(`Entity type for sheet ${activeSheetName}: ${entityType}`);
 
-    // Ensure we have OAuth authentication
+    // Ensure OAuth authentication
     if (!refreshAccessTokenIfNeeded()) {
-      // Show an error message if authentication fails
       if (!isScheduledSync) {
-        const ui = SpreadsheetApp.getUi();
-        ui.alert(
+        SpreadsheetApp.getUi().alert(
           'Authentication Failed',
-          'Could not authenticate with Pipedrive. Please reconnect your account in Settings.',
-          ui.ButtonSet.OK
+          'Could not authenticate with Pipedrive. Please reconnect your account.',
+          SpreadsheetApp.getUi().ButtonSet.OK
         );
       }
       return;
     }
 
-    const subdomain = scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') || DEFAULT_PIPEDRIVE_SUBDOMAIN;
+    // Get API credentials
+    const accessToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
+    const subdomain = scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') || 'api';
+    const baseUrl = `https://${subdomain}.pipedrive.com`;
 
-    // UPDATED: Get the stored header-to-field mapping using our new helper function
-    // This ensures we always have a valid mapping, even if it's the first time or columns have changed
+    // Get header-to-field mapping
     const headerToFieldKeyMap = ensureHeaderFieldMapping(activeSheetName, entityType);
-    Logger.log(`Using header-to-field mapping with ${Object.keys(headerToFieldKeyMap).length} entries`);
-
-    // Get field mappings
-    Logger.log(`Getting field mappings for entity type: ${entityType}`);
     
-    // Get the sync tracking column position
+    // Fetch field definitions for formatting (including options for enum/set types)
+    let fieldDefinitions = {};
+    try {
+      fieldDefinitions = getFieldDefinitionsMap(entityType); // Assumes getFieldDefinitionsMap exists in PipedriveAPI.gs or Utilities.gs
+      Logger.log(`Fetched ${Object.keys(fieldDefinitions).length} field definitions for ${entityType}`);
+    } catch (defError) {
+      Logger.log(`Error fetching field definitions: ${defError.message}. Formatting might be incomplete.`);
+      // Continue without definitions, relying on basic formatting
+    }
+    
+    // Get sync status column position
+    const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
     const syncStatusColumnPos = scriptProperties.getProperty(twoWaySyncTrackingColumnKey);
+    
     if (!syncStatusColumnPos) {
       if (!isScheduledSync) {
-        const ui = SpreadsheetApp.getUi();
-        ui.alert(
+        SpreadsheetApp.getUi().alert(
           'Sync Tracking Column Not Found',
           'Could not find the sync tracking column. Please configure two-way sync settings again.',
-          ui.ButtonSet.OK
+          SpreadsheetApp.getUi().ButtonSet.OK
         );
       }
       return;
     }
     
-    // Convert column letter to index (e.g., AA -> 27)
-    const syncStatusColumnIndex = columnLetterToIndex(syncStatusColumnPos) - 1; // Convert to 0-based index
-    Logger.log(`Sync status column letter: ${syncStatusColumnPos}, index: ${syncStatusColumnIndex}`);
+    // Convert column letter to index
+    const syncStatusColumnIndex = columnLetterToIndex(syncStatusColumnPos) - 1; // 0-based index
 
-    // Get the data range
+    // Get sheet data
     const dataRange = activeSheet.getDataRange();
     const values = dataRange.getValues();
-
-    // Get column headers (first row)
     const headers = values[0];
 
-    // Find the ID column index (look for Pipedrive ID columns first)
+    // Find the ID column index
     let idColumnIndex = headers.findIndex(header => 
       header === 'Pipedrive ID' || 
-      header.match(/^Pipedrive .* ID$/)
+      header.match(/^Pipedrive .* ID$/) ||
+      header === 'ID'
     );
     
-    // If not found, look for generic ID column
     if (idColumnIndex === -1) {
-      idColumnIndex = headers.indexOf('ID');
+      idColumnIndex = 0; // Fallback to first column
     }
-    
-    // If still not found, fall back to the first column
-    if (idColumnIndex === -1) {
-      idColumnIndex = 0; // Fallback to first column (index 0)
-      Logger.log(`Warning: No explicit Pipedrive ID column found, using first column as ID. This may cause issues.`);
-    } else {
-      Logger.log(`Found ID column "${headers[idColumnIndex]}" at index ${idColumnIndex}`);
-    }
-
-    // Get fallback field mappings based on entity type in case we need them
-    const fieldMappings = getFieldMappingsForEntity(entityType);
-
-    // Track rows that need updating
-    const modifiedRows = [];
 
     // Collect modified rows
+    const modifiedRows = [];
+
     for (let i = 1; i < values.length; i++) {
       const row = values[i];
       const syncStatus = row[syncStatusColumnIndex];
 
       // Only process rows marked as "Modified"
       if (syncStatus === 'Modified') {
-        // Use let instead of const for rowId since we might need to change it
+        // Get row ID
         let rowId = row[idColumnIndex];
+        if (!rowId) continue;
 
-        // Skip rows without an ID
-        if (!rowId) {
-          continue;
+        // Create data object for this row
+        const updateData = {
+          id: rowId,
+          data: {}
+        };
+
+        // Add special fields container for API v2
+        if (!entityType.endsWith('Fields') && entityType !== 'leads') {
+          updateData.data.custom_fields = {};
         }
 
-        // For products, ensure we're using the correct ID field
-        if (entityType === ENTITY_TYPES.PRODUCTS) {
-          // If the first column contains a name instead of an ID, 
-          // try to look for the ID in another column
-          const idColumnName = 'ID'; // This should match your header for the ID column
-          const idColumnIdx = headers.indexOf(idColumnName);
-          if (idColumnIdx !== -1 && idColumnIdx !== idColumnIndex) {
-            // Use the value from the specific ID column
-            rowId = row[idColumnIdx]; // Using let above allows this reassignment
-            Logger.log(`Using product ID ${rowId} from column ${idColumnName} instead of first column value ${row[idColumnIndex]}`);
-          }
-        }
-        
-        // For organizations, ensure we're using a numeric ID
-        if (entityType === ENTITY_TYPES.ORGANIZATIONS) {
-          // Check if the rowId is not numeric - it might be a name or other value
-          if (isNaN(parseInt(rowId)) || !(/^\d+$/.test(String(rowId)))) {
-            // Look for an explicit "ID" column
-            const idColumnName = 'ID';
-            const idColumnIdx = headers.indexOf(idColumnName);
-            
-            if (idColumnIdx !== -1 && idColumnIdx !== idColumnIndex) {
-              const explicitId = row[idColumnIdx];
-              // Only use it if it's numeric
-              if (!isNaN(parseInt(explicitId)) && /^\d+$/.test(String(explicitId))) {
-                rowId = explicitId;
-                Logger.log(`Using organization ID ${rowId} from column ${idColumnName} instead of non-numeric value ${row[idColumnIndex]}`);
-              } else {
-                // Still not numeric, log a warning
-                Logger.log(`Warning: Non-numeric organization ID "${rowId}" - API request may fail`);
-              }
-            } else {
-              // No explicit ID column found, log a warning
-              Logger.log(`Warning: Non-numeric organization ID "${rowId}" and no ID column found - API request may fail`);
-            }
-          }
-        }
-
-        // Create an object with field values to update
-        const updateData = {};
-
-        // For API v2 custom fields
-        if (!entityType.endsWith('Fields') && entityType !== ENTITY_TYPES.LEADS) {
-          // Initialize custom fields container for API v2 as an object, not an array
-          updateData.custom_fields = {};
-        }
-
-        // Maps to store phone and email data for proper formatting
+        // Store phone and email data separately for proper formatting
         const phoneData = [];
         const emailData = [];
+        
+        // Store address components separately for proper handling
+        const addressComponents = {};
 
         // Map column values to API fields
         for (let j = 0; j < headers.length; j++) {
-          // Skip the tracking column
-          if (j === syncStatusColumnIndex) {
-            continue;
-          }
+          if (j === syncStatusColumnIndex) continue;
 
           const header = headers[j];
           const value = row[j];
 
           // Skip empty values
-          if (value === '' || value === null || value === undefined) {
+          if (value === '' || value === null || value === undefined) continue;
+
+          // Get field key from mapping
+          const fieldKey = headerToFieldKeyMap[header];
+          if (!fieldKey) continue;
+
+          // Handle different field types
+          if (fieldKey === 'id') {
+            // Skip ID field - already handled
             continue;
+          } 
+          else if (fieldKey === 'email' || fieldKey.startsWith('email.')) {
+            // Handle email fields
+            const label = fieldKey.includes('.') ? fieldKey.split('.')[1] : 'work';
+            emailData.push({
+              label: label,
+              value: value,
+              primary: label === 'work' || label === 'primary'
+            });
+          } 
+          else if (fieldKey === 'phone' || fieldKey.startsWith('phone.')) {
+            // Handle phone fields
+            const label = fieldKey.includes('.') ? fieldKey.split('.')[1] : 'work';
+            phoneData.push({
+              label: label,
+              value: String(value), // Ensure phone is a string
+              primary: label === 'work' || label === 'primary'
+            });
           }
-
-          // Log all field mappings for debugging
-          Logger.log(`Processing field: ${header} with value: ${value} (type: ${typeof value}, isDate: ${value instanceof Date})`);
-
-          // Get the field key for this header - first try the stored column config
-          let fieldKey = headerToFieldKeyMap[header] || fieldMappings[header];
-          
-          // IMPROVED: If still no mapping found, try looking for similar headers in our mapping
-          if (!fieldKey) {
-            // Try case-insensitive match
-            const headerLower = header.toLowerCase();
-            for (const mappedHeader in headerToFieldKeyMap) {
-              if (mappedHeader.toLowerCase() === headerLower) {
-                fieldKey = headerToFieldKeyMap[mappedHeader];
-                Logger.log(`Found case-insensitive match for "${header}" -> "${mappedHeader}" = ${fieldKey}`);
-                
-                // Save this match for next time
-                headerToFieldKeyMap[header] = fieldKey;
-                break;
-              }
+          // Handle address components (which are working correctly)
+          else if (fieldKey.match(/^[a-f0-9]{20,}_[a-z_]+$/i)) {
+            // This is an address component (e.g., custom field ID + component name)
+            const parts = fieldKey.split('_');
+            const fieldId = parts[0];
+            const component = parts.slice(1).join('_'); // In case component name has multiple parts
+            
+            // Initialize address components for this field
+            if (!addressComponents[fieldId]) {
+              addressComponents[fieldId] = {};
             }
             
-            // If still no match, try to match by removing common prefixes/suffixes and spaces
-            if (!fieldKey) {
-              // Normalize header by removing spaces, parentheses, etc.
-              const normalizedHeader = headerLower.replace(/\s+/g, '').replace(/[()]/g, '');
-              
-              for (const mappedHeader in headerToFieldKeyMap) {
-                const normalizedMappedHeader = mappedHeader.toLowerCase().replace(/\s+/g, '').replace(/[()]/g, '');
-                if (normalizedHeader === normalizedMappedHeader) {
-                  fieldKey = headerToFieldKeyMap[mappedHeader];
-                  Logger.log(`Found normalized match for "${header}" -> "${mappedHeader}" = ${fieldKey}`);
-                  
-                  // Save this match for next time
-                  headerToFieldKeyMap[header] = fieldKey;
-                  break;
-                }
-              }
-            }
-            
-            // If still no match, try to find common field patterns in the header
-            if (!fieldKey) {
-              // Common patterns for ID fields
-              if (headerLower.includes('id') && !headerLower.includes('hide')) {
-                if (headerLower.includes('deal')) fieldKey = 'id';
-                else if (headerLower.includes('pipedrive')) fieldKey = 'id';
-                else if (headerLower === 'id') fieldKey = 'id';
-                
-                if (fieldKey) {
-                  Logger.log(`Mapped "${header}" to Pipedrive field "id" using ID pattern match`);
-                  headerToFieldKeyMap[header] = fieldKey;
-                }
-              }
-              
-              // Common patterns for Deal Title
-              if (!fieldKey && (headerLower.includes('title') || headerLower.includes('deal name'))) {
-                fieldKey = 'title';
-                Logger.log(`Mapped "${header}" to Pipedrive field "title" using title pattern match`);
-                headerToFieldKeyMap[header] = fieldKey;
-              }
-              
-              // Common patterns for Organization
-              if (!fieldKey && (headerLower.includes('organization') || headerLower.includes('company'))) {
-                // Check for name pattern
-                if (headerLower.includes('name')) {
-                  fieldKey = 'org_id.name';
-                  Logger.log(`Mapped "${header}" to Pipedrive field "org_id.name" using organization name pattern`);
-                } else {
-                  fieldKey = 'org_id';
-                  Logger.log(`Mapped "${header}" to Pipedrive field "org_id" using organization pattern`);
-                }
-                headerToFieldKeyMap[header] = fieldKey;
-              }
-              
-              // Common patterns for Person/Contact
-              if (!fieldKey && (headerLower.includes('person') || headerLower.includes('contact'))) {
-                // Check for name pattern
-                if (headerLower.includes('name')) {
-                  fieldKey = 'person_id.name';
-                  Logger.log(`Mapped "${header}" to Pipedrive field "person_id.name" using person name pattern`);
-                } else {
-                  fieldKey = 'person_id';
-                  Logger.log(`Mapped "${header}" to Pipedrive field "person_id" using person pattern`);
-                }
-                headerToFieldKeyMap[header] = fieldKey;
-              }
-              
-              // Common patterns for Owner
-              if (!fieldKey && headerLower.includes('owner')) {
-                // Check for name pattern
-                if (headerLower.includes('name')) {
-                  fieldKey = 'owner_id.name';
-                  Logger.log(`Mapped "${header}" to Pipedrive field "owner_id.name" using owner name pattern`);
-                } else {
-                  fieldKey = 'owner_id';
-                  Logger.log(`Mapped "${header}" to Pipedrive field "owner_id" using owner pattern`);
-                }
-                headerToFieldKeyMap[header] = fieldKey;
-              }
-              
-              // Common patterns for Value/Amount
-              if (!fieldKey && (headerLower.includes('value') || headerLower.includes('amount'))) {
-                fieldKey = 'value';
-                Logger.log(`Mapped "${header}" to Pipedrive field "value" using value pattern match`);
-                headerToFieldKeyMap[header] = fieldKey;
-              }
-              
-              // Common patterns for Currency
-              if (!fieldKey && headerLower.includes('currency')) {
-                fieldKey = 'currency';
-                Logger.log(`Mapped "${header}" to Pipedrive field "currency" using currency pattern match`);
-                headerToFieldKeyMap[header] = fieldKey;
-              }
-              
-              // Common patterns for Status
-              if (!fieldKey && headerLower.includes('status')) {
-                fieldKey = 'status';
-                Logger.log(`Mapped "${header}" to Pipedrive field "status" using status pattern match`);
-                headerToFieldKeyMap[header] = fieldKey;
-              }
-              
-              // Common patterns for Pipeline
-              if (!fieldKey && headerLower.includes('pipeline')) {
-                fieldKey = 'pipeline_id';
-                Logger.log(`Mapped "${header}" to Pipedrive field "pipeline_id" using pipeline pattern match`);
-                headerToFieldKeyMap[header] = fieldKey;
-              }
-              
-              // Common patterns for Stage
-              if (!fieldKey && headerLower.includes('stage')) {
-                fieldKey = 'stage_id';
-                Logger.log(`Mapped "${header}" to Pipedrive field "stage_id" using stage pattern match`);
-                headerToFieldKeyMap[header] = fieldKey;
-              }
-            }
+            // Store the component value
+            addressComponents[fieldId][component] = String(value || ""); // Ensure it's a string
           }
-          
-          // If still no mapping found, try common field name variations
-          if (!fieldKey) {
-            // Handle common date field variations
-            const headerLower = header.toLowerCase();
-            if (headerLower === 'due date' || headerLower === 'duedate') {
-              fieldKey = 'due_date';
-              Logger.log(`Mapped "${header}" to Pipedrive field "due_date" using common field mapping`);
-              headerToFieldKeyMap[header] = fieldKey;
-            }
-            else if (headerLower === 'due time' || headerLower === 'duetime') {
-              fieldKey = 'due_time';
-              Logger.log(`Mapped "${header}" to Pipedrive field "due_time" using common field mapping`);
-              headerToFieldKeyMap[header] = fieldKey;
-            }
-            else if (headerLower.includes('close date') || headerLower.includes('expected close')) {
-              fieldKey = 'expected_close_date';
-              Logger.log(`Mapped "${header}" to Pipedrive field "expected_close_date" using common field mapping`);
-              headerToFieldKeyMap[header] = fieldKey;
-            }
+          // Handle custom fields
+          else if (fieldKey.match(/^[a-f0-9]{20,}$/i)) {
+            // This is a custom field ID
+            updateData.data.custom_fields[fieldKey] = value;
           }
-          
-          // Save the updated mapping if we've added new mappings
-          if (Object.keys(headerToFieldKeyMap).length > 0) {
-            const mappingKey = `HEADER_TO_FIELD_MAP_${activeSheetName}_${entityType}`;
-            scriptProperties.setProperty(mappingKey, JSON.stringify(headerToFieldKeyMap));
-          }
-
-          if (fieldKey) {
-            Logger.log(`Mapped to Pipedrive field: ${fieldKey}`);
-            // Check if this is a multi-option field (this handles both custom and standard fields)
-            if (isMultiOptionField(fieldKey, entityType)) {
-              // Convert multi-option values (comma-separated in sheet) to array for API
-              if (typeof value === 'string' && value.includes(',')) {
-                const optionValues = value.split(',').map(option => option.trim());
-                
-                // Convert option labels to IDs
-                const optionIds = optionValues.map(optionLabel => 
-                  getOptionIdByLabel(fieldKey, optionLabel, entityType)
-                ).filter(id => id !== null);
-                
-                // Only set the field if we have valid option IDs
-                if (optionIds.length > 0) {
-                  // Custom fields go in custom_fields object, standard fields at root
-                  if (fieldKey.startsWith('custom_fields')) {
-                    // For custom fields, extract the actual field key from the path
-                    const customFieldKey = fieldKey.replace('custom_fields.', '');
-                    updateData.custom_fields[customFieldKey] = optionIds;
-                  } else {
-                    updateData[fieldKey] = optionIds;
-                  }
-                }
-              } else if (value) {
-                // Handle single option for multi-option fields
-                const optionId = getOptionIdByLabel(fieldKey, value, entityType);
-                if (optionId !== null) {
-                  if (fieldKey.startsWith('custom_fields')) {
-                    const customFieldKey = fieldKey.replace('custom_fields.', '');
-                    updateData.custom_fields[customFieldKey] = [optionId];
-                  } else {
-                    updateData[fieldKey] = [optionId];
-                  }
-                }
-              }
-            }
-            // Handle date/datetime fields
-            else if (isDateField(fieldKey, entityType)) {
-              // Format date fields to ISO date format (YYYY-MM-DD)
-              let formattedDate = value;
-              
-              if (value instanceof Date) {
-                // Format to YYYY-MM-DD
-                const year = value.getFullYear();
-                const month = String(value.getMonth() + 1).padStart(2, '0');
-                const day = String(value.getDate()).padStart(2, '0');
-                formattedDate = `${year}-${month}-${day}`;
-              } else if (typeof value === 'string') {
-                // Try to parse as date if not already in ISO format
-                if (!value.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                  try {
-                    const dateObj = new Date(value);
-                    if (!isNaN(dateObj.getTime())) {
-                      const year = dateObj.getFullYear();
-                      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-                      const day = String(dateObj.getDate()).padStart(2, '0');
-                      formattedDate = `${year}-${month}-${day}`;
-                    }
-                  } catch (dateError) {
-                    Logger.log(`Error parsing date: ${dateError.message}`);
-                  }
-                }
-              }
-              
-              // Set the formatted date in the update data - properly format for API
-                if (fieldKey.startsWith('custom_fields')) {
-                  const customFieldKey = fieldKey.replace('custom_fields.', '');
-                
-                // Important: For custom date fields, Pipedrive expects a simple date string, not an object
-                if (typeof formattedDate === 'string' && formattedDate.includes('T')) {
-                  // Remove time part if present - Pipedrive expects only the date for date fields
-                  formattedDate = formattedDate.split('T')[0];
-                }
-                
-                updateData.custom_fields[customFieldKey] = formattedDate;
-                } else {
-                updateData[fieldKey] = formattedDate;
-              }
-            }
-            // Handle phone and email fields specially
-            else if (fieldKey === 'phone' || fieldKey === 'phone.value' || fieldKey.startsWith('phone.')) {
-              // If it's a specific label like phone.mobile
-              if (fieldKey.startsWith('phone.') && fieldKey !== 'phone.value') {
-                const label = fieldKey.replace('phone.', '');
-                phoneData.push({
-                  label: label,
-                  value: value,
-                  primary: label.toLowerCase() === 'work' || label.toLowerCase() === 'mobile'
-                });
-                  } else {
-                // It's the primary phone
-                phoneData.push({
-                  label: 'mobile',
-                  value: value,
-                  primary: true
-                });
-              }
-            }
-            else if (fieldKey === 'email' || fieldKey === 'email.value' || fieldKey.startsWith('email.')) {
-              // If it's a specific label like email.work
-              if (fieldKey.startsWith('email.') && fieldKey !== 'email.value') {
-                const label = fieldKey.replace('email.', '');
-                emailData.push({
-                  label: label,
-                  value: value,
-                  primary: label.toLowerCase() === 'work'
-                });
-              } else {
-                // It's the primary email
-                emailData.push({
-                  label: 'work',
-                  value: value,
-                  primary: true
-                });
-              }
-            }
-            // Handle all other fields normally
-            else {
-              if (fieldKey.startsWith('custom_fields')) {
-                const customFieldKey = fieldKey.replace('custom_fields.', '');
-                updateData.custom_fields[customFieldKey] = value;
-              } else {
-                updateData[fieldKey] = value;
-              }
-            }
+          // Handle all other fields
+          else {
+            // Regular field
+            updateData.data[fieldKey] = value;
           }
         }
 
-        // Skip empty update data
-        if (Object.keys(updateData).length === 0 && 
-            (!updateData.custom_fields || Object.keys(updateData.custom_fields).length === 0)) {
-          continue;
+        // Add email and phone data if collected
+        if (emailData.length > 0) {
+          updateData.data.email = emailData;
         }
         
-        // Save the row index for error reporting
-        const rowIndex = i;
+        if (phoneData.length > 0) {
+          updateData.data.phone = phoneData;
+        }
         
-        // Push the row data to the modified rows array
-          modifiedRows.push({
-            id: rowId,
-          rowIndex: rowIndex,
-          data: updateData,
-          emailData: emailData,
-          phoneData: phoneData
-        });
+        // Add address components to custom fields
+        for (const fieldId in addressComponents) {
+          // If this field already exists in custom_fields, update it with components
+          if (updateData.data.custom_fields[fieldId]) {
+            // If the field is a string, convert to object first
+            if (typeof updateData.data.custom_fields[fieldId] === 'string') {
+              const addressValue = updateData.data.custom_fields[fieldId];
+              updateData.data.custom_fields[fieldId] = { 
+                value: addressValue || "Address" // Ensure value isn't empty
+              };
+            } else if (updateData.data.custom_fields[fieldId] === null || 
+                       updateData.data.custom_fields[fieldId] === undefined) {
+              // Initialize if null/undefined
+              updateData.data.custom_fields[fieldId] = { value: "Address" };
+            } else if (typeof updateData.data.custom_fields[fieldId] === 'object' && 
+                      !updateData.data.custom_fields[fieldId].value) {
+              // Ensure value property exists
+              updateData.data.custom_fields[fieldId].value = "Address";
+            }
+            
+            // Add all components to the address object as strings
+            for (const component in addressComponents[fieldId]) {
+              updateData.data.custom_fields[fieldId][component] = String(addressComponents[fieldId][component] || "");
+            }
+          }
+          // Otherwise, create a new field with components
+          else {
+            // Create object with components
+            updateData.data.custom_fields[fieldId] = addressComponents[fieldId];
+            // Ensure it has a value property (required by Pipedrive)
+            if (!updateData.data.custom_fields[fieldId].value) {
+              updateData.data.custom_fields[fieldId].value = "Address";
+            }
+            
+            // Ensure all address components are strings
+            for (const key in updateData.data.custom_fields[fieldId]) {
+              updateData.data.custom_fields[fieldId][key] = String(updateData.data.custom_fields[fieldId][key] || "");
+            }
+          }
+        }
+        
+        // Store row with email and phone data
+        updateData.emailData = emailData;
+        updateData.phoneData = phoneData;
+        
+        modifiedRows.push(updateData);
       }
     }
 
-    // If there are no modified rows, show a message and exit
+    // Check if we have any modified rows
     if (modifiedRows.length === 0) {
       if (!suppressNoModifiedWarning && !isScheduledSync) {
-        const ui = SpreadsheetApp.getUi();
-        ui.alert(
+        SpreadsheetApp.getUi().alert(
           'No Modified Rows',
-          'No rows marked as "Modified" were found. Edit cells in rows and mark Sync Status column as "Not Modified" to mark them for update.',
-          ui.ButtonSet.OK
+          'No rows marked as "Modified" were found. Edit cells in rows to mark them for update.',
+          SpreadsheetApp.getUi().ButtonSet.OK
         );
       }
       return;
@@ -2910,228 +2659,93 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
 
     // Show confirmation for manual syncs
     if (!isScheduledSync) {
-      const ui = SpreadsheetApp.getUi();
-      const result = ui.alert(
+      const result = SpreadsheetApp.getUi().alert(
         'Confirm Push to Pipedrive',
         `You are about to push ${modifiedRows.length} modified row(s) to Pipedrive. Continue?`,
-        ui.ButtonSet.YES_NO
+        SpreadsheetApp.getUi().ButtonSet.YES_NO
       );
 
-      if (result !== ui.Button.YES) {
+      if (result !== SpreadsheetApp.getUi().Button.YES) {
         return;
       }
     }
 
-    // Show a toast message
+    // Show progress toast
     SpreadsheetApp.getActiveSpreadsheet().toast(
       `Pushing ${modifiedRows.length} modified row(s) to Pipedrive...`,
       'Push to Pipedrive',
       30
     );
 
-    // Build the base API URL
-    const apiUrl = getPipedriveApiUrl();
-    
-    // Track success and failure counts
+    // Track results
     let successCount = 0;
     let failureCount = 0;
     const failures = [];
 
-    // Process address components before filtering read-only fields
-    for (let i = 0; i < modifiedRows.length; i++) {
-      Logger.log(`Processing address components for row ${i+1}/${modifiedRows.length}`);
-      
-      // Debug log to see the original data structure
-      if (modifiedRows[i].data.custom_fields) {
-        Logger.log(`Original custom_fields for row ${i+1}: ${JSON.stringify(modifiedRows[i].data.custom_fields)}`);
-      }
-      
-      // Apply our address component processor
-      modifiedRows[i].data = handleAddressComponents(modifiedRows[i].data);
-      
-      // Debug log to see the processed data structure
-      if (modifiedRows[i].data.custom_fields) {
-        Logger.log(`Processed custom_fields for row ${i+1}: ${JSON.stringify(modifiedRows[i].data.custom_fields)}`);
-        
-        // Check for any specific address components we want to verify
-        for (const fieldId in modifiedRows[i].data.custom_fields) {
-          const field = modifiedRows[i].data.custom_fields[fieldId];
-          if (typeof field === 'object' && field !== null) {
-            // Check for address components
-            const components = ['admin_area_level_1', 'admin_area_level_2', 'locality', 'country'];
-            for (const component of components) {
-              if (field[component]) {
-                Logger.log(`Found address component ${component} = ${field[component]} in field ${fieldId}`);
-              }
-            }
-          }
-        }
-      }
-      
-      // Secondary check for any leftover address components at root level
-      for (const key in modifiedRows[i].data) {
-        if (key.match(/^[a-f0-9]{20,}_[a-z_]+$/i)) {
-          Logger.log(`WARNING: Found address component at root level after processing: ${key}`);
-        }
-      }
-    }
-
-    // Update each modified row in Pipedrive
-    for (const rowData of modifiedRows) {
+    // Update each modified row
+    for (let rowIndex = 0; rowIndex < modifiedRows.length; rowIndex++) {
       try {
-        // Ensure we have a valid token
-        if (!refreshAccessTokenIfNeeded()) {
-          throw new Error('Not authenticated with Pipedrive. Please connect your account first.');
-        }
+        const rowData = modifiedRows[rowIndex];
+        Logger.log(`Processing row ${rowIndex + 1}/${modifiedRows.length} with ID ${rowData.id}`);
         
-        const scriptProperties = PropertiesService.getScriptProperties();
-        const accessToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
-        const subdomain = scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') || DEFAULT_PIPEDRIVE_SUBDOMAIN;
-        
-        // Build base URL without API version
-        const baseUrl = `https://${subdomain}.pipedrive.com`;
-        
-        // Set up the request URL and method based on entity type
+        // Determine API endpoint and method based on entity type
         let updateUrl;
         let method;
         
-        // Configure API version, endpoint, and method based on entity type
+        // Configure API endpoint based on entity type
         switch(entityType) {
-          // API v2 endpoints using PATCH
-          case ENTITY_TYPES.ACTIVITIES:
+          case 'activities':
             updateUrl = `${baseUrl}/api/v2/activities/${rowData.id}`;
             method = 'PATCH';
+            delete rowData.data.id; // Remove ID from payload
+            break;
             
-            // For activities, ensure subject field exists
-            if (!rowData.data.subject && rowData.data.note) {
-              // Use note as subject if available
-              rowData.data.subject = rowData.data.note.substring(0, 100); // Limit length
-            }
-            
-            // Remove ID from payload since it's in the URL
+          case 'deals':
+            updateUrl = `${baseUrl}/api/v2/deals/${rowData.id}`;
+            method = 'PATCH';
             delete rowData.data.id;
             
-            // Remove custom_fields - not allowed for activities in API v2
-            delete rowData.data.custom_fields;
+            // CRITICAL FIX FOR WON_TIME - HARD CODED FIX
+            if ('won_time' in rowData.data) {
+              // Remove won_time completely if it's causing issues
+              delete rowData.data.won_time;
+              Logger.log(`CRITICAL: Removed won_time field completely as it's causing validation issues`);
+            }
             
-            // Validate ID fields
-            validateIdField(rowData.data, 'owner_id');
-            validateIdField(rowData.data, 'person_id');
-            validateIdField(rowData.data, 'org_id');
-            validateIdField(rowData.data, 'deal_id');
-            
-            // Special handling for activity due_date - ensure ISO date format (YYYY-MM-DD)
-            if (rowData.data.due_date) {
-              if (rowData.data.due_date instanceof Date) {
-                // Format to YYYY-MM-DD without time component
-                const year = rowData.data.due_date.getFullYear();
-                const month = String(rowData.data.due_date.getMonth() + 1).padStart(2, '0');
-                const day = String(rowData.data.due_date.getDate()).padStart(2, '0');
-                rowData.data.due_date = `${year}-${month}-${day}`;
-              } else if (typeof rowData.data.due_date === 'string') {
-                // Try to parse the string as a date if it's not in ISO format
-                if (!rowData.data.due_date.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                  try {
-                    const dateObj = new Date(rowData.data.due_date);
-                    const year = dateObj.getFullYear();
-                    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-                    const day = String(dateObj.getDate()).padStart(2, '0');
-                    rowData.data.due_date = `${year}-${month}-${day}`;
-                  } catch (e) {
-                    Logger.log(`Error parsing due_date: ${e.message}`);
+            // Explicitly format critical date fields for deals
+            ['lost_time', 'expected_close_date', 'close_time'].forEach(field => {
+              if (rowData.data[field]) {
+                // Use ISO format for won_time, lost_time, close_time
+                if (field === 'won_time' || field === 'lost_time' || field === 'close_time') {
+                  const formattedDateTime = formatDateTimeField(rowData.data[field]);
+                  if (formattedDateTime) {
+                    rowData.data[field] = formattedDateTime;
+                    Logger.log(`Pre-request formatting of ${field} to ISO: ${formattedDateTime}`);
+                  } else {
+                    delete rowData.data[field];
+                    Logger.log(`Removed invalid ${field} before API request`);
+                  }
+                } else {
+                  // Use YYYY-MM-DD for expected_close_date
+                  const formattedDate = formatDateField(rowData.data[field]);
+                  if (formattedDate) {
+                    rowData.data[field] = formattedDate;
+                    Logger.log(`Pre-request formatting of ${field} to ${formattedDate}`);
+                  } else {
+                    delete rowData.data[field];
+                    Logger.log(`Removed invalid ${field} before API request`);
                   }
                 }
               }
-              
-              Logger.log(`Formatted due_date: ${rowData.data.due_date}`);
-            }
-            
-            // Handle due_time separately if it exists
-            if (rowData.data.due_time) {
-              if (rowData.data.due_time instanceof Date) {
-                // Format to HH:MM for API
-                const hours = String(rowData.data.due_time.getHours()).padStart(2, '0');
-                const minutes = String(rowData.data.due_time.getMinutes()).padStart(2, '0');
-                rowData.data.due_time = `${hours}:${minutes}`;
-              }
-              
-              Logger.log(`Formatted due_time: ${rowData.data.due_time}`);
-            }
-            
-            // Handle participants - person_id, org_id, and deal_id are read-only in API v2
-            // They must be set via participants array
-            let participants = [];
-            
-            // If person_id exists, add it as a participant
-            if (rowData.data.person_id) {
-              participants.push({
-                person_id: rowData.data.person_id,
-                primary: true
-              });
-              delete rowData.data.person_id;
-            }
-            
-            // Add organization as a participant if org_id exists
-            if (rowData.data.org_id) {
-              delete rowData.data.org_id;
-              // Note: org_id can't be directly added as participant, only indirectly via person
-            }
-            
-            // Deal can't be set as participant, remove it
-            if (rowData.data.deal_id) {
-              delete rowData.data.deal_id;
-              // Note: In API v2, deal association must be done differently
-            }
-            
-            // Only add participants if we have any
-            if (participants.length > 0) {
-              rowData.data.participants = participants;
-            }
-            
-            // Ensure type is set for activity if missing
-            if (!rowData.data.type) {
-              rowData.data.type = "task"; // Default type
-            }
+            });
             break;
             
-          case ENTITY_TYPES.DEALS:
-            updateUrl = `${baseUrl}/api/v2/deals/${rowData.id}`;
-            method = 'PATCH';
-            
-            // Remove ID from payload
-            delete rowData.data.id;
-            
-            // Validate ID fields
-            validateIdField(rowData.data, 'owner_id');
-            validateIdField(rowData.data, 'person_id');
-            validateIdField(rowData.data, 'org_id');
-            validateIdField(rowData.data, 'stage_id');
-            validateIdField(rowData.data, 'pipeline_id');
-            break;
-            
-          case ENTITY_TYPES.PERSONS:
+          case 'persons':
             updateUrl = `${baseUrl}/api/v2/persons/${rowData.id}`;
             method = 'PATCH';
-            
-            // Remove ID from payload
             delete rowData.data.id;
             
-            // Validate ID fields
-            validateIdField(rowData.data, 'owner_id');
-            validateIdField(rowData.data, 'org_id');
-            
-            // Format emails and phones correctly if present
-            if (rowData.data.email && !Array.isArray(rowData.data.email)) {
-              // If email exists but isn't an array, delete it (we'll use proper format below)
-              delete rowData.data.email;
-            }
-            
-            if (rowData.data.phone && !Array.isArray(rowData.data.phone)) {
-              // If phone exists but isn't an array, delete it (we'll use proper format below)
-              delete rowData.data.phone;
-            }
-            
-            // Use proper email and phone arrays for PATCH API v2
+            // Use proper email and phone arrays
             if (rowData.emailData && rowData.emailData.length > 0) {
               rowData.data.email = rowData.emailData;
             }
@@ -3141,716 +2755,1636 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
             }
             break;
             
-          case ENTITY_TYPES.ORGANIZATIONS:
-            // Ensure we have a valid numeric ID for organizations
-            if (isNaN(parseInt(rowData.id)) || !(/^\d+$/.test(String(rowData.id)))) {
-              throw new Error(`Organization ID must be numeric. Found: "${rowData.id}". Please ensure your sheet has a "Pipedrive ID" column with the correct Pipedrive organization IDs.`);
-            }
-            
-            // Use v1 API endpoint for organizations which handles address updates better
+          case 'organizations':
+            // Organizations use API v1 for better address handling
             updateUrl = `${baseUrl}/api/v1/organizations/${rowData.id}`;
             method = 'PUT';
-            
-            // Remove ID from payload
             delete rowData.data.id;
             
-            // Validate ID fields
-            validateIdField(rowData.data, 'owner_id');
-            
-            // Special handling for organization address to avoid losing address components
+            // Special handling for organization address
             if (rowData.data.address) {
-              const newAddressValue = rowData.data.address;
-              
-              // Check if the address actually changed by getting current organization data
-              try {
-                const orgUrl = `${baseUrl}/api/v1/organizations/${rowData.id}`;
-                const orgResponse = UrlFetchApp.fetch(orgUrl, {
-                  method: 'GET',
-                  headers: {
-                    'Authorization': `Bearer ${accessToken}`
-                  },
-                  muteHttpExceptions: true
-                });
-                
-                if (orgResponse.getResponseCode() === 200) {
-                  const orgData = JSON.parse(orgResponse.getContentText());
-                  
-                  if (orgData.success && orgData.data) {
-                    const currentAddress = orgData.data.address;
-                    Logger.log(`Current organization address: ${currentAddress}`);
-                    
-                    // If the current address is the same as the new one, remove it from update
-                    // to prevent losing the address components
-                    if (typeof newAddressValue === 'string' && 
-                        typeof currentAddress === 'string' && 
-                        newAddressValue.trim() === currentAddress.trim()) {
-                      Logger.log(`Address unchanged, removing from update to preserve components`);
-                      delete rowData.data.address;
-                    } else {
-                      Logger.log(`Address changed, keeping in update: ${newAddressValue}`);
-                      // Use the string address value directly for API v1
-                      if (typeof newAddressValue === 'string') {
-                        rowData.data.address = newAddressValue;
-                      } else if (Array.isArray(newAddressValue) && newAddressValue.length > 0) {
-                        rowData.data.address = newAddressValue[0].value || String(newAddressValue[0]);
-                      } else if (typeof newAddressValue === 'object') {
-                        rowData.data.address = newAddressValue.value || String(newAddressValue);
-                      } else {
-                        rowData.data.address = String(newAddressValue);
-                      }
-                    }
-                  }
-                }
-              } catch (e) {
-                Logger.log(`Error checking organization address: ${e.message}`);
-                
-                // If we encounter an error, just use the new address as a string
-                if (typeof newAddressValue === 'string') {
-                  rowData.data.address = newAddressValue;
-                } else if (Array.isArray(newAddressValue) && newAddressValue.length > 0) {
-                  rowData.data.address = newAddressValue[0].value || String(newAddressValue[0]);
-                } else if (typeof newAddressValue === 'object') {
-                  rowData.data.address = newAddressValue.value || String(newAddressValue);
+              const addressValue = rowData.data.address;
+              // Ensure address is a string for v1 API
+              if (typeof addressValue !== 'string') {
+                if (Array.isArray(addressValue) && addressValue.length > 0) {
+                  rowData.data.address = addressValue[0].value || String(addressValue[0]);
+                } else if (typeof addressValue === 'object') {
+                  rowData.data.address = addressValue.value || String(addressValue);
                 } else {
-                  rowData.data.address = String(newAddressValue);
+                  rowData.data.address = String(addressValue);
                 }
               }
             }
-            
-            // Handle any other address components if they exist
-            const addressFields = [
-              'address_street_number', 'address_route', 
-              'address_sublocality', 'address_locality', 'address_admin_area_level_1',
-              'address_admin_area_level_2', 'address_country', 'address_postal_code',
-              'address_formatted_address'
-            ];
-            
-            // Remove individual address components - they should be included in the main address field
-            for (const field of addressFields) {
-              if (field in rowData.data) {
-                Logger.log(`Removing individual address component ${field}: ${rowData.data[field]}`);
-                delete rowData.data[field];
-              }
-            }
             break;
             
-          case ENTITY_TYPES.LEADS:
-            updateUrl = `${baseUrl}/api/v2/leads/${rowData.id}`;
+          case 'leads':
+            updateUrl = `${baseUrl}/api/v1/leads/${rowData.id}`;
             method = 'PATCH';
-            
-            // Remove ID from payload
             delete rowData.data.id;
-            
-            // Validate ID fields
-            validateIdField(rowData.data, 'owner_id');
-            validateIdField(rowData.data, 'person_id');
-            validateIdField(rowData.data, 'org_id');
-            validateIdField(rowData.data, 'stage_id');
-            validateIdField(rowData.data, 'pipeline_id');
             break;
             
-          case ENTITY_TYPES.PRODUCTS:
+          case 'products':
             updateUrl = `${baseUrl}/api/v2/products/${rowData.id}`;
             method = 'PATCH';
-            
-            // Remove ID from payload
             delete rowData.data.id;
-            
-            // Validate ID fields
-            validateIdField(rowData.data, 'owner_id');
-            validateIdField(rowData.data, 'category_id');
-            validateIdField(rowData.data, 'unit_id');
-            validateIdField(rowData.data, 'tax_id');
-            validateIdField(rowData.data, 'prices');
             break;
             
           default:
             throw new Error(`Unknown entity type: ${entityType}`);
         }
         
-        // Apply the regular filter for read-only fields
-        const requestBody = filterReadOnlyFields(rowData.data, entityType);
+        // Filter out read-only fields before sending to API
+        const filteredData = filterReadOnlyFields(rowData.data, entityType);
+        Logger.log(`Sending API request to ${updateUrl} using method ${method}`);
 
-        // Ensure no address components are at root level in the final request
-        for (const key in requestBody) {
-          if (key.match(/^[a-f0-9]{20,}_[a-z_]+$/i)) {
-            Logger.log(`ERROR: Address component ${key} still at root level in final request. Removing it.`);
-            delete requestBody[key];
+        // Final pre-send validation
+        // For deals, ensure won_time is in valid format
+        if (entityType === 'deals') {
+          ['won_time', 'lost_time', 'close_time'].forEach(field => {
+            if (filteredData[field]) {
+              // These fields must be ISO datetime format
+              if (!filteredData[field].match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(.\d{3})?Z$/)) {
+                const isoDateTime = formatDateTimeField(filteredData[field]);
+                if (isoDateTime) {
+                  filteredData[field] = isoDateTime;
+                  Logger.log(`Final pre-send - reformatted ${field} to ISO: ${filteredData[field]}`);
+                } else {
+                  Logger.log(`Final pre-send - removing invalid ${field}: ${filteredData[field]}`);
+                  delete filteredData[field];
+                }
+              }
+            }
+          });
+        }
+        
+        // LAST RESORT FIX: Direct payload manipulation to match Pipedrive API requirements
+        if (entityType === 'deals' && filteredData.won_time) {
+          // Ensure won_time is in proper ISO format with time component
+          try {
+            // Create a JS Date object and convert to ISO string
+            const dateObject = new Date(filteredData.won_time);
+            if (!isNaN(dateObject.getTime())) {
+              filteredData.won_time = dateObject.toISOString();
+              Logger.log(`EMERGENCY FIX: Set won_time to ISO string: ${filteredData.won_time}`);
+            } else {
+              delete filteredData.won_time;
+              Logger.log(`EMERGENCY FIX: Removed invalid won_time`);
+            }
+          } catch (e) {
+            delete filteredData.won_time;
+            Logger.log(`EMERGENCY FIX: Error converting won_time: ${e.message}`);
           }
+        }
+        
+        // Sanitize the payload to ensure address components are properly nested
+        const sanitizedData = sanitizePayloadForPipedrive(filteredData);
+        Logger.log(`Sanitized payload for API request`);
+        
+        // Format custom fields again right before sending to ensure proper format
+        if (sanitizedData.custom_fields) {
+          Logger.log(`Applying final custom field formatting before API request`);
           
-          // Special check for the problematic admin_area_level_2 field
-          if (key.includes('_admin_area_level_2')) {
-            Logger.log(`ERROR: Found admin_area_level_2 component at root level in final request: ${key}. Removing it.`);
+          // Process custom fields manually to match API requirements using field definitions
+          for (const fieldId in sanitizedData.custom_fields) {
+            const value = sanitizedData.custom_fields[fieldId];
+            const fieldDef = fieldDefinitions[fieldId];
+            const fieldType = fieldDef ? fieldDef.field_type : null;
+
+            // Skip null/undefined/empty values
+            if (value === null || value === undefined || value === '') {
+              delete sanitizedData.custom_fields[fieldId];
+              continue;
+            }
             
-            // Extract the field ID part
-            const fieldIdMatch = key.match(/^([a-f0-9]{20,})_admin_area_level_2$/i);
-            if (fieldIdMatch && fieldIdMatch[1]) {
-              const fieldId = fieldIdMatch[1];
-              
-              // If custom_fields object exists but doesn't have this field, add it
-              if (requestBody.custom_fields && !requestBody.custom_fields[fieldId]) {
-                requestBody.custom_fields[fieldId] = { value: "" };
-              }
-              
-              // If custom_fields object exists and has this field, add the component
-              if (requestBody.custom_fields && requestBody.custom_fields[fieldId]) {
-                requestBody.custom_fields[fieldId].admin_area_level_2 = requestBody[key];
-                Logger.log(`Added admin_area_level_2 = ${requestBody[key]} to field ${fieldId} in final request`);
-              }
-              
-              // Remove from root level
-              delete requestBody[key];
-            }
-          }
-        }
-        
-        // Log the final request body for debugging
-        Logger.log(`Final API Request to ${updateUrl}: ${JSON.stringify(requestBody)}`);
-        
-        // DIRECT FIX FOR ADDRESS FIELDS: Check if addresses are being sent as strings instead of objects
-        if (requestBody.custom_fields) {
-          for (const fieldId in requestBody.custom_fields) {
-            // Check if this looks like a custom field ID (long hex string)
-            if (/^[a-f0-9]{20,}$/i.test(fieldId)) {
-              const fieldValue = requestBody.custom_fields[fieldId];
-              
-              // Check if the address field is a string but should be an object
-              if (typeof fieldValue === 'string' && rowData.data.custom_fields && 
-                  rowData.data.custom_fields[fieldId] && 
-                  typeof rowData.data.custom_fields[fieldId] === 'object') {
-                
-                // We found a case where our address object was converted to a string
-                Logger.log(`FIXING: Address field ${fieldId} was converted to string. Restoring object structure.`);
-                
-                // Restore the original object
-                requestBody.custom_fields[fieldId] = rowData.data.custom_fields[fieldId];
-                
-                // Ensure it's still an object after possible serialization issues
-                if (typeof requestBody.custom_fields[fieldId] !== 'object' || requestBody.custom_fields[fieldId] === null) {
-                  Logger.log(`Creating new address object for ${fieldId}`);
-                  requestBody.custom_fields[fieldId] = { value: fieldValue };
-                  
-                  // Add components from our processed address components if available
-                  const components = [
-                    'locality', 'route', 'street_number', 'postal_code', 
-                    'admin_area_level_1', 'admin_area_level_2', 'country'
-                  ];
-                  
-                  // Loop through components and check if we have them in original data
-                  for (const component of components) {
-                    const componentKey = `${fieldId}_${component}`;
-                    
-                    // Check if the component exists in our pre-processed data
-                    if (rowData.data[componentKey]) {
-                      // Always convert components to strings for Pipedrive API
-                      requestBody.custom_fields[fieldId][component] = String(rowData.data[componentKey]);
-                      Logger.log(`Added ${component}=${rowData.data[componentKey]} to address object (as string)`);
-                    }
-                  }
+            // DATE FIELDS - Must be string in format YYYY-MM-DD
+            if (fieldType === 'date') {
+              let dateString = null;
+              if (typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                dateString = value;
+              } else if (typeof value === 'string') {
+                // Try parsing as Date
+                const dateObj = new Date(value);
+                if (!isNaN(dateObj.getTime())) {
+                  dateString = String(dateObj.getFullYear()).padStart(4, '0') + '-' +
+                               String(dateObj.getMonth() + 1).padStart(2, '0') + '-' +
+                               String(dateObj.getDate()).padStart(2, '0');
                 }
-                
-                // Perform a final check to ensure ALL components are strings
-                if (typeof requestBody.custom_fields[fieldId] === 'object' && requestBody.custom_fields[fieldId] !== null) {
-                  for (const component in requestBody.custom_fields[fieldId]) {
-                    if (component !== 'value' && requestBody.custom_fields[fieldId][component] !== undefined) {
-                      requestBody.custom_fields[fieldId][component] = String(requestBody.custom_fields[fieldId][component]);
-                      Logger.log(`Ensured ${component} is a string in address object`);
-                    }
-                  }
-                }
-                
-                Logger.log(`FIXED: Address field is now an object: ${JSON.stringify(requestBody.custom_fields[fieldId])}`);
+              } else if (value instanceof Date && !isNaN(value.getTime())) {
+                dateString = String(value.getFullYear()).padStart(4, '0') + '-' +
+                             String(value.getMonth() + 1).padStart(2, '0') + '-' +
+                             String(value.getDate()).padStart(2, '0');
               }
-              
-              // EXTRA FIX: Specifically handle our known address field
-              if (fieldId === '77f38058953523f59ce570c9366d55992a91c44e') {
-                // Always ensure this field is an object regardless of current type
-                if (typeof fieldValue === 'string' || typeof fieldValue !== 'object' || fieldValue === null) {
-                  Logger.log(`CRITICAL FIX: Forcing address field ${fieldId} to be an object`);
-                  
-                  // Create a new object with the value
-                  const newAddressObject = { value: fieldValue };
-                  
-                  // Look for admin_area_level_2 in different places
-                  if (rowData.data[`${fieldId}_admin_area_level_2`]) {
-                    newAddressObject.admin_area_level_2 = rowData.data[`${fieldId}_admin_area_level_2`];
-                    Logger.log(`Added admin_area_level_2 from original data`);
-                  }
-                  
-                  // Add other components we have
-                  const addressComponents = {
-                    locality: rowData.data[`${fieldId}_locality`],
-                    route: rowData.data[`${fieldId}_route`],
-                    street_number: rowData.data[`${fieldId}_street_number`],
-                    postal_code: rowData.data[`${fieldId}_postal_code`]
-                  };
-                  
-                  // Add components that have values
-                  for (const comp in addressComponents) {
-                    if (addressComponents[comp]) {
-                      newAddressObject[comp] = addressComponents[comp];
-                      Logger.log(`Added ${comp}=${addressComponents[comp]} to address object`);
-                    }
-                  }
-                  
-                  // Replace with our specially created object
-                  requestBody.custom_fields[fieldId] = newAddressObject;
-                  Logger.log(`CRITICAL FIX: Created new address object: ${JSON.stringify(newAddressObject)}`);
-                }
-              }
-              
-              // Fix date fields by removing time part
-              if (fieldValue && typeof fieldValue === 'string' && fieldValue.includes('T') &&
-                  (fieldValue.endsWith('Z') || fieldValue.includes(':')) &&
-                  (fieldId.includes('date') || fieldId.includes('time'))) {
-                
-                // This looks like a date field with time component
-                Logger.log(`FIXING: Date field ${fieldId} has time component. Removing it.`);
-                
-                // Simplify to YYYY-MM-DD format for date fields
-                if (fieldId.includes('date')) {
-                  requestBody.custom_fields[fieldId] = fieldValue.split('T')[0];
-                  Logger.log(`FIXED: Date field now formatted as ${requestBody.custom_fields[fieldId]}`);
-                }
-              }
-            }
-          }
-        }
-        
-        // Log the ACTUAL request body after our fixes
-        Logger.log(`ACTUAL API Request to ${updateUrl}: ${JSON.stringify(requestBody)}`);
-        
-        // FINAL DATE FIX: Fix all date and time fields directly with field ID matching
-        if (requestBody.custom_fields) {
-          // Log all custom fields and their values/types for debugging
-          Logger.log(`DEBUGGING: All custom fields before fixes:`);
-          for (const fieldId in requestBody.custom_fields) {
-            const value = requestBody.custom_fields[fieldId];
-            Logger.log(`Field ${fieldId}: ${value} (type: ${typeof value}, isArray: ${Array.isArray(value)})`);
-          }
-        
-          // Known date field IDs - from logs
-          const dateFieldIds = [
-            '1825efe77c05d72fcb2d8ee1abf25b344fca4798' // test custom date (simple date)
-          ];
-          
-          // Known date RANGE field IDs - these need to be objects with start/end
-          const dateRangeFieldIds = [
-            '1740bbaf2ceb9e171105890ce3cf34996dc4938c'  // test date range
-          ];
-          
-          // Known time field IDs - from logs
-          const timeFieldIds = [
-            '73da068304a33c665282ba719d8b4ff540112a0f' // test time (simple time)
-          ];
-          
-          // Known time RANGE field IDs - these need to be objects with start/end
-          const timeRangeFieldIds = [
-            'd34ec41a8378523349cf5d3701a500a13844bf7e'  // test time range
-          ];
-          
-          // Known numeric field IDs - these must be numbers, not strings
-          const numericFieldIds = [
-            '49358b35770e6604c529b932ecf8c394cad661f1' // test phone number
-          ];
-          
-          // Known multiple options field IDs - these need to be arrays of option IDs
-          const multiOptionFieldIds = [
-            '4ff145524f5a610e2fff20bef850d80228874d5b' // Test multiple options
-          ];
-          
-          // IMPORTANT: Check if our multi-option field exists before any other fixes
-          if (requestBody.custom_fields['4ff145524f5a610e2fff20bef850d80228874d5b'] !== undefined) {
-            Logger.log(`CRITICAL: Found multi-option field in initial payload: ${requestBody.custom_fields['4ff145524f5a610e2fff20bef850d80228874d5b']}`);
-          } else {
-            Logger.log(`WARNING: Multi-option field not found in initial payload!`);
-          }
-          
-          // Fix date fields to YYYY-MM-DD format
-          for (const dateId of dateFieldIds) {
-            if (requestBody.custom_fields[dateId] !== undefined) {
-              const value = requestBody.custom_fields[dateId];
-              Logger.log(`Processing date field ${dateId}: ${value} (type: ${typeof value})`);
-              
-              // Force to string in YYYY-MM-DD format
-              if (typeof value === 'string' && value.includes('T')) {
-                // Split the date part from the time part
-                const datePart = value.split('T')[0];
-                requestBody.custom_fields[dateId] = datePart;
-                Logger.log(`EMERGENCY DATE FIX: Changed date field ${dateId} from ${value} to ${datePart}`);
-              } else if (value instanceof Date) {
-                // Handle Date objects
-                const year = value.getFullYear();
-                const month = String(value.getMonth() + 1).padStart(2, '0');
-                const day = String(value.getDate()).padStart(2, '0');
-                requestBody.custom_fields[dateId] = `${year}-${month}-${day}`;
-                Logger.log(`EMERGENCY DATE FIX: Converted Date object to ${requestBody.custom_fields[dateId]}`);
-              } else if (typeof value === 'object') {
-                // For any other objects, try to extract date string
-                requestBody.custom_fields[dateId] = "2025-04-06"; // Fallback to hardcoded date from log
-                Logger.log(`EMERGENCY DATE FIX: Force converted complex object to string date ${requestBody.custom_fields[dateId]}`);
-              }
-            }
-          }
-          
-          // Fix date RANGE fields to be objects with start/end
-          for (const dateRangeId of dateRangeFieldIds) {
-            if (requestBody.custom_fields[dateRangeId] !== undefined) {
-              const value = requestBody.custom_fields[dateRangeId];
-              Logger.log(`Processing date range field ${dateRangeId}: ${value} (type: ${typeof value})`);
-              
-              // Create date range object
-              if (typeof value === 'string') {
-                const datePart = value.includes('T') ? value.split('T')[0] : value;
-                requestBody.custom_fields[dateRangeId] = {
-                  start: datePart,
-                  end: datePart
-                };
-                Logger.log(`EMERGENCY DATE RANGE FIX: Changed date range field ${dateRangeId} from ${value} to object with start/end`);
-              } else if (value instanceof Date) {
-                const year = value.getFullYear();
-                const month = String(value.getMonth() + 1).padStart(2, '0');
-                const day = String(value.getDate()).padStart(2, '0');
-                const dateString = `${year}-${month}-${day}`;
-                requestBody.custom_fields[dateRangeId] = {
-                  start: dateString,
-                  end: dateString
-                };
-                Logger.log(`EMERGENCY DATE RANGE FIX: Converted Date object to range with ${dateString}`);
-              } else if (typeof value === 'object' && !Array.isArray(value)) {
-                // If it's already an object but might be missing keys
-                if (!value.start || !value.end) {
-                  requestBody.custom_fields[dateRangeId] = {
-                    start: "2025-04-06", // Fallback from logs
-                    end: "2025-04-06"
-                  };
-                  Logger.log(`EMERGENCY DATE RANGE FIX: Fixed incomplete date range object for ${dateRangeId}`);
-                }
+              if (dateString) {
+                sanitizedData.custom_fields[fieldId] = dateString;
+                Logger.log(`Formatted date field ${fieldId} to string: ${dateString}`);
               } else {
-                // Fallback for any other type
-                requestBody.custom_fields[dateRangeId] = {
-                  start: "2025-04-06", // Fallback from logs
-                  end: "2025-04-06"
-                };
-                Logger.log(`EMERGENCY DATE RANGE FIX: Created default date range object for ${dateRangeId}`);
+                Logger.log(`Removing invalid date field: ${fieldId} (value: ${JSON.stringify(value)})`);
+                delete sanitizedData.custom_fields[fieldId];
               }
+              continue;
             }
-          }
-          
-          // Fix time fields to HH:MM format
-          for (const timeId of timeFieldIds) {
-            if (requestBody.custom_fields[timeId] !== undefined) {
-              const value = requestBody.custom_fields[timeId];
-              Logger.log(`Processing time field ${timeId}: ${value} (type: ${typeof value})`);
-              
-              if (typeof value === 'string' && value.includes('T')) {
-                // Extract just the time part (HH:MM)
-                const timePart = value.split('T')[1];
-                if (timePart) {
-                  const timeOnly = timePart.substring(0, 5); // HH:MM
-                  requestBody.custom_fields[timeId] = timeOnly;
-                  Logger.log(`EMERGENCY TIME FIX: Changed time field ${timeId} from ${value} to ${timeOnly}`);
+
+            // TIME FIELDS - Must be object {hour, minute}
+            if (fieldType === 'time') {
+              let hour = null, minute = null;
+              if (typeof value === 'object' && value !== null && value.hour !== undefined && value.minute !== undefined) {
+                hour = value.hour;
+                minute = value.minute;
+              } else if (typeof value === 'string') {
+                const match = value.match(/^(\d{1,2}):(\d{2})$/);
+                if (match) {
+                  hour = parseInt(match[1], 10);
+                  minute = parseInt(match[2], 10);
+                } else {
+                  // Try parsing as Date
+                  const dateObj = new Date(value);
+                  if (!isNaN(dateObj.getTime())) {
+                    hour = dateObj.getHours();
+                    minute = dateObj.getMinutes();
+                  }
                 }
-              } else if (value instanceof Date) {
-                const hours = String(value.getHours()).padStart(2, '0');
-                const minutes = String(value.getMinutes()).padStart(2, '0');
-                requestBody.custom_fields[timeId] = `${hours}:${minutes}`;
-                Logger.log(`EMERGENCY TIME FIX: Converted Date object to time ${requestBody.custom_fields[timeId]}`);
-              } else {
-                // Fallback for any other type
-                requestBody.custom_fields[timeId] = "12:15"; // Fallback from logs
-                Logger.log(`EMERGENCY TIME FIX: Created default time string for ${timeId}`);
               }
+              if (hour !== null && minute !== null) {
+                sanitizedData.custom_fields[fieldId] = { hour: hour, minute: minute };
+                Logger.log(`Formatted time field ${fieldId} to object: ${JSON.stringify(sanitizedData.custom_fields[fieldId])}`);
+              } else {
+                Logger.log(`Removing invalid time field: ${fieldId} (value: ${JSON.stringify(value)})`);
+                delete sanitizedData.custom_fields[fieldId];
+              }
+              continue;
             }
-          }
-          
-          // Fix time RANGE fields to be objects with start/end
-          for (const timeRangeId of timeRangeFieldIds) {
-            if (requestBody.custom_fields[timeRangeId] !== undefined) {
-              const value = requestBody.custom_fields[timeRangeId];
-              Logger.log(`Processing time range field ${timeRangeId}: ${value} (type: ${typeof value})`);
-              
-              // Create time range object
-              let timeValue = "12:15"; // Default fallback
-              
-              if (typeof value === 'string') {
-                if (value.includes('T')) {
-                  const timePart = value.split('T')[1];
-                  if (timePart) {
-                    timeValue = timePart.substring(0, 5); // HH:MM
+
+            // DATE RANGE FIELDS - Must be an object like { start: "YYYY-MM-DD", end: "YYYY-MM-DD" }
+            if (fieldType === 'daterange') {
+              let startDate = null, endDate = null;
+              if (typeof value === 'object' && value !== null) {
+                startDate = formatDateField(value.start || value.value);
+                endDate = formatDateField(value.end || value.until);
+              } else if (typeof value === 'string') {
+                if (value.includes(' - ')) {
+                  const dates = value.split(' - ');
+                  if (dates.length === 2) {
+                    startDate = formatDateField(dates[0].trim());
+                    endDate = formatDateField(dates[1].trim());
                   }
                 } else {
-                  timeValue = value;
-                }
-              } else if (value instanceof Date) {
-                const hours = String(value.getHours()).padStart(2, '0');
-                const minutes = String(value.getMinutes()).padStart(2, '0');
-                timeValue = `${hours}:${minutes}`;
-              }
-              
-              requestBody.custom_fields[timeRangeId] = {
-                start: timeValue,
-                end: timeValue
-              };
-              Logger.log(`EMERGENCY TIME RANGE FIX: Changed time range field ${timeRangeId} to object with start/end: ${timeValue}`);
-            }
-          }
-          
-          // Ensure numeric fields are sent as numbers
-          for (const numericId of numericFieldIds) {
-            if (requestBody.custom_fields[numericId] !== undefined) {
-              const value = requestBody.custom_fields[numericId];
-              Logger.log(`Processing numeric field ${numericId}: ${value} (type: ${typeof value})`);
-              
-              // If it's a string or already a number that can be parsed
-              if (typeof value === 'string' || !isNaN(Number(value))) {
-                // Convert to number
-                const numericValue = Number(value);
-                if (!isNaN(numericValue)) {
-                  requestBody.custom_fields[numericId] = numericValue;
-                  Logger.log(`EMERGENCY NUMERIC FIX: Ensured field ${numericId} is a number: ${numericValue}`);
+                  const singleDate = formatDateField(value);
+                  if (singleDate) startDate = endDate = singleDate;
                 }
               }
-            }
-          }
-          
-          // Fix multiple options fields to be arrays of option IDs
-          for (const multiOptionId of multiOptionFieldIds) {
-            if (requestBody.custom_fields[multiOptionId] !== undefined) {
-              const value = requestBody.custom_fields[multiOptionId];
-              Logger.log(`Processing multi-option field ${multiOptionId}: ${value} (type: ${typeof value}, isArray: ${Array.isArray(value)})`);
-              
-              // Always convert to array of IDs regardless of current format
-              if (!Array.isArray(value) || typeof value[0] !== 'number') {
-                // Known option IDs for this field (from the Pipedrive API or debug)
-                const optionIds = [8, 9, 10]; // Using some likely IDs
-                requestBody.custom_fields[multiOptionId] = optionIds;
-                Logger.log(`EMERGENCY MULTI OPTION FIX: Set field ${multiOptionId} to array of IDs: ${optionIds}`);
+              if (startDate && endDate) {
+                sanitizedData.custom_fields[fieldId] = { start: startDate, end: endDate };
+                Logger.log(`Formatted date range field ${fieldId}: ${JSON.stringify(sanitizedData.custom_fields[fieldId])}`);
               } else {
-                Logger.log(`Multi-option field ${multiOptionId} already in correct format`);
+                Logger.log(`Removing invalid date range field: ${fieldId} (value: ${JSON.stringify(value)})`);
+                delete sanitizedData.custom_fields[fieldId];
               }
+              continue;
             }
-          }
-          
-          // CRITICAL MANUAL FIX: Ensure the multiple options field is added (in case it was somehow dropped)
-          if (requestBody.custom_fields['4ff145524f5a610e2fff20bef850d80228874d5b'] === undefined) {
-            requestBody.custom_fields['4ff145524f5a610e2fff20bef850d80228874d5b'] = [8, 9, 10]; // Hardcoded IDs
-            Logger.log(`CRITICAL: Manually added missing multi-option field with IDs [8, 9, 10]`);
-          }
-          
-          // FALLBACK NUMERIC FIX: Check if any date/time field could be expecting a timestamp number
-          // Some Date fields expect numbers (epoch time) rather than ISO strings
-          for (const fieldId in requestBody.custom_fields) {
-            const value = requestBody.custom_fields[fieldId];
-            if (typeof value === 'string' && 
-                (value.includes('T') || /^\d{4}-\d{2}-\d{2}$/.test(value))) {
-              try {
-                // Try converting to a timestamp (epoch time in seconds)
-                const date = new Date(value);
-                if (!isNaN(date.getTime())) {
-                  const timestamp = Math.floor(date.getTime() / 1000);
-                  requestBody.custom_fields[fieldId] = timestamp;
-                  Logger.log(`EMERGENCY TIMESTAMP FIX: Converted field ${fieldId} from string "${value}" to timestamp ${timestamp}`);
-                }
-              } catch (e) {
-                Logger.log(`Error converting date to timestamp: ${e.message}`);
+
+            // ORGANIZATION/USER FIELDS - Must be number
+            if (fieldType === 'org' || fieldType === 'organization' || fieldType === 'user') {
+              if (typeof value === 'number' && !isNaN(value)) {
+                sanitizedData.custom_fields[fieldId] = value;
+                Logger.log(`Formatted ${fieldType} field ${fieldId} to number: ${value}`);
+              } else if (typeof value === 'string' && !isNaN(Number(value))) {
+                sanitizedData.custom_fields[fieldId] = Number(value);
+                Logger.log(`Formatted ${fieldType} field ${fieldId} to number: ${Number(value)}`);
+              } else {
+                Logger.log(`Removing invalid ${fieldType} field: ${fieldId} (value: ${JSON.stringify(value)})`);
+                delete sanitizedData.custom_fields[fieldId];
               }
+              continue;
             }
-          }
-          
-          // REVERT TIMESTAMP FIX: Pipedrive expects string dates, not timestamps
-          // Convert any dates back to string format
-          for (const fieldId in requestBody.custom_fields) {
-            const value = requestBody.custom_fields[fieldId];
-            
-            // If we previously converted this to a timestamp, undo it
-            if (typeof value === 'number' && 
-                (fieldId === '1825efe77c05d72fcb2d8ee1abf25b344fca4798' || 
-                 fieldId === '1740bbaf2ceb9e171105890ce3cf34996dc4938c')) {
-              
-              // Convert back to string format (YYYY-MM-DD)
-              const date = new Date(value * 1000);
-              if (!isNaN(date.getTime())) {
-                const year = date.getFullYear();
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const day = String(date.getDate()).padStart(2, '0');
-                const dateString = `${year}-${month}-${day}`;
-                
-                Logger.log(`EMERGENCY FIX REVERT: Converting field ${fieldId} back to string date: ${dateString}`);
-                
-                // For date fields, use simple string format
-                if (fieldId === '1825efe77c05d72fcb2d8ee1abf25b344fca4798') {
-                  requestBody.custom_fields[fieldId] = dateString;
-                }
-                // For date range fields, keep the object structure but with string values
-                else if (fieldId === '1740bbaf2ceb9e171105890ce3cf34996dc4938c') {
-                  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-                    // It's already an object, just update the date strings
-                    requestBody.custom_fields[fieldId] = {
-                      start: dateString,
-                      end: dateString
-                    };
-                  } else {
-                    // Otherwise create a new object
-                    requestBody.custom_fields[fieldId] = {
-                      start: dateString,
-                      end: dateString
-                    };
+
+            // PHONE FIELDS - Must be string
+            if (fieldType === 'phone') {
+              sanitizedData.custom_fields[fieldId] = String(value);
+              Logger.log(`Formatted phone field ${fieldId} to string: ${sanitizedData.custom_fields[fieldId]}`);
+              continue;
+            }
+
+            // TIME FIELDS - Must be object {hour, minute}
+            if (fieldType === 'time') {
+              let hour = null, minute = null;
+              if (typeof value === 'object' && value !== null && value.hour !== undefined && value.minute !== undefined) {
+                hour = value.hour;
+                minute = value.minute;
+              } else if (typeof value === 'string') {
+                const match = value.match(/^(\d{1,2}):(\d{2})$/);
+                if (match) {
+                  hour = parseInt(match[1], 10);
+                  minute = parseInt(match[2], 10);
+                } else {
+                  // Try parsing as Date
+                  const dateObj = new Date(value);
+                  if (!isNaN(dateObj.getTime())) {
+                    hour = dateObj.getHours();
+                    minute = dateObj.getMinutes();
                   }
                 }
               }
+              if (hour !== null && minute !== null) {
+                sanitizedData.custom_fields[fieldId] = { hour: hour, minute: minute };
+                Logger.log(`Formatted time field ${fieldId} to object: ${JSON.stringify(sanitizedData.custom_fields[fieldId])}`);
+              } else {
+                Logger.log(`Removing invalid time field: ${fieldId} (value: ${JSON.stringify(value)})`);
+                delete sanitizedData.custom_fields[fieldId];
+              }
+              continue;
             }
+
+            // TIME RANGE FIELDS - Must be object {start: {hour, minute}, end: {hour, minute}}
+            if (fieldType === 'timerange') {
+              let start = null, end = null;
+              if (typeof value === 'object' && value !== null) {
+                if (value.start && typeof value.start === 'object' && value.start.hour !== undefined && value.start.minute !== undefined) {
+                  start = { hour: value.start.hour, minute: value.start.minute };
+                }
+                if (value.end && typeof value.end === 'object' && value.end.hour !== undefined && value.end.minute !== undefined) {
+                  end = { hour: value.end.hour, minute: value.end.minute };
+                }
+              } else if (typeof value === 'string') {
+                // Try parsing "HH:MM - HH:MM"
+                const match = value.match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+                if (match) {
+                  start = { hour: parseInt(match[1], 10), minute: parseInt(match[2], 10) };
+                  end = { hour: parseInt(match[3], 10), minute: parseInt(match[4], 10) };
+                }
+              }
+              if (start && end) {
+                sanitizedData.custom_fields[fieldId] = { start: start, end: end };
+                Logger.log(`Formatted time range field ${fieldId} to object: ${JSON.stringify(sanitizedData.custom_fields[fieldId])}`);
+              } else {
+                Logger.log(`Removing invalid time range field: ${fieldId} (value: ${JSON.stringify(value)})`);
+                delete sanitizedData.custom_fields[fieldId];
+              }
+              continue;
+            }
+
+            // MULTI-OPTION FIELDS (enum, set) - Must be array of numbers (option IDs)
+            if (fieldType === 'enum' || fieldType === 'set') {
+              let inputLabels = [];
+              if (Array.isArray(value)) {
+                inputLabels = value.map(item => String(item).trim());
+              } else if (typeof value === 'string') {
+                inputLabels = value.split(',').map(item => item.trim());
+              } else if (value !== null && value !== undefined) {
+                inputLabels = [String(value).trim()];
+              }
+              
+              const numericOptionIds = [];
+              if (fieldDef && fieldDef.options && fieldDef.options.length > 0) {
+                // Create a label-to-ID map
+                const labelToIdMap = fieldDef.options.reduce((map, option) => {
+                  map[option.label.toLowerCase()] = option.id;
+                  return map;
+                }, {});
+
+                inputLabels.forEach(label => {
+                  const labelLower = label.toLowerCase();
+                  if (labelToIdMap[labelLower] !== undefined) {
+                    numericOptionIds.push(labelToIdMap[labelLower]);
+                  } else {
+                    // Also check if the input label is already a numeric ID string
+                    if (!isNaN(Number(label))) {
+                       numericOptionIds.push(Number(label));
+                    } else {
+                       Logger.log(`Warning: Label "${label}" not found in options for multi-option field ${fieldId}. Skipping.`);
+                    }
+                  }
+                });
+              } else {
+                 // If no options defined, try converting directly if they look like numbers
+                 inputLabels.forEach(label => {
+                    if (!isNaN(Number(label))) {
+                       numericOptionIds.push(Number(label));
+                    } else {
+                       Logger.log(`Warning: No options defined for multi-option field ${fieldId} and value "${label}" is not numeric. Skipping.`);
+                    }
+                 });
+              }
+
+              if (numericOptionIds.length > 0) {
+                // For single-select enum, use only the first valid ID
+                if (fieldType === 'enum') {
+                   sanitizedData.custom_fields[fieldId] = numericOptionIds[0];
+                   Logger.log(`Formatted enum field ${fieldId} to ID: ${numericOptionIds[0]}`);
+                } else { // For multi-select set
+                   sanitizedData.custom_fields[fieldId] = numericOptionIds;
+                   Logger.log(`Formatted multi-option (set) field ${fieldId} to array of IDs: ${JSON.stringify(numericOptionIds)}`);
+                }
+              } else {
+                // If the original value was non-empty but resulted in empty numeric options, remove the field
+                if (inputLabels.length > 0) {
+                   Logger.log(`Removing invalid multi-option field ${fieldId} (no valid numeric IDs found from value: ${JSON.stringify(value)})`);
+                   delete sanitizedData.custom_fields[fieldId];
+                } else {
+                   Logger.log(`Multi-option field ${fieldId} was empty or invalid, ensuring removal.`);
+                   delete sanitizedData.custom_fields[fieldId];
+                }
+              }
+              continue;
+            }
+
+            // TIME FIELDS - Must be string in format HH:MM
+            if (fieldType === 'time') {
+              const timeString = formatTimeField(value); // Use helper function
+              if (timeString) {
+                sanitizedData.custom_fields[fieldId] = timeString;
+                Logger.log(`Formatted time field ${fieldId} to string: ${timeString}`);
+              } else {
+                Logger.log(`Removing invalid time field: ${fieldId} (value: ${JSON.stringify(value)})`);
+                delete sanitizedData.custom_fields[fieldId];
+              }
+              continue;
+            }
+            
+            // DATE FIELDS - Must be string in format YYYY-MM-DD
+            if (fieldType === 'date') {
+               const dateString = formatDateField(value); // Use helper function
+               if (dateString) {
+                  sanitizedData.custom_fields[fieldId] = dateString;
+                  Logger.log(`Formatted date field ${fieldId} to string: ${dateString}`);
+               } else {
+                  Logger.log(`Removing invalid date field: ${fieldId} (value: ${JSON.stringify(value)})`);
+                  delete sanitizedData.custom_fields[fieldId];
+               }
+               continue;
+            }
+            
+            // Add other field type handling here (e.g., user, org, phone, monetary, address)
+            // For now, other types pass through, assuming they are correctly formatted earlier
+            
+          } // End of loop through custom fields
+          
+          // If custom_fields is empty after all filtering, set to null or remove
+          if (Object.keys(sanitizedData.custom_fields).length === 0) {
+            sanitizedData.custom_fields = null;
           }
           
-          // DIRECT FIELD FIXES - Force specific values for critical fields
-          
-          // Fix date field - use direct string without conversion
-          requestBody.custom_fields['1825efe77c05d72fcb2d8ee1abf25b344fca4798'] = '2025-04-06';
-          Logger.log(`OVERRIDE FIX: Force set date field to string "2025-04-06"`);
-          
-          // Fix multi-option field to integers (not strings)
-          const optionIds = [1, 2, 3]; // Try different IDs as numbers
-          requestBody.custom_fields['4ff145524f5a610e2fff20bef850d80228874d5b'] = optionIds;
-          Logger.log(`OVERRIDE FIX: Force set multi-option field to number array [${optionIds}]`);
-          
-          // LAST ATTEMPT - Try every possible format for date range field
-          requestBody.custom_fields['1740bbaf2ceb9e171105890ce3cf34996dc4938c'] = "2025-04-06"; // Try plain string
-          Logger.log(`DESPERATE FIX: Set date range to plain string "2025-04-06"`);
-          
-          // Fix for multi-select - try as string
-          requestBody.custom_fields['4ff145524f5a610e2fff20bef850d80228874d5b'] = "1,2,3"; // Try comma-separated
-          Logger.log(`DESPERATE FIX: Set multi-option field to string "1,2,3"`);
-          
-          // FINAL DESPERATE APPROACH - Create a minimal payload with just the essential fields
-          // This will help identify if specific fields are causing the validation errors
-          const minimalPayload = {
-            title: requestBody.title,
-            custom_fields: {
-              // Just include the address field which we know is correct
-              "77f38058953523f59ce570c9366d55992a91c44e": requestBody.custom_fields["77f38058953523f59ce570c9366d55992a91c44e"]
-            }
-          };
-          
-          // Log this approach but DON'T reassign requestBody which is a const
-          Logger.log(`LAST RESORT: Using minimal approach - keeping only essential fields`);
-          
-          // Instead of reassigning requestBody which is a const, modify its properties
-          // Clear all existing custom fields first
-          const customFieldKeys = Object.keys(requestBody.custom_fields);
-          for (const key of customFieldKeys) {
-            if (key !== "77f38058953523f59ce570c9366d55992a91c44e") {
-              delete requestBody.custom_fields[key];
-            }
-          }
-          Logger.log(`LAST RESORT FIXED: Cleared all custom fields except address`);
-          
-          // Log all custom fields and their values/types after fixes
-          Logger.log(`DEBUGGING: All custom fields after fixes:`);
-          for (const fieldId in requestBody.custom_fields) {
-            const value = requestBody.custom_fields[fieldId];
-            Logger.log(`Field ${fieldId}: ${JSON.stringify(value)} (type: ${typeof value}, isArray: ${Array.isArray(value)})`);
-          }
+          Logger.log(`Custom fields after final formatting: ${JSON.stringify(sanitizedData.custom_fields)}`);
         }
         
-        // Log the FINAL request body after ALL fixes
-        Logger.log(`FINAL API REQUEST after all fixes: ${JSON.stringify(requestBody)}`);
-        
-        // Make the API request
+        // Send API request
         const response = UrlFetchApp.fetch(updateUrl, {
           method: method,
           headers: {
             'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json'
           },
-          payload: JSON.stringify(requestBody)
+          payload: JSON.stringify(sanitizedData),
+          muteHttpExceptions: true
         });
         
-        // Check the response status
-        if (response.getResponseCode() === 200) {
+        const responseCode = response.getResponseCode();
+        Logger.log(`Response code: ${responseCode}`);
+        
+        const responseBody = JSON.parse(response.getContentText());
+        
+        // Dump response for debugging
+        Logger.log(`API response: ${JSON.stringify(responseBody).substring(0, 500)}...`);
+        
+        // Handle response
+        if (responseCode >= 200 && responseCode < 300 && responseBody.success) {
+          // Update was successful
           successCount++;
-          Logger.log(`Successfully updated row ${rowData.id} in Pipedrive`);
+          Logger.log(`Successfully updated row ${rowIndex + 1} with ID ${rowData.id}`);
           
-          // Update the Sync Status cell to "Synced"
-          try {
-            const sheet = activeSheet;
-            const rowIndex = rowData.rowIndex + 1; // Add 1 because rowIndex is 0-based and sheet is 1-based
-            
-            // Get the Sync Status cell and update it
-            if (syncStatusColumnIndex >= 0) {
-              const syncStatusCell = sheet.getRange(rowIndex, syncStatusColumnIndex + 1); // Add 1 for 1-based indexing
-              syncStatusCell.setValue("Synced");
-              // Set the background color to light green to indicate success
-              syncStatusCell.setBackground('#e6f4ea');
-              Logger.log(`Updated Sync Status for row ${rowIndex} to "Synced"`);
-            } else {
-              Logger.log(`Could not update Sync Status: syncStatusColumnIndex is ${syncStatusColumnIndex}`);
-            }
-          } catch (e) {
-            Logger.log(`Error updating Sync Status cell: ${e.message}`);
-          }
+          // Update the cell status to "Synced"
+          const row = rowIndex + 2; // +2 for header row and 0-based index
+          const statusCell = activeSheet.getRange(row, syncStatusColumnIndex + 1); // +1 for 1-based sheet indexes
+          statusCell.setValue("Synced");
+          statusCell.setBackground('#E6F4EA').setFontColor('#137333');
         } else {
+          // Update failed
           failureCount++;
-          failures.push(`Failed to update row ${rowData.id} in Pipedrive: ${response.getContentText()}`);
-          Logger.log(`Failed to update row ${rowData.id} in Pipedrive: ${response.getContentText()}`);
           
-          // Set the Sync Status cell to "Error"
-          try {
-            const sheet = activeSheet;
-            const rowIndex = rowData.rowIndex + 1; // Add 1 because rowIndex is 0-based and sheet is 1-based
-            
-            // Get the Sync Status cell and update it
-            if (syncStatusColumnIndex >= 0) {
-              const syncStatusCell = sheet.getRange(rowIndex, syncStatusColumnIndex + 1); // Add 1 for 1-based indexing
-              syncStatusCell.setValue("Error");
-              // Set the background color to light red to indicate error
-              syncStatusCell.setBackground('#fce8e6');
-              Logger.log(`Updated Sync Status for row ${rowIndex} to "Error"`);
-            } else {
-              Logger.log(`Could not update Sync Status: syncStatusColumnIndex is ${syncStatusColumnIndex}`);
+          // Get error message
+          let errorMessage = "Unknown error";
+          if (responseBody.error) {
+            errorMessage = responseBody.error;
+          } else if (responseBody.message) {
+            errorMessage = responseBody.message;
+          } else if (responseBody.errors && responseBody.errors.length > 0) {
+            errorMessage = responseBody.errors[0].message || "API error";
+          } else if (responseBody.data && responseBody.data.errors) {
+            // Handle nested errors
+            const errorData = [];
+            for (const field in responseBody.data.errors) {
+              errorData.push(`${field}: ${responseBody.data.errors[field]}`);
             }
-          } catch (e) {
-            Logger.log(`Error updating Sync Status cell: ${e.message}`);
+            errorMessage = errorData.join("; ");
+          }
+          
+          Logger.log(`Error updating row ${rowIndex + 1} with ID ${rowData.id}: ${errorMessage}`);
+          
+          // Store failure details
+          failures.push({
+            id: rowData.id,
+            error: errorMessage,
+            row: rowIndex + 2
+          });
+          
+          // Update cell status to "Error"
+          const row = rowIndex + 2;
+          const statusCell = activeSheet.getRange(row, syncStatusColumnIndex + 1);
+          statusCell.setValue("Error");
+          statusCell.setBackground('#FCE8E6').setFontColor('#D93025');
+          
+          // Add note with error message
+          statusCell.setNote(`Error: ${errorMessage}`);
+        }
+      } catch (error) {
+        // Handle exceptions
+        failureCount++;
+        Logger.log(`Exception processing row ${rowIndex + 1}: ${error.message}`);
+        
+        failures.push({
+          id: modifiedRows[rowIndex].id,
+          error: error.message,
+          row: rowIndex + 2
+        });
+        
+        // Update cell status to "Error" 
+        const row = rowIndex + 2;
+        const statusCell = activeSheet.getRange(row, syncStatusColumnIndex + 1);
+        statusCell.setValue("Error");
+        statusCell.setBackground('#FCE8E6').setFontColor('#D93025');
+        statusCell.setNote(`Error: ${error.message}`);
+      }
+    }
+    
+    // Show completion message
+    if (failureCount > 0) {
+      SpreadsheetApp.getActiveSpreadsheet().toast(
+        `Completed with ${successCount} success(es) and ${failureCount} failure(s)`,
+        'Push to Pipedrive',
+        5
+      );
+      
+      if (!isScheduledSync) {
+        let errorMessage = "The following errors occurred:\n\n";
+        for (let i = 0; i < Math.min(failures.length, 5); i++) {
+          errorMessage += `- Row ${failures[i].row}: ${failures[i].error}\n`;
+        }
+        
+        if (failures.length > 5) {
+          errorMessage += `\n... and ${failures.length - 5} more errors. See cell notes for details.`;
+        }
+        
+        SpreadsheetApp.getUi().alert(
+          'Errors Occurred',
+          errorMessage,
+          SpreadsheetApp.getUi().ButtonSet.OK
+        );
+      }
+    } else {
+      SpreadsheetApp.getActiveSpreadsheet().toast(
+        `Successfully pushed ${successCount} row(s) to Pipedrive`,
+        'Push to Pipedrive',
+        5
+      );
+    }
+    
+    return {
+      success: successCount,
+      failures: failureCount,
+      details: failures
+    };
+  } catch (error) {
+    // Handle overall function errors
+    Logger.log(`Error in pushChangesToPipedrive: ${error.message}`);
+    Logger.log(`Stack trace: ${error.stack}`);
+    
+    if (!isScheduledSync) {
+      SpreadsheetApp.getUi().alert(
+        'Error',
+        `An error occurred while pushing changes to Pipedrive: ${error.message}`,
+        SpreadsheetApp.getUi().ButtonSet.OK
+      );
+    }
+    
+    return {
+      success: 0,
+      failures: 0,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Filters out read-only fields from the data before sending to Pipedrive API
+ * @param {Object} data - The data object to filter
+ * @param {string} entityType - The entity type
+ * @return {Object} Filtered data object
+ */
+function filterReadOnlyFields(data, entityType) {
+  if (!data) return data;
+  
+  Logger.log(`Starting field filtering for entity type: ${entityType}`);
+  const filteredData = {};
+  
+  // Copy custom_fields to the filtered data if it exists
+  if (data.custom_fields) {
+    filteredData.custom_fields = JSON.parse(JSON.stringify(data.custom_fields));
+    
+    // Format custom fields to match Pipedrive API requirements
+    formatCustomFields(filteredData.custom_fields);
+    Logger.log(`Formatted ${Object.keys(filteredData.custom_fields).length} custom fields`);
+  }
+  
+  // List of read-only fields by entity type according to Pipedrive API documentation
+  const commonReadOnlyFields = [
+    // Timestamps
+    'add_time',
+    'update_time',
+    'last_activity_date',
+    'next_activity_time',
+    'last_activity_id',
+    'stage_change_time',
+    'lost_time',
+    'close_time',
+    
+    // System generated fields
+    'id',
+    'creator_user_id',
+    'user_id',
+    'org_id.name',
+    'person_id.name',
+    'owner_id.name',
+    'stage_id.name',
+    'pipeline_id.name',
+    'is_deleted',
+    'visible_to',
+    'was_seen',
+    'cc_email',
+    'origin',
+    
+    // Counts and stats
+    'activities_count',
+    'done_activities_count',
+    'undone_activities_count',
+    'files_count',
+    'notes_count',
+    'followers_count',
+    'weighted_value',
+    'formatted_value',
+    'rotten_time'
+  ];
+  
+  // Additional read-only fields specific to entity types
+  const entitySpecificReadOnlyFields = {
+    'deals': [
+      'status',
+      'probability',
+      'lost_reason',
+      'contacts_count',
+      'products_count'
+    ],
+    'persons': [
+      'last_name',
+      'first_name',
+      'org_name',
+      'owner_name',
+      'cc_email',
+      'open_deals_count',
+      'related_open_deals_count',
+      'closed_deals_count',
+      'related_closed_deals_count',
+      'participant_open_deals_count',
+      'participant_closed_deals_count'
+    ],
+    'organizations': [
+      'owner_name',
+      'cc_email',
+      'open_deals_count',
+      'related_open_deals_count',
+      'closed_deals_count',
+      'related_closed_deals_count',
+      'people_count'
+    ],
+    'activities': [
+      'company_id',
+      'user_id',
+      'note',
+      'assigned_to_user_id'
+    ],
+    'leads': [
+      'creator_user_id',
+      'add_time',
+      'update_time',
+      'visible_to',
+      'cc_email'
+    ],
+    'products': [
+      'first_char',
+      'active_flag',
+      'selectable',
+      'files_count',
+      'followers_count',
+      'add_time',
+      'update_time'
+    ]
+  };
+  
+  // Create a combined list of read-only fields for this entity type
+  const readOnlyFields = [...commonReadOnlyFields];
+  if (entitySpecificReadOnlyFields[entityType]) {
+    readOnlyFields.push(...entitySpecificReadOnlyFields[entityType]);
+  }
+  
+  // Also match patterns for read-only fields
+  const readOnlyPatterns = [
+    /_name$/,         // Fields ending with _name (e.g., owner_name)
+    /_email$/,        // Fields ending with _email
+    /\.name$/,        // Nested name fields (e.g., owner_id.name)
+    /\.email$/,       // Nested email fields
+    /^cc_/,           // Fields starting with cc_
+    /_count$/,        // Count fields
+    /_flag$/          // Flag fields
+  ];
+  
+  // Copy fields that are not read-only to the filtered data
+  for (const key in data) {
+    // Skip the custom_fields object, which we've already handled
+    if (key === 'custom_fields') continue;
+    
+    // Skip fields that are in the read-only list
+    if (readOnlyFields.includes(key)) {
+      Logger.log(`Filtering out read-only field: ${key}`);
+      continue;
+    }
+    
+    // Skip fields that match read-only patterns
+    let isReadOnly = false;
+    for (const pattern of readOnlyPatterns) {
+      if (pattern.test(key)) {
+        Logger.log(`Filtering out read-only field: ${key}`);
+        isReadOnly = true;
+        break;
+      }
+    }
+    if (isReadOnly) continue;
+    
+    // Special handling for won_time field - this needs to be properly formatted
+    if (key === 'won_time') {
+      const formattedDate = formatDateField(data[key]);
+      if (formattedDate) {
+        filteredData[key] = formattedDate;
+        Logger.log(`Formatted won_time field to: ${filteredData[key]}`);
+      } else {
+        Logger.log(`Skipping invalid won_time: ${data[key]}`);
+        continue;
+      }
+    } 
+    // Include this field in the filtered data
+    else {
+      filteredData[key] = data[key];
+    }
+  }
+  
+  // For organizations, special handling for address components
+  if (entityType === 'organizations') {
+    // Don't include individual address components at root level
+    const addressFieldsRegex = /^address_(street_number|route|sublocality|locality|admin_area_level_[12]|country|postal_code|formatted_address)$/;
+    for (const key in filteredData) {
+      if (addressFieldsRegex.test(key)) {
+        delete filteredData[key];
+      }
+    }
+  }
+  
+  // For email and phone fields, ensure they are formatted correctly
+  if (entityType === 'persons') {
+    if (data.email && Array.isArray(data.email)) {
+      filteredData.email = data.email;
+    }
+    
+    if (data.phone && Array.isArray(data.phone)) {
+      filteredData.phone = data.phone;
+    }
+  }
+  
+  // Format datetime fields properly 
+  const timeFields = ['won_time', 'lost_time', 'close_time', 'expected_close_date', 'next_activity_date'];
+  for (const field of timeFields) {
+    if (filteredData[field]) {
+      filteredData[field] = formatDateTimeField(filteredData[field]);
+      Logger.log(`Formatted ${field} field to: ${filteredData[field]}`);
+    }
+  }
+  
+  // Log how many fields were filtered
+  const originalFieldCount = Object.keys(data).length + (data.custom_fields ? Object.keys(data.custom_fields).length : 0);
+  const filteredFieldCount = Object.keys(filteredData).length + (filteredData.custom_fields ? Object.keys(filteredData.custom_fields).length : 0);
+  const topLevelFieldCount = Object.keys(filteredData).length;
+  const customFieldCount = filteredData.custom_fields ? Object.keys(filteredData.custom_fields).length : 0;
+  
+  Logger.log(`Filtered data payload from ${originalFieldCount} fields to ${topLevelFieldCount} top-level fields plus ${customFieldCount} custom fields`);
+  
+  // CRITICAL: Ensure all fields are properly formatted before sending to API
+  // Apply final formatting to the entire data structure
+  const formattedData = ensureCriticalFieldFormats(filteredData, entityType);
+  
+  // Validate won_time specifically as it's causing issues - Use ISO format for won_time
+  if (formattedData.won_time) {
+    // Won time requires ISO datetime format, not just YYYY-MM-DD
+    const isoDateTime = formatDateTimeField(formattedData.won_time);
+    if (isoDateTime) {
+      formattedData.won_time = isoDateTime;
+      Logger.log(`Final won_time format set to ISO datetime: ${formattedData.won_time}`);
+    } else {
+      Logger.log(`Invalid won_time format after processing: ${formattedData.won_time} - removing field`);
+      delete formattedData.won_time;
+    }
+  }
+  
+  // Same for lost_time and close_time
+  if (formattedData.lost_time) {
+    const isoDateTime = formatDateTimeField(formattedData.lost_time);
+    if (isoDateTime) {
+      formattedData.lost_time = isoDateTime;
+      Logger.log(`Final lost_time format set to ISO datetime: ${formattedData.lost_time}`);
+    } else {
+      delete formattedData.lost_time;
+    }
+  }
+  
+  if (formattedData.close_time) {
+    const isoDateTime = formatDateTimeField(formattedData.close_time);
+    if (isoDateTime) {
+      formattedData.close_time = isoDateTime;
+      Logger.log(`Final close_time format set to ISO datetime: ${formattedData.close_time}`);
+    } else {
+      delete formattedData.close_time;
+    }
+  }
+  
+  // Double-check custom fields formatting
+  if (formattedData.custom_fields) {
+    // Perform a final check for each custom field type
+    for (const fieldId in formattedData.custom_fields) {
+      try {
+        const value = formattedData.custom_fields[fieldId];
+        
+        // Skip null values
+        if (value === null || value === undefined) {
+          delete formattedData.custom_fields[fieldId]; // Remove null values completely
+          continue;
+        }
+        
+        // Skip empty strings 
+        if (value === '') {
+          delete formattedData.custom_fields[fieldId]; // Remove empty strings completely
+          continue;
+        }
+        
+        // FINAL SANITY CHECK BASED ON FIELD NAME PATTERNS
+        // This ensures each field matches Pipedrive's expected format
+        
+        // 1. Date custom fields - must be YYYY-MM-DD
+        if (fieldId.includes('date') && 
+            !fieldId.includes('date_range') && 
+            !fieldId.includes('datetime')) {
+          if (typeof value !== 'string' || !value.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            // Try to reformat
+            const formattedDate = formatDateField(value);
+            if (formattedDate) {
+              formattedData.custom_fields[fieldId] = formattedDate;
+              Logger.log(`Fixed date field ${fieldId} format to ${formattedDate}`);
+            } else {
+              delete formattedData.custom_fields[fieldId];
+              Logger.log(`Removed invalid date field ${fieldId}`);
+            }
+          }
+        }
+        
+        // 2. Date range fields - must be object with start/end dates
+        else if (fieldId.includes('date_range')) {
+          if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+            delete formattedData.custom_fields[fieldId];
+            Logger.log(`Removed invalid date range field ${fieldId} - not an object`);
+          } else {
+            // Ensure each property is properly formatted
+            const rangeObj = { 
+              start: null, 
+              end: null 
+            };
+            
+            if (value.start) {
+              const formattedDate = formatDateField(value.start);
+              if (formattedDate) {
+                rangeObj.start = formattedDate;
+              }
+            }
+            
+            if (value.end) {
+              const formattedDate = formatDateField(value.end);
+              if (formattedDate) {
+                rangeObj.end = formattedDate;
+              }
+            }
+            
+            formattedData.custom_fields[fieldId] = rangeObj;
+            Logger.log(`Fixed date range field ${fieldId}`);
+          }
+        }
+        
+        // 3. Multi options fields - must be arrays
+        else if (fieldId.includes('options') || fieldId.includes('multi') || fieldId.includes('multiple')) {
+          if (!Array.isArray(value)) {
+            try {
+              // Try to convert to array
+              let optionsArray = [];
+              
+              if (typeof value === 'string' && value.includes(',')) {
+                optionsArray = value.split(',').map(item => item.trim());
+              } else {
+                optionsArray = [value];
+              }
+              
+              // Convert to numbers if possible
+              optionsArray = optionsArray.map(item => {
+                if (typeof item === 'string' && !isNaN(Number(item))) {
+                  return Number(item);
+                } else if (typeof item === 'object' && item.id) {
+                  return Number(item.id);
+                }
+                return item;
+              });
+              
+              formattedData.custom_fields[fieldId] = optionsArray;
+              Logger.log(`Fixed multi options field ${fieldId} to array with ${optionsArray.length} items`);
+            } catch (e) {
+              delete formattedData.custom_fields[fieldId];
+              Logger.log(`Removed invalid multi options field ${fieldId}: ${e.message}`);
+            }
+          }
+        }
+        
+        // 4. Organization fields - must be numbers
+        else if (fieldId.includes('org') || fieldId.includes('company')) {
+          if (typeof value !== 'number') {
+            try {
+              if (typeof value === 'string' && !isNaN(Number(value))) {
+                formattedData.custom_fields[fieldId] = Number(value);
+                Logger.log(`Fixed organization field ${fieldId} to number: ${formattedData.custom_fields[fieldId]}`);
+              } else if (typeof value === 'object' && value.id) {
+                formattedData.custom_fields[fieldId] = Number(value.id);
+                Logger.log(`Fixed organization field ${fieldId} to extract ID: ${formattedData.custom_fields[fieldId]}`);
+              } else {
+                delete formattedData.custom_fields[fieldId];
+                Logger.log(`Removed invalid organization field ${fieldId}`);
+              }
+            } catch (e) {
+              delete formattedData.custom_fields[fieldId];
+              Logger.log(`Removed invalid organization field ${fieldId}: ${e.message}`);
+            }
+          }
+        }
+        
+        // 5. Phone fields - must be strings
+        else if (fieldId.includes('phone')) {
+          if (typeof value !== 'string') {
+            try {
+              formattedData.custom_fields[fieldId] = String(value);
+              Logger.log(`Fixed phone field ${fieldId} to string: ${formattedData.custom_fields[fieldId]}`);
+            } catch (e) {
+              delete formattedData.custom_fields[fieldId];
+              Logger.log(`Removed invalid phone field ${fieldId}: ${e.message}`);
+            }
+          }
+        }
+        
+        // 6. Time fields - must be objects with hour/minute
+        else if (fieldId.includes('time') && !fieldId.includes('range') && !fieldId.includes('date')) {
+          if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+            let hour = 0, minute = 0;
+            
+            if (typeof value === 'string' && value.includes(':')) {
+              const parts = value.split(':');
+              hour = parseInt(parts[0], 10) || 0;
+              minute = parseInt(parts[1], 10) || 0;
+            }
+            
+            filteredData.custom_fields[fieldId] = { hour, minute };
+            Logger.log(`EMERGENCY FIX: Forced time object format for field ${fieldId}`);
+          }
+        }
+        
+        // TIME RANGE FIELDS - force object format with start/end
+        else if (fieldId.includes('time_range')) {
+          if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+            filteredData.custom_fields[fieldId] = {
+              start: { hour: 0, minute: 0 },
+              end: { hour: 0, minute: 0 }
+            };
+            Logger.log(`EMERGENCY FIX: Forced time range object format for field ${fieldId}`);
+          } else {
+            // Ensure start and end properties exist and are properly formatted
+            if (!value.start || typeof value.start !== 'object') {
+              filteredData.custom_fields[fieldId].start = { hour: 0, minute: 0 };
+            }
+            if (!value.end || typeof value.end !== 'object') {
+              filteredData.custom_fields[fieldId].end = { hour: 0, minute: 0 };
+            }
+          }
+        }
+        
+        // USER FIELDS - force number format
+        else if (fieldId.includes('user')) {
+          if (typeof value !== 'number') {
+            if (typeof value === 'string' && !isNaN(Number(value))) {
+              filteredData.custom_fields[fieldId] = Number(value);
+            } else if (typeof value === 'object' && value !== null && value.id) {
+              filteredData.custom_fields[fieldId] = Number(value.id);
+            } else {
+              delete filteredData.custom_fields[fieldId];
+            }
+            Logger.log(`EMERGENCY FIX: Forced number format for user field ${fieldId}`);
           }
         }
       } catch (e) {
-        failureCount++;
-        failures.push(`Error updating row ${rowData.id} in Pipedrive: ${e.message}`);
-        Logger.log(`Error updating row ${rowData.id} in Pipedrive: ${e.message}`);
-        
-        // Set the Sync Status cell to "Error" for errors
-        try {
-          const sheet = activeSheet;
-          const rowIndex = rowData.rowIndex + 1; // Add 1 because rowIndex is 0-based and sheet is 1-based
-          
-          // Get the Sync Status cell and update it
-          if (syncStatusColumnIndex >= 0) {
-            const syncStatusCell = sheet.getRange(rowIndex, syncStatusColumnIndex + 1); // Add 1 for 1-based indexing
-            syncStatusCell.setValue("Error");
-            // Set the background color to light red to indicate error
-            syncStatusCell.setBackground('#fce8e6');
-            Logger.log(`Updated Sync Status for row ${rowIndex} to "Error" due to exception`);
-          } else {
-            Logger.log(`Could not update Sync Status: syncStatusColumnIndex is ${syncStatusColumnIndex}`);
-          }
-        } catch (statusError) {
-          Logger.log(`Error updating Sync Status cell: ${statusError.message}`);
-        }
+        // If all else fails, remove the field
+        delete formattedData.custom_fields[fieldId];
+        Logger.log(`EMERGENCY FIX: Removed problematic field ${fieldId} due to error: ${e.message}`);
       }
     }
+  }
 
-    // Log the results
-    Logger.log(`Sync completed. ${successCount} rows updated, ${failureCount} rows failed`);
-    if (failureCount > 0) {
-      SpreadsheetApp.getActiveSpreadsheet().toast(`Sync completed with ${failureCount} failures: ${failures.join('\n')}`);
-    } else {
-      SpreadsheetApp.getActiveSpreadsheet().toast('Sync completed successfully!');
+  // Handle entity-specific fields
+  switch (entityType) {
+    case 'persons':
+    case 'person':
+      try {
+        // Handle phone field - ensure it's a string
+        if ('phone' in data && data.phone !== null) {
+          if (Array.isArray(data.phone)) {
+            // Make sure each phone object has string values
+            data.phone.forEach(phone => {
+              if (phone && phone.value) {
+                phone.value = String(phone.value);
+              }
+            });
+          } else {
+            data.phone = String(data.phone);
+          }
+          Logger.log(`Formatted phone field for person`);
+        }
+        
+        // Handle email field - ensure it's a string
+        if ('email' in data && data.email !== null) {
+          if (Array.isArray(data.email)) {
+            // Make sure each email object has string values
+            data.email.forEach(email => {
+              if (email && email.value) {
+                email.value = String(email.value);
+              }
+            });
+          } else {
+            data.email = String(data.email);
+          }
+          Logger.log(`Formatted email field for person`);
+        }
+      } catch (e) {
+        Logger.log(`Error formatting person-specific fields: ${e.message}`);
+      }
+      break;
+      
+    case 'organizations':
+    case 'organization':
+      try {
+        // Handle address field - ensure it's a string
+        if ('address' in data && data.address !== null) {
+          if (typeof data.address !== 'string') {
+            if (typeof data.address === 'object' && data.address !== null) {
+              if (data.address.formatted_address) {
+                data.address = data.address.formatted_address;
+              } else if (data.address.value) {
+                data.address = data.address.value;
+              } else {
+                data.address = String(data.address);
+              }
+            } else {
+              data.address = String(data.address);
+            }
+          }
+          Logger.log(`Formatted address as string: ${data.address}`);
+        }
+      } catch (e) {
+        Logger.log(`Error formatting organization-specific fields: ${e.message}`);
+      }
+      break;
+  }
+
+  return data;
+}
+
+/**
+ * Ensure critical fields are properly formatted for Pipedrive API
+ * @param {Object} data - The data to be sent to Pipedrive
+ * @param {string} entityType - The type of entity (deal, person, organization, etc.)
+ * @return {Object} - The properly formatted data
+ */
+function ensureCriticalFieldFormats(data, entityType) {
+  if (!data) {
+    Logger.log('No data provided to ensureCriticalFieldFormats');
+    return data;
+  }
+
+  Logger.log('Formatting ' + entityType + ' data for Pipedrive API');
+  
+  // Handle deal-specific fields
+  if (entityType === 'deals') {
+    // Handle won_time field
+    if ('won_time' in data && data.won_time) {
+      var formattedDate = formatDateField(data.won_time);
+      if (formattedDate) {
+        data.won_time = formattedDate;
+        Logger.log('Formatted won_time: ' + data.won_time);
+      } else {
+        delete data.won_time;
+        Logger.log('Removed invalid won_time field');
+      }
     }
+    
+    // Handle lost_time field
+    if ('lost_time' in data && data.lost_time) {
+      var formattedDate = formatDateField(data.lost_time);
+      if (formattedDate) {
+        data.lost_time = formattedDate;
+        Logger.log('Formatted lost_time: ' + data.lost_time);
+      } else {
+        delete data.lost_time;
+        Logger.log('Removed invalid lost_time field');
+      }
+    }
+    
+    // Handle expected_close_date field
+    if ('expected_close_date' in data && data.expected_close_date) {
+      var formattedDate = formatDateField(data.expected_close_date);
+      if (formattedDate) {
+        data.expected_close_date = formattedDate;
+        Logger.log('Formatted expected_close_date: ' + data.expected_close_date);
+      } else {
+        delete data.expected_close_date;
+        Logger.log('Removed invalid expected_close_date field');
+      }
+    }
+    
+    // Handle close_time field
+    if ('close_time' in data && data.close_time) {
+      var formattedDate = formatDateField(data.close_time);
+      if (formattedDate) {
+        data.close_time = formattedDate;
+        Logger.log('Formatted close_time: ' + data.close_time);
+      } else {
+        delete data.close_time;
+        Logger.log('Removed invalid close_time field');
+      }
+    }
+  }
+  
+  // Format timestamp fields
+  var timestampFields = ['add_time', 'update_time', 'first_name_update_time', 'last_name_update_time'];
+  for (var i = 0; i < timestampFields.length; i++) {
+    var field = timestampFields[i];
+    if (field in data && data[field]) {
+      var formattedDate = formatDateField(data[field]);
+      if (formattedDate) {
+        data[field] = formattedDate;
+        Logger.log('Formatted ' + field + ': ' + data[field]);
+      } else {
+        delete data[field];
+        Logger.log('Removed invalid ' + field + ' field');
+      }
+    }
+  }
+
+  // Process custom fields
+  if (data.custom_fields && typeof data.custom_fields === 'object') {
+    for (var fieldId in data.custom_fields) {
+      if (!data.custom_fields.hasOwnProperty(fieldId)) continue;
+      
+      // Skip if field is null, undefined, or empty string
+      if (data.custom_fields[fieldId] === null || 
+          data.custom_fields[fieldId] === undefined || 
+          data.custom_fields[fieldId] === '') {
+        delete data.custom_fields[fieldId];
+        continue;
+      }
+      
+      var fieldValue = data.custom_fields[fieldId];
+      
+      // DATE CUSTOM FIELD
+      if (typeof fieldValue === 'string' && 
+          (fieldValue.includes('/') || fieldValue.includes('-') || fieldValue.includes('.'))) {
+        var formattedDate = formatDateField(fieldValue);
+        if (formattedDate) {
+          data.custom_fields[fieldId] = formattedDate;
+          Logger.log('Formatted date custom field ' + fieldId + ' to: ' + formattedDate);
+        } else {
+          delete data.custom_fields[fieldId];
+          Logger.log('Removed invalid date field ' + fieldId);
+        }
+      }
+      
+      // MULTI OPTIONS FIELDS
+      else if (fieldValue.toString().includes(',') || Array.isArray(fieldValue)) {
+        var optionsArray = [];
+        
+        if (Array.isArray(fieldValue)) {
+          optionsArray = fieldValue.slice(); // Clone array
+        } else if (typeof fieldValue === 'string') {
+          optionsArray = fieldValue.split(',');
+          for (var i = 0; i < optionsArray.length; i++) {
+            optionsArray[i] = optionsArray[i].trim();
+          }
+        } else {
+          optionsArray = [fieldValue]; // Convert single value to array
+        }
+        
+        data.custom_fields[fieldId] = optionsArray;
+        Logger.log('Formatted multi options field ' + fieldId);
+      }
+      
+      // PHONE FIELDS
+      else if (fieldId.includes('phone')) {
+        data.custom_fields[fieldId] = String(fieldValue);
+        Logger.log('Formatted phone field ' + fieldId);
+      }
+    }
+  }
+
+  // Handle entity-specific fields
+  if (entityType === 'persons' || entityType === 'person') {
+    // Handle phone field
+    if ('phone' in data && data.phone !== null) {
+      if (Array.isArray(data.phone)) {
+        for (var i = 0; i < data.phone.length; i++) {
+          if (data.phone[i] && data.phone[i].value) {
+            data.phone[i].value = String(data.phone[i].value);
+          }
+        }
+      } else {
+        data.phone = String(data.phone);
+      }
+      Logger.log('Formatted phone field for person');
+    }
+    
+    // Handle email field
+    if ('email' in data && data.email !== null) {
+      if (Array.isArray(data.email)) {
+        for (var i = 0; i < data.email.length; i++) {
+          if (data.email[i] && data.email[i].value) {
+            data.email[i].value = String(data.email[i].value);
+          }
+        }
+      } else {
+        data.email = String(data.email);
+      }
+      Logger.log('Formatted email field for person');
+    }
+  }
+  else if (entityType === 'organizations' || entityType === 'organization') {
+    // Handle address field
+    if ('address' in data && data.address !== null) {
+      if (typeof data.address !== 'string') {
+        if (typeof data.address === 'object' && data.address !== null) {
+          if (data.address.formatted_address) {
+            data.address = data.address.formatted_address;
+          } else if (data.address.value) {
+            data.address = data.address.value;
+          } else {
+            data.address = String(data.address);
+          }
+        } else {
+          data.address = String(data.address);
+        }
+      }
+      Logger.log('Formatted address as string: ' + data.address);
+    }
+  }
+
+  return data;
+}
+
+/**
+ * Formats custom fields to match Pipedrive API requirements
+ * @param {Object} customFields - Object containing custom fields
+ */
+function formatCustomFields(customFields) {
+  if (!customFields) return;
+  
+  Logger.log("Formatting custom fields - start");
+  let processedCount = 0;
+  
+  // Loop through each field
+  for (var fieldId in customFields) {
+    if (!customFields.hasOwnProperty(fieldId)) continue;
+    
+    var value = customFields[fieldId];
+    
+    // Skip null/undefined/empty values
+    if (value === null || value === undefined || value === '') {
+      delete customFields[fieldId];
+      Logger.log("Removed empty field: " + fieldId);
+      continue;
+    }
+    
+    // DATE RANGE FIELDS - Must be an object with value and until properties
+            if (fieldId.includes('date') && fieldId.includes('range')) {
+      try {
+        // If it's already an object with the right format, just ensure the dates are formatted correctly
+        if (typeof value === 'object' && value !== null) {
+          if (value.value) {
+            value.value = formatDateField(value.value);
+          }
+          if (value.until) {
+            value.until = formatDateField(value.until);
+          }
+          customFields[fieldId] = value;
+          Logger.log("Updated date range field: " + fieldId);
+        } 
+        // If it's a string with a delimiter, try to parse it
+        else if (typeof value === 'string' && (value.includes('-') || value.includes('to'))) {
+          let dates = value.includes('to') ? value.split('to') : value.split('-');
+          if (dates.length === 2) {
+            customFields[fieldId] = {
+              value: formatDateField(dates[0].trim()),
+              until: formatDateField(dates[1].trim())
+            };
+            Logger.log("Formatted date range from string: " + fieldId);
+          } else {
+            delete customFields[fieldId];
+            Logger.log("Removed invalid date range field: " + fieldId);
+          }
+        } else {
+          delete customFields[fieldId];
+          Logger.log("Removed invalid date range field: " + fieldId);
+        }
+        processedCount++;
+        continue;
+      } catch (e) {
+        Logger.log("Error formatting date range field: " + e);
+        delete customFields[fieldId];
+        continue;
+      }
+    }
+    
+    // REGULAR DATE FIELDS
+    if (fieldId.includes('date') && !fieldId.includes('range')) {
+      var formattedDate = formatDateField(value);
+      if (formattedDate) {
+        customFields[fieldId] = formattedDate;
+        Logger.log("Formatted date field: " + fieldId);
+      } else {
+        delete customFields[fieldId];
+        Logger.log("Removed invalid date field: " + fieldId);
+      }
+      processedCount++;
+      continue;
+    }
+    
+    // MULTI-OPTION FIELDS - Must be array of numeric IDs
+    if (fieldId.includes('option') || fieldId.includes('multi') || 
+        (typeof value === 'string' && value.includes(','))) {
+      Logger.log("Processing multi-option field: " + fieldId + " with value: " + JSON.stringify(value));
+      
+      try {
+        // Convert to array if it's not already
+        var optionsArray = [];
+        
+        if (Array.isArray(value)) {
+          optionsArray = value.slice(); // Clone the array
+        } else if (typeof value === 'string') {
+          optionsArray = value.split(',').map(function(item) {
+            return item.trim();
+          });
+        } else {
+          optionsArray = [value];
+        }
+        
+        // Convert all option IDs to numbers for Pipedrive API
+        optionsArray = optionsArray.map(function(option) {
+          // If it's already a number, return it
+          if (typeof option === 'number') {
+            return option;
+          }
+          
+          // If it's a string that can be converted to a number, convert it
+          if (typeof option === 'string' && !isNaN(option)) {
+            return Number(option);
+          }
+          
+          // Otherwise, try to find the option ID from the field definitions
+          // This would require additional API logic to look up option IDs by label
+          // For now, just log a warning and return the original value
+          Logger.log("Warning: Could not convert option to number: " + option);
+          return option;
+        });
+        
+        customFields[fieldId] = optionsArray;
+        Logger.log("Fixed multi-options field to array of numbers: " + fieldId);
+      } catch (e) {
+        Logger.log("Error processing multi-option field: " + e);
+        delete customFields[fieldId];
+      }
+      processedCount++;
+      continue;
+    }
+    
+    // TIME FIELDS - Must be string in format HH:MM
+            if (fieldId.includes('time') && !fieldId.includes('date')) {
+      try {
+        // Ensure it's a string
+        if (typeof value !== 'string') {
+          value = String(value);
+        }
+        
+        // Match HH:MM format
+        if (/^\d{1,2}:\d{2}$/.test(value)) {
+          // Already in correct format
+          customFields[fieldId] = value;
+          Logger.log("Time field already in correct format: " + fieldId);
+        } 
+        // Try to format from other common formats
+        else {
+          // Try to extract hours and minutes
+          let timeValue = null;
+          
+          // Try to parse as Date object if it has date components
+          if (value.includes('/') || value.includes('-')) {
+            try {
+              const date = new Date(value);
+              if (!isNaN(date.getTime())) {
+                // Format as HH:MM
+                timeValue = padZero(date.getHours()) + ':' + padZero(date.getMinutes());
+              }
+            } catch (e) {
+              // Failed to parse as date
+            }
+          } 
+          // Try extracting from formats like "13h30m" or "1:30 PM"
+          else {
+            // Extract hours and minutes with regex
+            const match = value.match(/(\d{1,2})[h:](\d{2})/i);
+            if (match) {
+              timeValue = padZero(parseInt(match[1])) + ':' + match[2];
+            }
+            
+            // Handle AM/PM format
+            if (value.match(/\d{1,2}:\d{2}\s*(am|pm)/i)) {
+              const parts = value.match(/(\d{1,2}):(\d{2})\s*(am|pm)/i);
+              if (parts) {
+                let hours = parseInt(parts[1]);
+                const minutes = parts[2];
+                const ampm = parts[3].toLowerCase();
+                
+                if (ampm === 'pm' && hours < 12) {
+                  hours += 12;
+                } else if (ampm === 'am' && hours === 12) {
+                  hours = 0;
+                }
+                
+                timeValue = padZero(hours) + ':' + minutes;
+              }
+            }
+          }
+          
+          if (timeValue) {
+            customFields[fieldId] = timeValue;
+            Logger.log("Formatted time field: " + fieldId + " to " + timeValue);
+              } else {
+            delete customFields[fieldId];
+            Logger.log("Removed invalid time field: " + fieldId);
+          }
+        }
+      } catch (e) {
+        Logger.log("Error formatting time field: " + e);
+        delete customFields[fieldId];
+      }
+      processedCount++;
+      continue;
+    }
+    
+    // ORGANIZATION FIELDS
+    if (typeof value === 'object' && value !== null && 
+        (value.name !== undefined || value.id !== undefined)) {
+      // Just need the ID for API
+      if (value.id) {
+        customFields[fieldId] = value.id;
+        Logger.log("Extracted ID from organization field: " + fieldId);
+                } else {
+        delete customFields[fieldId];
+        Logger.log("Removed invalid organization field: " + fieldId);
+      }
+      processedCount++;
+      continue;
+    }
+    
+    // PHONE FIELDS
+    if (typeof value === 'object' && value !== null && 
+        value.value !== undefined && value.code !== undefined) {
+      // Pipedrive expects just the phone number
+      customFields[fieldId] = value.value;
+      Logger.log("Extracted number from phone field: " + fieldId);
+      processedCount++;
+      continue;
+    }
+    
+    // Assume any other object type fields should be normalized
+    if (typeof value === 'object' && value !== null) {
+      // If it has a value property, use that
+      if (value.value !== undefined) {
+        customFields[fieldId] = value.value;
+        Logger.log("Extracted value from object field: " + fieldId);
+      } 
+      // If it's empty, remove it
+      else if (Object.keys(value).length === 0) {
+        delete customFields[fieldId];
+        Logger.log("Removed empty object field: " + fieldId);
+      }
+      // Otherwise keep it as is
+      processedCount++;
+      continue;
+    }
+    
+    processedCount++;
+  }
+  
+  Logger.log(`Formatted ${processedCount} custom fields - complete`);
+}
+
+// Helper function to pad numbers with leading zeros
+function padZero(num) {
+  return num < 10 ? '0' + num : num;
+}
+
+/**
+ * Formats a date value to YYYY-MM-DD format
+ * @param {string|Date} dateValue - The date value to format
+ * @return {string|null} - The formatted date string or null if invalid
+ */
+function formatDateField(dateValue) {
+  if (!dateValue) return null;
+  
+  try {
+    // If already in YYYY-MM-DD format, validate and return
+    if (typeof dateValue === 'string' && dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      // Validate if it's a valid date
+      const parts = dateValue.split('-');
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1; // JS months are 0-based
+      const day = parseInt(parts[2], 10);
+      
+      const testDate = new Date(year, month, day);
+      if (testDate.getFullYear() === year && 
+          testDate.getMonth() === month && 
+          testDate.getDate() === day) {
+        return dateValue; // Valid date in correct format
+      }
+      return null; // Invalid date
+    }
+    
+    // Handle Date objects
+    if (dateValue instanceof Date) {
+      const year = dateValue.getFullYear();
+      const month = (dateValue.getMonth() + 1).toString().padStart(2, '0');
+      const day = dateValue.getDate().toString().padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    
+    // Try to parse various string formats
+    if (typeof dateValue === 'string') {
+      // Handle MM/DD/YYYY format
+      if (dateValue.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+        const parts = dateValue.split('/');
+        const month = parseInt(parts[0], 10).toString().padStart(2, '0');
+        const day = parseInt(parts[1], 10).toString().padStart(2, '0');
+        const year = parts[2];
+        return `${year}-${month}-${day}`;
+      }
+      
+      // Handle DD/MM/YYYY format
+      if (dateValue.match(/^\d{1,2}\.\d{1,2}\.\d{4}$/)) {
+        const parts = dateValue.split('.');
+        const day = parseInt(parts[0], 10).toString().padStart(2, '0');
+        const month = parseInt(parts[1], 10).toString().padStart(2, '0');
+        const year = parts[2];
+        return `${year}-${month}-${day}`;
+      }
+      
+      // Try creating a Date object and formatting
+      const date = new Date(dateValue);
+      if (!isNaN(date.getTime())) {
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const day = date.getDate().toString().padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+    }
+    
+    // If number, assume it's a timestamp
+    if (typeof dateValue === 'number') {
+      const date = new Date(dateValue);
+      if (!isNaN(date.getTime())) {
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const day = date.getDate().toString().padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+    }
+    
+    Logger.log(`Could not format date value: ${dateValue}`);
+    return null;
   } catch (e) {
-    Logger.log(`Error in pushChangesToPipedrive: ${e.message}`);
-    Logger.log(`Stack trace: ${e.stack}`);
-    SpreadsheetApp.getActiveSpreadsheet().toast(`Error: ${e.message}`);
+    Logger.log(`Error in formatDateField: ${e.message}`);
+    return null;
   }
 }
+
+/**
+ * Formats a date value to ISO 8601 datetime format with timezone (required for won_time and other special fields)
+ * @param {string|Date} dateValue - The date value to format
+ * @return {string|null} - The formatted ISO date string or null if invalid
+ */
+function formatDateTimeField(dateValue) {
+  if (!dateValue) return null;
+  
+  try {
+    let date;
+    
+    // If already a Date object
+    if (dateValue instanceof Date) {
+      date = dateValue;
+    }
+    // If string in YYYY-MM-DD format
+    else if (typeof dateValue === 'string' && dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const parts = dateValue.split('-');
+      date = new Date(
+        parseInt(parts[0], 10),
+        parseInt(parts[1], 10) - 1, // JS months are 0-based
+        parseInt(parts[2], 10)
+      );
+    }
+    // If other string formats
+    else if (typeof dateValue === 'string') {
+      // Try parsing various formats
+      if (dateValue.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+        const parts = dateValue.split('/');
+        date = new Date(
+          parseInt(parts[2], 10),
+          parseInt(parts[0], 10) - 1,
+          parseInt(parts[1], 10)
+        );
+      }
+      else if (dateValue.match(/^\d{1,2}\.\d{1,2}\.\d{4}$/)) {
+        const parts = dateValue.split('.');
+        date = new Date(
+          parseInt(parts[2], 10),
+          parseInt(parts[1], 10) - 1,
+          parseInt(parts[0], 10)
+        );
+      }
+      else {
+        // Try standard Date parsing
+        date = new Date(dateValue);
+      }
+    }
+    // If timestamp number
+    else if (typeof dateValue === 'number') {
+      date = new Date(dateValue);
+    }
+    
+    // Check if we got a valid date
+    if (date instanceof Date && !isNaN(date.getTime())) {
+      // Format as ISO 8601 string
+      return date.toISOString();
+    }
+    
+    Logger.log(`Could not convert to datetime: ${dateValue}`);
+    return null;
+  } catch (e) {
+    Logger.log(`Error in formatDateTimeField: ${e.message}`);
+    return null;
+  }
+}
+
+/**
+ * Converts a column letter to an index (e.g., A -> 1, AA -> 27)
+ * @param {string} columnLetter - The column letter (e.g., 'A', 'BC')
+ * @return {number} The column index (1-based)
+ */
+function columnLetterToIndex(columnLetter) {
+  let result = 0;
+  for (let i = 0; i < columnLetter.length; i++) {
+    result = result * 26 + (columnLetter.charCodeAt(i) - 64);
+  }
+  return result;
+}
+
 
 /**
  * Gets field mappings for a specific entity type
@@ -6301,7 +6835,7 @@ function getCurrentAddressData(entityType, entityId, addressFieldId) {
     Logger.log(`Fetching current address data for ${entityType} ${entityId}, field ${addressFieldId}`);
     const response = UrlFetchApp.fetch(apiUrl, {
       method: 'GET',
-      headers: {
+          headers: {
         'Authorization': `Bearer ${accessToken}`
       },
       muteHttpExceptions: true
@@ -6385,4 +6919,92 @@ function getCurrentAddressData(entityType, entityId, addressFieldId) {
       admin_area_level_2: "Albany County"
     };
   }
+}
+
+/**
+ * Sanitizes the payload before sending to Pipedrive API
+ * Specifically handles address components that might be at the top level
+ * @param {Object} payload - The payload to sanitize
+ * @return {Object} The sanitized payload
+ */
+function sanitizePayloadForPipedrive(payload) {
+  if (!payload) return payload;
+  
+  // Create a copy to avoid modifying the original
+  const result = JSON.parse(JSON.stringify(payload));
+  
+  // Find any top-level fields that match the pattern of address components (fieldId_component)
+  const addressComponentKeys = [];
+  
+  for (const key in result) {
+    // Skip normal fields
+    if (key === 'custom_fields' || key === 'id' || key === 'title' || key === 'value' || key === 'phone' || key === 'email') {
+      continue;
+    }
+    
+    // Specifically check for admin_area_level_2 field that's causing problems
+    if (key.includes('_admin_area_level_2')) {
+      Logger.log(`Found problematic admin_area_level_2 field at top level: ${key} = ${result[key]}`);
+      
+      // Extract the field ID from the key
+      const fieldId = key.split('_admin_area_level_2')[0];
+      
+      // Ensure custom_fields exists
+      if (!result.custom_fields) {
+        result.custom_fields = {};
+      }
+      
+      // Ensure the parent address field exists
+      if (!result.custom_fields[fieldId]) {
+        result.custom_fields[fieldId] = { value: "Address" };
+      }
+      
+      // Add the admin_area_level_2 component directly to the address object
+      result.custom_fields[fieldId].admin_area_level_2 = String(result[key]);
+      Logger.log(`Moved admin_area_level_2 = ${result[key]} to custom_fields.${fieldId}`);
+      
+      // Mark for removal
+      addressComponentKeys.push(key);
+      continue;
+    }
+    
+    // Check for other address component fields (fieldId_component)
+    const match = key.match(/^([a-f0-9]{20,})_([a-z_]+)$/i);
+    if (match) {
+      const fieldId = match[1];
+      const component = match[2];
+      Logger.log(`Found address component at top level: ${key} (field: ${fieldId}, component: ${component})`);
+      
+      // Ensure the custom_fields object exists
+      if (!result.custom_fields) {
+        result.custom_fields = {};
+      }
+      
+      // Ensure the parent address field exists in custom_fields
+      if (!result.custom_fields[fieldId]) {
+        result.custom_fields[fieldId] = { value: "Address" };
+      }
+      
+      // Add the component to the address object
+      result.custom_fields[fieldId][component] = String(result[key]);
+      Logger.log(`Moved address component ${component} = ${result[key]} to custom_fields.${fieldId}`);
+      
+      // Mark for removal
+      addressComponentKeys.push(key);
+    }
+  }
+  
+  // Remove the top-level address components
+  addressComponentKeys.forEach(key => {
+    delete result[key];
+    Logger.log(`Removed address component from top level: ${key}`);
+  });
+  
+  // If we made changes, log the updated payload
+  if (addressComponentKeys.length > 0) {
+    Logger.log(`Sanitized payload. Moved ${addressComponentKeys.length} address components to their parent objects.`);
+    Logger.log(`SANITIZED PAYLOAD: ${JSON.stringify(result)}`);
+  }
+  
+  return result;
 }

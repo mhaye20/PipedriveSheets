@@ -181,6 +181,82 @@ function formatBasicName(name) {
 }
 
 /**
+ * Helper function to pad numbers with leading zeros for time formatting
+ * @param {number} num - The number to pad
+ * @return {string} Padded number string
+ */
+function padZero(num) {
+  return String(num).padStart(2, '0');
+}
+
+/**
+ * Formats a time value into HH:MM string format for Pipedrive API
+ * @param {*} value - The time value (Date object, string like "HH:MM", "HH:MM:SS", "H:MM AM/PM")
+ * @return {string|null} Formatted time string "HH:MM" or null if invalid
+ */
+function formatTimeField(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  try {
+    // If it's already a Date object
+    if (value instanceof Date && !isNaN(value.getTime())) {
+      return padZero(value.getHours()) + ':' + padZero(value.getMinutes());
+    }
+
+    // If it's a string
+    if (typeof value === 'string') {
+      // Check for HH:MM format
+      const matchHM = value.match(/^(\d{1,2}):(\d{2})$/);
+      if (matchHM) {
+        return padZero(parseInt(matchHM[1], 10)) + ':' + matchHM[2];
+      }
+      
+      // Check for HH:MM:SS format
+      const matchHMS = value.match(/^(\d{1,2}):(\d{2}):(\d{2})/);
+      if (matchHMS) {
+        return padZero(parseInt(matchHMS[1], 10)) + ':' + matchHMS[2];
+      }
+
+      // Handle AM/PM format (e.g., "1:30 PM", "09:15 AM")
+      const matchAMPM = value.match(/(\d{1,2}):(\d{2})\s*(am|pm)/i);
+      if (matchAMPM) {
+        let hours = parseInt(matchAMPM[1], 10);
+        const minutes = matchAMPM[2];
+        const ampm = matchAMPM[3].toLowerCase();
+
+        if (ampm === 'pm' && hours < 12) {
+          hours += 12;
+        } else if (ampm === 'am' && hours === 12) { // Midnight case
+          hours = 0;
+        }
+        return padZero(hours) + ':' + minutes;
+      }
+      
+      // Try parsing as a full date/time string
+      const dateObj = new Date(value);
+      if (!isNaN(dateObj.getTime())) {
+        return padZero(dateObj.getHours()) + ':' + padZero(dateObj.getMinutes());
+      }
+    }
+    
+    // Handle {hour, minute} object (though API expects string)
+    if (typeof value === 'object' && value !== null && value.hour !== undefined && value.minute !== undefined) {
+       return padZero(value.hour) + ':' + padZero(value.minute);
+    }
+
+    Logger.log(`Could not format time value: ${JSON.stringify(value)}`);
+    return null; // Invalid format
+
+  } catch (e) {
+    Logger.log(`Error formatting time field: ${e.message}`);
+    return null;
+  }
+}
+
+
+/**
  * Gets a value from an object using a dot-notation path
  */
 function getValueByPath(obj, path) {

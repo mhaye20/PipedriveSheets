@@ -782,6 +782,47 @@ function getFiltersForEntityType(entityType) {
 }
 
 /**
+ * Gets a map of field definitions for an entity type, keyed by field key (hash)
+ * @param {string} entityType - The entity type (e.g., 'deals', 'persons')
+ * @param {boolean} forceRefresh - Whether to force refresh from API
+ * @return {Object} Map of field definitions { fieldKey: fieldDefinition }
+ */
+function getFieldDefinitionsMap(entityType, forceRefresh = false) {
+  let fieldsArray = [];
+  let endpoint = '';
+
+  switch (entityType) {
+    case ENTITY_TYPES.DEALS: endpoint = 'dealFields'; break;
+    case ENTITY_TYPES.PERSONS: endpoint = 'personFields'; break;
+    case ENTITY_TYPES.ORGANIZATIONS: endpoint = 'organizationFields'; break;
+    case ENTITY_TYPES.ACTIVITIES: endpoint = 'activityFields'; break;
+    case ENTITY_TYPES.LEADS: endpoint = 'leadFields'; break; // Assuming leadFields exists
+    case ENTITY_TYPES.PRODUCTS: endpoint = 'productFields'; break;
+    default:
+      Logger.log(`Unknown entity type for field definitions: ${entityType}`);
+      return {};
+  }
+  
+  try {
+    fieldsArray = getEntityFields(endpoint, forceRefresh);
+    const fieldMap = {};
+    if (fieldsArray && fieldsArray.length > 0) {
+      fieldsArray.forEach(field => {
+        if (field && field.key) {
+          fieldMap[field.key] = field;
+        }
+      });
+    }
+    Logger.log(`Created field definition map with ${Object.keys(fieldMap).length} entries for ${entityType}`);
+    return fieldMap;
+  } catch (e) {
+    Logger.log(`Error creating field definition map for ${entityType}: ${e.message}`);
+    return {}; // Return empty map on error
+  }
+}
+
+
+/**
  * Gets field option mappings for a specific entity type
  * @param {string} entityType - The entity type
  * @return {Object} Mapping of field keys to option mappings
@@ -1025,5 +1066,6 @@ Object.assign(PipedriveAPI, {
   getFieldOptionMappingsForEntity,
   getFiltersForEntityType,
   getCustomFieldMappings,
-  getCustomFieldsForEntity
+  getCustomFieldsForEntity,
+  getFieldDefinitionsMap // Export the new function
 });
