@@ -1,5 +1,5 @@
 /**
- * Sync Service
+ * Sync Service Code
  * 
  * This module handles the synchronization between Pipedrive and Google Sheets:
  * - Fetching data from Pipedrive and writing to sheets
@@ -2905,6 +2905,7 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
                 }
               }
               if (hour !== null && minute !== null) {
+                // Format as object {hour, minute} as required by the API
                 sanitizedData.custom_fields[fieldId] = { hour: hour, minute: minute };
                 Logger.log(`Formatted time field ${fieldId} to object: ${JSON.stringify(sanitizedData.custom_fields[fieldId])}`);
               } else {
