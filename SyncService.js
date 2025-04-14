@@ -4,7 +4,7 @@
  * This module handles the synchronization between Pipedrive and Google Sheets:
  * - Fetching data from Pipedrive and writing to sheets
  * - Tracking modifications and pushing changes back to Pipedrive
- * - Managing synchronization status and scheduling
+ * - Managing synSchronization status and scheduling
  */
 
 // Create SyncService namespace if it doesn't exist
@@ -2843,7 +2843,36 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
         // Format custom fields again right before sending to ensure proper format
         if (sanitizedData.custom_fields) {
           Logger.log(`Applying final custom field formatting before API request`);
-          
+
+          // Log all custom fields, their types, and values before formatting
+          Logger.log(`[CUSTOM FIELD DEBUG] --- Custom fields before final formatting:`);
+          for (const fieldId in sanitizedData.custom_fields) {
+            const value = sanitizedData.custom_fields[fieldId];
+            const fieldDef = fieldDefinitions[fieldId];
+            const fieldType = fieldDef ? fieldDef.field_type : null;
+            Logger.log(`[CUSTOM FIELD DEBUG] fieldId: ${fieldId}, type: ${typeof value}, value: ${JSON.stringify(value)}, field_type: ${fieldType}`);
+            if (fieldDef) {
+              Logger.log(`[CUSTOM FIELD DEBUG] fieldId: ${fieldId} FULL DEF: ${JSON.stringify(fieldDef)}`);
+            }
+          }
+          Logger.log(`[CUSTOM FIELD DEBUG] --- End of pre-format custom fields ---`);
+
+          // FINAL ENFORCEMENT: For all custom fields of type 'date', forcibly convert to YYYY-MM-DD string
+          for (const fieldId in sanitizedData.custom_fields) {
+            const value = sanitizedData.custom_fields[fieldId];
+            const fieldDef = fieldDefinitions[fieldId];
+            if (fieldDef && fieldDef.field_type === 'date') {
+              const dateString = formatDateField(value);
+              if (dateString) {
+                sanitizedData.custom_fields[fieldId] = dateString;
+                Logger.log(`[FINAL ENFORCEMENT] Forced field ${fieldId} to YYYY-MM-DD: ${dateString}`);
+              } else {
+                delete sanitizedData.custom_fields[fieldId];
+                Logger.log(`[FINAL ENFORCEMENT] Removed invalid date field ${fieldId} (could not convert)`);
+              }
+            }
+          }
+
           // Process custom fields manually to match API requirements using field definitions
           for (const fieldId in sanitizedData.custom_fields) {
             const value = sanitizedData.custom_fields[fieldId];
@@ -2856,58 +2885,90 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
               continue;
             }
             
-            // DATE FIELDS - Must be string in format YYYY-MM-DD
+            // DATE FIELDS - Must be string in YYYY-MM-DD format
             if (fieldType === 'date') {
               let dateString = null;
-              if (typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                dateString = value;
-              } else if (typeof value === 'string') {
-                // Try parsing as Date
-                const dateObj = new Date(value);
+              // Always convert to YYYY-MM-DD, regardless of input format
+              if (typeof value === 'number') {
+                // Treat as Excel/Sheets serial date (days since 1899-12-30)
+                const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+                const dateObj = new Date(excelEpoch.getTime() + value * 24 * 60 * 60 * 1000);
                 if (!isNaN(dateObj.getTime())) {
                   dateString = String(dateObj.getFullYear()).padStart(4, '0') + '-' +
                                String(dateObj.getMonth() + 1).padStart(2, '0') + '-' +
                                String(dateObj.getDate()).padStart(2, '0');
+                  Logger.log(`[DATE FIELD] Converted Excel serial number for field ${fieldId} to YYYY-MM-DD string: ${dateString}`);
                 }
-              } else if (value instanceof Date && !isNaN(value.getTime())) {
+              } else if (typeof value === 'string') {
+                // If already in YYYY-MM-DD, use as is
+                if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                  dateString = value;
+                  Logger.log(`[DATE FIELD] Using already-correct format for field ${fieldId}: ${dateString}`);
+                } else if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
+                  // If ISO string with time, extract date part
+                  dateString = value.substring(0, 10);
+                  Logger.log(`[DATE FIELD] Trimmed ISO string for field ${fieldId} to YYYY-MM-DD: ${dateString}`);
+                } else {
+                  // Try parsing as date
+                  const dateObj = new Date(value);
+                  if (!isNaN(dateObj.getTime())) {
+                    dateString = String(dateObj.getFullYear()).padStart(4, '0') + '-' +
+                                 String(dateObj.getMonth() + 1).padStart(2, '0') + '-' +
+                                 String(dateObj.getDate()).padStart(2, '0');
+                    Logger.log(`[DATE FIELD] Parsed and formatted date field ${fieldId} to YYYY-MM-DD string: ${dateString}`);
+                  } else {
+                    Logger.log(`[DATE FIELD] Could not parse string value for field ${fieldId}: ${value}`);
+                  }
+                }
+              } else if (value instanceof Date) {
                 dateString = String(value.getFullYear()).padStart(4, '0') + '-' +
                              String(value.getMonth() + 1).padStart(2, '0') + '-' +
                              String(value.getDate()).padStart(2, '0');
+                Logger.log(`[DATE FIELD] Formatted Date object for field ${fieldId} to YYYY-MM-DD string: ${dateString}`);
               }
+              Logger.log(`[DATE FIELD] Final value for field ${fieldId}: ${dateString} (original: ${JSON.stringify(value)})`);
               if (dateString) {
                 sanitizedData.custom_fields[fieldId] = dateString;
-                Logger.log(`Formatted date field ${fieldId} to string: ${dateString}`);
               } else {
-                Logger.log(`Removing invalid date field: ${fieldId} (value: ${JSON.stringify(value)})`);
-                delete sanitizedData.custom_fields[fieldId];
+                Logger.log(`[DATE FIELD] Removing invalid date field ${fieldId} from payload (value: ${JSON.stringify(value)})`);
+                delete sanitizedData.custom_fields[fieldId]; // Remove invalid date field instead of sending ""
               }
-              continue;
+              continue; // Continue to next field after handling date
             }
 
-            // TIME FIELDS - Must be object {hour, minute}
-            if (fieldType === 'time') {
-              let hour = null, minute = null;
-              if (typeof value === 'object' && value !== null && value.hour !== undefined && value.minute !== undefined) {
-                hour = value.hour;
-                minute = value.minute;
-              } else if (typeof value === 'string') {
-                const match = value.match(/^(\d{1,2}):(\d{2})$/);
-                if (match) {
-                  hour = parseInt(match[1], 10);
-                  minute = parseInt(match[2], 10);
+            // Force daterange fields to always be an object, never a string
+            if (fieldType === 'daterange') {
+              if (typeof sanitizedData.custom_fields[fieldId] === 'string') {
+                // If a string slipped through, convert to {start, end}
+                const dateString = formatDateField(sanitizedData.custom_fields[fieldId]);
+                if (dateString) {
+                  sanitizedData.custom_fields[fieldId] = { start: dateString, end: dateString };
+                  Logger.log(`[DATERANGE] Forced string to object for field ${fieldId}: ${JSON.stringify(sanitizedData.custom_fields[fieldId])}`);
                 } else {
-                  // Try parsing as Date
-                  const dateObj = new Date(value);
-                  if (!isNaN(dateObj.getTime())) {
-                    hour = dateObj.getHours();
-                    minute = dateObj.getMinutes();
-                  }
+                  delete sanitizedData.custom_fields[fieldId];
+                  Logger.log(`[DATERANGE] Removed invalid daterange field ${fieldId} (could not convert string)`);
                 }
+                continue;
               }
-              if (hour !== null && minute !== null) {
-                // Format as object {hour, minute} as required by the API
-                sanitizedData.custom_fields[fieldId] = { hour: hour, minute: minute };
-                Logger.log(`Formatted time field ${fieldId} to object: ${JSON.stringify(sanitizedData.custom_fields[fieldId])}`);
+            }
+
+            // TIME FIELDS - Must be string in format HH:MM
+            if (fieldType === 'time') {
+              let timeString = null;
+              if (typeof value === 'string') {
+                // Accept "HH:MM" or "HH:MM:SS" (strip seconds)
+                const match = value.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+                if (match) {
+                  timeString = match[1].padStart(2, '0') + ':' + match[2].padStart(2, '0');
+                }
+              } else if (typeof value === 'object' && value !== null && value.hour !== undefined && value.minute !== undefined) {
+                timeString = String(value.hour).padStart(2, '0') + ':' + String(value.minute).padStart(2, '0');
+              } else if (value instanceof Date && !isNaN(value.getTime())) {
+                timeString = String(value.getHours()).padStart(2, '0') + ':' + String(value.getMinutes()).padStart(2, '0');
+              }
+              if (timeString) {
+                sanitizedData.custom_fields[fieldId] = timeString;
+                Logger.log(`Formatted time field ${fieldId} to string: ${timeString}`);
               } else {
                 Logger.log(`Removing invalid time field: ${fieldId} (value: ${JSON.stringify(value)})`);
                 delete sanitizedData.custom_fields[fieldId];
@@ -2936,6 +2997,7 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
               if (startDate && endDate) {
                 sanitizedData.custom_fields[fieldId] = { start: startDate, end: endDate };
                 Logger.log(`Formatted date range field ${fieldId}: ${JSON.stringify(sanitizedData.custom_fields[fieldId])}`);
+                // Do NOT send the _until field in the payload; Pipedrive expects only the main field as an object
               } else {
                 Logger.log(`Removing invalid date range field: ${fieldId} (value: ${JSON.stringify(value)})`);
                 delete sanitizedData.custom_fields[fieldId];
@@ -3123,10 +3185,71 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
           if (Object.keys(sanitizedData.custom_fields).length === 0) {
             sanitizedData.custom_fields = null;
           }
-          
-          Logger.log(`Custom fields after final formatting: ${JSON.stringify(sanitizedData.custom_fields)}`);
+
+          Logger.log(`[CUSTOM FIELD DEBUG] --- Custom fields after final formatting:`);
+          if (sanitizedData.custom_fields) {
+            Object.entries(sanitizedData.custom_fields).forEach(([k, v]) => {
+              const def = fieldDefinitions && fieldDefinitions[k];
+              Logger.log(`[CUSTOM FIELD DEBUG] custom_fields[${k}] type: ${typeof v}, value: ${JSON.stringify(v)}, field_type: ${def ? def.field_type : 'unknown'}`);
+            });
+          }
+          Logger.log(`[CUSTOM FIELD DEBUG] --- End of post-format custom fields ---`);
+
+          // Log the full payload right before sending
+          Logger.log(`[PAYLOAD DEBUG] Final payload to be sent to Pipedrive API: ${JSON.stringify(sanitizedData)}`);
+
+          // Log all field definitions for this entity for reference
+          if (fieldDefinitions) {
+            Logger.log(`[DEBUG] All custom field definitions for entity:`);
+            Object.entries(fieldDefinitions).forEach(([fid, def]) => {
+              Logger.log(`[DEBUG] fieldId: ${fid}, field_type: ${def.field_type}, name: ${def.name}`);
+            });
+          }
+
+          // FINAL ENFORCEMENT (AGAIN): For all custom fields of type 'date', forcibly convert to YYYY-MM-DD string in the payload object itself
+          if (sanitizedData.custom_fields) {
+            for (const fieldId in sanitizedData.custom_fields) {
+              const value = sanitizedData.custom_fields[fieldId];
+              const fieldDef = fieldDefinitions[fieldId];
+              if (fieldDef && fieldDef.field_type === 'date') {
+                const dateString = formatDateField(value);
+                if (dateString) {
+                  sanitizedData.custom_fields[fieldId] = dateString;
+                  Logger.log(`[FINAL ENFORCEMENT 2] Forced field ${fieldId} to YYYY-MM-DD: ${dateString}`);
+                } else {
+                  delete sanitizedData.custom_fields[fieldId];
+                  Logger.log(`[FINAL ENFORCEMENT 2] Removed invalid date field ${fieldId} (could not convert)`);
+                }
+              }
+            }
+            Logger.log(`[FINAL ENFORCEMENT 2] Payload after final date enforcement: ${JSON.stringify(sanitizedData)}`);
+          }
         }
-        
+
+          // FINAL ENFORCEMENT 3: Deep copy and force all date custom fields to YYYY-MM-DD in the payload string
+        let payloadToSend = JSON.parse(JSON.stringify(sanitizedData));
+        if (payloadToSend.custom_fields) {
+          Logger.log(`[FIELD DEF DEBUG] --- Custom field definitions for payload:`);
+          for (const fieldId in payloadToSend.custom_fields) {
+            const value = payloadToSend.custom_fields[fieldId];
+            const fieldDef = fieldDefinitions[fieldId];
+            Logger.log(`[FIELD DEF DEBUG] fieldId: ${fieldId}, value: ${JSON.stringify(value)}, type: ${typeof value}, length: ${typeof value === 'string' ? value.length : 'n/a'}, fieldDef: ${fieldDef ? JSON.stringify(fieldDef) : 'undefined'}`);
+            if (fieldDef && fieldDef.field_type === 'date') {
+              const dateString = formatDateField(value);
+              Logger.log(`[FIELD DEF DEBUG] (RAW) fieldId: ${fieldId}, value: [${value}] (hex: ${typeof value === 'string' ? value.split('').map(c => c.charCodeAt(0).toString(16)).join(' ') : 'n/a'})`);
+              if (dateString) {
+                payloadToSend.custom_fields[fieldId] = dateString;
+                Logger.log(`[FINAL ENFORCEMENT 3] Forced field ${fieldId} to YYYY-MM-DD: ${dateString}`);
+              } else {
+                delete payloadToSend.custom_fields[fieldId];
+                Logger.log(`[FINAL ENFORCEMENT 3] Removed invalid date field ${fieldId} (could not convert)`);
+              }
+            }
+          }
+          Logger.log(`[FIELD DEF DEBUG] --- End of custom field definitions ---`);
+          Logger.log(`[FINAL ENFORCEMENT 3] Payload to be sent: ${JSON.stringify(payloadToSend)}`);
+        }
+
         // Send API request
         const response = UrlFetchApp.fetch(updateUrl, {
           method: method,
@@ -3134,7 +3257,7 @@ function pushChangesToPipedrive(isScheduledSync = false, suppressNoModifiedWarni
             'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json'
           },
-          payload: JSON.stringify(sanitizedData),
+          payload: JSON.stringify(payloadToSend),
           muteHttpExceptions: true
         });
         
@@ -3994,41 +4117,38 @@ function formatCustomFields(customFields) {
       continue;
     }
     
-    // DATE RANGE FIELDS - Must be an object with value and until properties
-            if (fieldId.includes('date') && fieldId.includes('range')) {
+    // DATE RANGE FIELDS - Must be an object with {start, end} properties for Pipedrive API
+    if (fieldId.includes('date') && fieldId.includes('range')) {
       try {
-        // If it's already an object with the right format, just ensure the dates are formatted correctly
+        let start = null, end = null;
         if (typeof value === 'object' && value !== null) {
-          if (value.value) {
-            value.value = formatDateField(value.value);
-          }
-          if (value.until) {
-            value.until = formatDateField(value.until);
-          }
-          customFields[fieldId] = value;
-          Logger.log("Updated date range field: " + fieldId);
-        } 
-        // If it's a string with a delimiter, try to parse it
-        else if (typeof value === 'string' && (value.includes('-') || value.includes('to'))) {
+          // Accept both {start, end} and {value, until}
+          start = value.start || value.value || null;
+          end = value.end || value.until || null;
+        } else if (typeof value === 'string' && (value.includes('-') || value.includes('to'))) {
           let dates = value.includes('to') ? value.split('to') : value.split('-');
           if (dates.length === 2) {
-            customFields[fieldId] = {
-              value: formatDateField(dates[0].trim()),
-              until: formatDateField(dates[1].trim())
-            };
-            Logger.log("Formatted date range from string: " + fieldId);
-          } else {
-            delete customFields[fieldId];
-            Logger.log("Removed invalid date range field: " + fieldId);
+            start = dates[0].trim();
+            end = dates[1].trim();
           }
+        } else if (typeof value === 'string') {
+          // Single date, use for both start and end
+          start = end = value.trim();
+        }
+        // Format dates
+        start = formatDateField(start);
+        end = formatDateField(end);
+        if (start && end) {
+          customFields[fieldId] = { start: start, end: end };
+          Logger.log("Formatted daterange field: " + fieldId + " = " + JSON.stringify(customFields[fieldId]));
         } else {
           delete customFields[fieldId];
-          Logger.log("Removed invalid date range field: " + fieldId);
+          Logger.log("Removed invalid daterange field: " + fieldId);
         }
         processedCount++;
         continue;
       } catch (e) {
-        Logger.log("Error formatting date range field: " + e);
+        Logger.log("Error formatting daterange field: " + e);
         delete customFields[fieldId];
         continue;
       }
