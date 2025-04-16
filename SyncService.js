@@ -3448,14 +3448,20 @@ async function pushChangesToPipedrive(
             // Only include a few simple custom fields first to test
             const simpleCustomFields = {};
             Object.keys(customFields).forEach((key) => {
-              // Only include string or numeric custom fields for initial test
-              if (
-                typeof customFields[key] === "string" ||
-                typeof customFields[key] === "number"
-              ) {
-                simpleCustomFields[key] = customFields[key];
-              }
-            });
+  // Include address fields (objects with address components) and simple fields
+  if (
+    typeof customFields[key] === "string" ||
+    typeof customFields[key] === "number" ||
+    (typeof customFields[key] === "object" && 
+     customFields[key] !== null &&
+     (customFields[key].street_number || 
+      customFields[key].route || 
+      customFields[key].locality || 
+      customFields[key].postal_code))
+  ) {
+    simpleCustomFields[key] = customFields[key];
+  }
+});
 
             if (Object.keys(simpleCustomFields).length > 0) {
               simplifiedPayload.custom_fields = simpleCustomFields;
@@ -3534,23 +3540,112 @@ async function pushChangesToPipedrive(
                 // Get subdomain from properties
                 const subdomain = scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') || 'api';
 
-                // Prepare payload - IMPORTANT: Put custom fields in root, not nested
-                const finalPayload = {
-                  ...payloadToSend
-                };
+                // Prepare payload
+                const finalPayload = {};
 
-                // If custom_fields exist, flatten them into the root payload
-                if (finalPayload.custom_fields) {
-                  // Add all custom fields to the root level
-                  Object.keys(finalPayload.custom_fields).forEach(key => {
-                    finalPayload[key] = finalPayload.custom_fields[key];
+                // Copy all non-custom fields
+                Object.keys(payloadToSend).forEach(key => {
+                  if (key !== 'custom_fields') {
+                    finalPayload[key] = payloadToSend[key];
+                  }
+                });
+
+                // Process custom fields with special handling for address fields
+                if (payloadToSend.custom_fields) {
+                  Object.keys(payloadToSend.custom_fields).forEach(key => {
+                    const value = payloadToSend.custom_fields[key];
+
+                    // Special handling for address objects
+                    if (value && typeof value === 'object' &&
+                      (value.locality || value.route || value.street_number || value.postal_code)) {
+
+                      Logger.log(`Found address field: ${key} with components: ${JSON.stringify(value)}`);
+
+                      // Format the address string
+                      const addressParts = [];
+                      if (value.street_number) addressParts.push(value.street_number);
+                      if (value.route) {
+                        if (addressParts.length > 0) {
+                          addressParts[0] = addressParts[0] + " " + value.route;
+                        } else {
+                          addressParts.push(value.route);
+                        }
+                      }
+                      if (value.locality) addressParts.push(value.locality);
+                      if (value.postal_code) addressParts.push(value.postal_code);
+
+                      // Main address field
+                      finalPayload[key] = addressParts.join(', ');
+
+                      // After line 3575, replace the existing code with this enhanced implementation:
+
+                      // Add individual components as separate fields with Pipedrive's naming convention
+                      if (value.street_number) finalPayload[`${key}_street_number`] = value.street_number;
+                      if (value.route) finalPayload[`${key}_route`] = value.route;
+                      if (value.locality) finalPayload[`${key}_locality`] = value.locality;
+                      if (value.postal_code) finalPayload[`${key}_postal_code`] = value.postal_code;
+                      if (value.admin_area_level_1) finalPayload[`${key}_admin_area_level_1`] = value.admin_area_level_1;
+                      if (value.admin_area_level_2) finalPayload[`${key}_admin_area_level_2`] = value.admin_area_level_2;
+                      if (value.country) finalPayload[`${key}_country`] = value.country;
+                      if (value.sublocality) finalPayload[`${key}_sublocality`] = value.sublocality;
+                      if (value.subpremise) finalPayload[`${key}_subpremise`] = value.subpremise;
+
+                      // Critical: Create a formatted_address field if not present
+                      if (!value.formatted_address && addressParts.length > 0) {
+                        // Build a more complete address string
+                        const fullAddressParts = [];
+
+                        // Street address line
+                        const streetLine = [];
+                        if (value.street_number) streetLine.push(value.street_number);
+                        if (value.route) streetLine.push(value.route);
+                        if (streetLine.length > 0) fullAddressParts.push(streetLine.join(' '));
+
+                        // City, state, zip line
+                        const cityLine = [];
+                        if (value.locality) cityLine.push(value.locality);
+                        if (value.admin_area_level_1) cityLine.push(value.admin_area_level_1);
+                        if (value.postal_code) cityLine.push(value.postal_code);
+                        if (cityLine.length > 0) fullAddressParts.push(cityLine.join(', '));
+
+                        // Country
+                        if (value.country) fullAddressParts.push(value.country);
+
+                        // Set the formatted address
+                        finalPayload[`${key}_formatted_address`] = fullAddressParts.join(', ');
+
+                        Logger.log(`Created formatted address: ${finalPayload[`${key}_formatted_address`]}`);
+                      }
+
+                      // Add a "value" property for the custom field which is the complete address
+                      // This is critical for Pipedrive to recognize it as a valid address
+                      if (!finalPayload.custom_fields) finalPayload.custom_fields = {};
+                      finalPayload.custom_fields[key] = {
+                        value: addressParts.join(', ')
+                      };
+
+                      // Copy all address components to the custom field object
+                      if (value.street_number) finalPayload.custom_fields[key].street_number = value.street_number;
+                      if (value.route) finalPayload.custom_fields[key].route = value.route;
+                      if (value.locality) finalPayload.custom_fields[key].locality = value.locality;
+                      if (value.postal_code) finalPayload.custom_fields[key].postal_code = value.postal_code;
+                      if (value.admin_area_level_1) finalPayload.custom_fields[key].admin_area_level_1 = value.admin_area_level_1;
+                      if (value.admin_area_level_2) finalPayload.custom_fields[key].admin_area_level_2 = value.admin_area_level_2;
+                      if (value.country) finalPayload.custom_fields[key].country = value.country;
+                      if (value.sublocality) finalPayload.custom_fields[key].sublocality = value.sublocality;
+                      if (value.subpremise) finalPayload.custom_fields[key].subpremise = value.subpremise;
+                      if (value.formatted_address) finalPayload.custom_fields[key].formatted_address = value.formatted_address;
+
+                      Logger.log(`Added address components to custom_fields[${key}]: ${JSON.stringify(finalPayload.custom_fields[key])}`);
+                    } else {
+                      // For all other custom fields, add them directly to the final payload
+                      finalPayload[key] = value;
+                    }
                   });
-
-                  // Remove the custom_fields object as it's not needed
-                  delete finalPayload.custom_fields;
                 }
 
-                Logger.log(`Final flattened API payload: ${JSON.stringify(finalPayload)}`);
+                // Log the final payload
+                Logger.log(`Final payload for API call: ${JSON.stringify(finalPayload)}`);
 
                 // Construct URL and options 
                 const apiUrl = `https://${subdomain}.pipedrive.com/api/v1/deals/${Number(rowData.id)}`;
