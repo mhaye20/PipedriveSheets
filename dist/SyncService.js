@@ -3522,60 +3522,67 @@ async function pushChangesToPipedrive(
 
           switch (entityType) {
             case "deals":
-  try {
-    // Get the Pipedrive OAuth token from script properties
-    const scriptProperties = PropertiesService.getScriptProperties();
-    const pipedriveToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
-    
-    if (!pipedriveToken) {
-      throw new Error('Pipedrive API token not found in script properties');
-    }
-    
-    // Get subdomain from properties
-    const subdomain = scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') || 'api';
-    
-    // Construct URL and options 
-    const apiUrl = `https://${subdomain}.pipedrive.com/api/v1/deals/${Number(rowData.id)}`;
-    const options = {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${pipedriveToken}`
-      },
-      payload: JSON.stringify(payloadToSend),
-      muteHttpExceptions: true
-    };
-    
-    Logger.log(`Making direct API call to: ${apiUrl}`);
-    
-    // Make the request
-    const response = UrlFetchApp.fetch(apiUrl, options);
-    const responseCode = response.getResponseCode();
-    const responseText = response.getContentText();
-    
-    Logger.log(`Direct API call response code: ${responseCode}`);
-    Logger.log(`Direct API response: ${responseText.substring(0, 500)}`);
-    
-    // Parse the response
-    responseBody = JSON.parse(responseText);
-    success = responseBody && responseBody.success === true;
-    
-    // If token is invalid, try refreshing it
-    if (responseCode === 401 && responseText.includes("Invalid token")) {
-      Logger.log("Token invalid, attempting to refresh...");
-      const refreshed = refreshAccessTokenIfNeeded();
-      if (refreshed) {
-        Logger.log("Token refreshed, please try again");
-      } else {
-        Logger.log("Failed to refresh token, reauthorization needed");
-      }
-    }
-  } catch (dealError) {
-    Logger.log(`Deal update failed: ${dealError.message}`);
-    responseBody = { error: dealError.message };
-    success = false;
-  }
-  break;
+              try {
+                // Get the Pipedrive OAuth token from script properties
+                const scriptProperties = PropertiesService.getScriptProperties();
+                const pipedriveToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
+
+                if (!pipedriveToken) {
+                  throw new Error('Pipedrive API token not found in script properties');
+                }
+
+                // Get subdomain from properties
+                const subdomain = scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') || 'api';
+
+                // Prepare payload - IMPORTANT: Put custom fields in root, not nested
+                const finalPayload = {
+                  ...payloadToSend
+                };
+
+                // If custom_fields exist, flatten them into the root payload
+                if (finalPayload.custom_fields) {
+                  // Add all custom fields to the root level
+                  Object.keys(finalPayload.custom_fields).forEach(key => {
+                    finalPayload[key] = finalPayload.custom_fields[key];
+                  });
+
+                  // Remove the custom_fields object as it's not needed
+                  delete finalPayload.custom_fields;
+                }
+
+                Logger.log(`Final flattened API payload: ${JSON.stringify(finalPayload)}`);
+
+                // Construct URL and options 
+                const apiUrl = `https://${subdomain}.pipedrive.com/api/v1/deals/${Number(rowData.id)}`;
+                const options = {
+                  method: 'PUT',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${pipedriveToken}`
+                  },
+                  payload: JSON.stringify(finalPayload),
+                  muteHttpExceptions: true
+                };
+
+                // Make the request
+                const response = UrlFetchApp.fetch(apiUrl, options);
+                const responseCode = response.getResponseCode();
+                const responseText = response.getContentText();
+
+                Logger.log(`Direct API call response code: ${responseCode}`);
+                Logger.log(`Direct API response: ${responseText.substring(0, 500)}`);
+
+                // Parse the response
+                responseBody = JSON.parse(responseText);
+                success = responseBody && responseBody.success === true;
+              } catch (dealError) {
+                Logger.log(`Deal update failed: ${dealError.message}`);
+                responseBody = {
+                  error: dealError.message
+                };
+                success = false;
+              }
+              break;
 
             case "persons":
               // Use persons API
