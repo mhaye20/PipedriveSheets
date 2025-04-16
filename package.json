@@ -1,0 +1,23 @@
+{
+  "name": "PipedriveSheets",
+  "version": "1.0.0",
+  "description": "Google Apps Script with Pipedrive integration",
+  "scripts": {
+    "build": "webpack --config webpack.gas.js",
+    "deploy": "npm run build && cd dist && clasp push"
+  },
+  "dependencies": {
+    "@babel/polyfill": "^7.12.1",
+    "pipedrive": "^25.0.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.10",
+    "@babel/preset-env": "^7.26.9",
+    "babel-loader": "^10.0.0",
+    "copy-webpack-plugin": "^5.0.1",
+    "gas-webpack-plugin": "^2.6.0",
+    "path-browserify": "^1.0.1",
+    "webpack": "^5.99.5",
+    "webpack-cli": "^6.0.1"
+  }
+}

@@ -1,4 +1,6 @@
-Update an activity
+## Update an activity
+
+{"success":true,"data":{"id":1,"subject":"Activity Subject","type":"activity_type","owner_id":1,"is_deleted":false,"add_time":"2021-01-01T00:00:00Z","update_time":"2021-01-01T00:00:00Z","deal_id":5,"lead_id":"abc-def","person_id":6,"org_id":7,"project_id":8,"due_date":"2021-01-01","due_time":"15:00:00","duration":"01:00:00","busy":true,"done":true,"marked_as_done_time":"2021-01-01T00:00:00Z","location":{"value":"123 Main St","country":"USA","admin_area_level_1":"CA","admin_area_level_2":"Santa Clara","locality":"Sunnyvale","sublocality":"Downtown","route":"Main St","street_number":"123","postal_code":"94085"},"participants":[{"person_id":1,"primary":true}],"attendees":[{"email":"some@email.com","name":"Some Name","status":"accepted","is_organizer":true,"person_id":1,"user_id":1}],"conference_meeting_client":"google_meet","conference_meeting_url":"https://meet.google.com/abc-xyz","conference_meeting_id":"abc-xyz","public_description":"Public Description","priority":263,"note":"Note"}}
 
 Updates the properties of an activity.
 
@@ -87,10 +89,14 @@ The priority of the activity. Mappable to a specific string using activityFields
 
 note
 string
-The note of the activity.                Update a deal
-Copy link
-Updates the properties of a deal.
+The note of the activity. 
 
+
+## Update a deal
+
+{"success":true,"data":{"id":1,"title":"Deal Title","creator_user_id":1,"owner_id":1,"value":200,"person_id":1,"org_id":1,"stage_id":1,"pipeline_id":1,"currency":"USD","add_time":"2021-01-01T00:00:00Z","update_time":"2021-01-01T00:00:00Z","stage_change_time":"2021-01-01T00:00:00Z","status":"open","is_deleted":false,"probability":90,"lost_reason":"Lost Reason","visible_to":7,"close_time":"2021-01-01T00:00:00Z","won_time":"2021-01-01T00:00:00Z","lost_time":"2021-01-01T00:00:00Z","local_won_date":"2021-01-01","local_lost_date":"2021-01-01","local_close_date":"2021-01-01","expected_close_date":"2021-01-01","label_ids":[1,2,3],"origin":"ManuallyCreated","origin_id":null,"channel":52,"channel_id":"Jun23 Billboards","acv":120,"arr":120,"mrr":10,"custom_fields":{}}}
+
+Updates the properties of a deal.
 
 Request
 PATCH/api/v2/deals/{id}
@@ -186,8 +192,13 @@ The expected close date of the deal
 Formatdate
 label_ids
 array
-The IDs of labels assigned to the deal.                 Update a deal field
-Copy link
+The IDs of labels assigned to the deal.                 
+
+
+## Update a deal field
+
+{"success":true,"data":{"id":2,"key":"9dc80c50d78a15643bfc4ca79d76156a73a1ca0e","name":"Customer Type","order_nr":1,"field_type":"enum","add_time":"2019-02-04 13:58:03","update_time":"2019-02-04 13:58:03","last_updated_by_user_id":1,"created_by_user_id":1,"active_flag":true,"edit_flag":true,"index_visible_flag":true,"details_visible_flag":true,"add_visible_flag":false,"important_flag":false,"bulk_edit_allowed":true,"searchable_flag":false,"filtering_allowed":true,"sortable_flag":true,"options":[{"id":190,"label":"Private person"},{"id":191,"label":"Company"},{"id":192,"label":"Government"}],"mandatory_flag":true}}
+
 Updates a deal field. For more information, see the tutorial for updating custom fields' values.
 
 API v1
@@ -217,8 +228,13 @@ add_visible_flag
 boolean
 Whether the field is available in 'add new' modal or not (both in web and mobile app)
 
-Defaulttrue.            Update a lead
-Copy link
+Defaulttrue.            
+
+
+## Update a lead
+
+{"success":true,"data":{"id":"adf21080-0e10-11eb-879b-05d71fb426ec","title":"Jane Doe Lead","owner_id":1,"creator_id":1,"label_ids":["f08b42a0-4e75-11ea-9643-03698ef1cfd6","f08b42a1-4e75-11ea-9643-03698ef1cfd6"],"person_id":1092,"organization_id":null,"source_name":"API","origin":"API","origin_id":null,"channel":52,"channel_id":"Jun23 Billboards","is_archived":false,"was_seen":false,"value":{"amount":999,"currency":"USD"},"expected_close_date":null,"next_activity_id":1,"add_time":"2020-10-14T11:30:36.551Z","update_time":"2020-10-14T11:30:36.551Z","visible_to":"3","cc_email":"company+1+leadntPaYKA5QRxXkh6WMNHiGh@dev.pipedrivemail.com"}}
+
 Updates one or more properties of a lead. Only properties included in the request will be updated. Send null to unset a property (applicable for example for value, person_id or organization_id). If a lead contains custom fields, the fields' values will be included in the response in the same format as with the Deals endpoints. If a custom field's value hasn't been set for the lead, it won't appear in the response. Please note that leads do not have a separate set of custom fields, instead they inherit the custom fields’ structure from deals. See an example given in the updating custom fields’ values tutorial.
 
 API v1
@@ -304,8 +320,13 @@ The ID of Marketing channel this lead was created from. Provided value must be o
 
 channel_id
 string
-The optional ID to further distinguish the Marketing channel.                  Update an organization
-Copy link
+The optional ID to further distinguish the Marketing channel.                  
+
+
+## Update an organization
+
+{"success":true,"data":{"id":1,"name":"Organization Name","owner_id":1,"org_id":1,"add_time":"2021-01-01T00:00:00Z","update_time":"2021-01-01T00:00:00Z","address":{"value":"123 Main St","country":"USA","admin_area_level_1":"CA","admin_area_level_2":"Santa Clara","locality":"Sunnyvale","sublocality":"Downtown","route":"Main St","street_number":"123","postal_code":"94085"},"is_deleted":false,"visible_to":7,"label_ids":[1,2,3],"custom_fields":{}}}
+
 Updates the properties of a organization.
 
 
@@ -342,8 +363,13 @@ The visibility of the organization
 
 label_ids
 array
-The IDs of labels assigned to the organization.                Update an organization field
-Copy link
+The IDs of labels assigned to the organization.                
+
+
+## Update an organization field
+
+{"success":true,"data":{"id":2,"key":"9dc80c50d78a15643bfc4ca79d76156a73a1ca0e","name":"Customer Type","order_nr":1,"field_type":"enum","add_time":"2019-02-04 13:58:03","update_time":"2019-02-04 13:58:03","last_updated_by_user_id":1,"created_by_user_id":1,"active_flag":true,"edit_flag":true,"index_visible_flag":true,"details_visible_flag":true,"add_visible_flag":false,"important_flag":false,"bulk_edit_allowed":true,"searchable_flag":false,"filtering_allowed":true,"sortable_flag":true,"options":[{"id":190,"label":"Private person"},{"id":191,"label":"Company"},{"id":192,"label":"Government"}],"mandatory_flag":true}}
+
 Updates an organization field. For more information, see the tutorial for updating custom fields' values.
 
 API v1
@@ -373,8 +399,13 @@ add_visible_flag
 boolean
 Whether the field is available in 'add new' modal or not (both in web and mobile app)
 
-Defaulttrue.              Update a person
-Copy link
+Defaulttrue.              
+
+
+## Update a person
+
+{"success":true,"data":{"id":1,"name":"Person Name","first_name":"Person","last_name":"Name","owner_id":1,"org_id":1,"add_time":"2021-01-01T00:00:00Z","update_time":"2021-01-01T00:00:00Z","emails":[{"value":"email1@email.com","primary":true,"label":"work"},{"value":"email2@email.com","primary":false,"label":"home"}],"phones":[{"value":"12345","primary":true,"label":"work"},{"value":"54321","primary":false,"label":"home"}],"is_deleted":false,"visible_to":7,"label_ids":[1,2,3],"picture_id":1,"custom_fields":{},"notes":"Notes from contact sync","im":[{"value":"skypeusername","primary":true,"label":"skype"},{"value":"whatsappusername","primary":false,"label":"whatsapp"}],"birthday":"2000-12-31","job_title":"Manager","postal_address":{"value":"123 Main St","country":"USA","admin_area_level_1":"CA","admin_area_level_2":"Santa Clara","locality":"Sunnyvale","sublocality":"Downtown","route":"Main St","street_number":"123","postal_code":"94085"}}}
+
 Updates the properties of a person.
 
 
@@ -423,8 +454,13 @@ The visibility of the person
 
 label_ids
 array
-The IDs of labels assigned to the person.              Update a person field
-Copy link
+The IDs of labels assigned to the person.              
+
+
+## Update a person field
+
+{"success":true,"data":{"id":2,"key":"9dc80c50d78a15643bfc4ca79d76156a73a1ca0e","name":"Customer Type","order_nr":1,"field_type":"enum","add_time":"2019-02-04 13:58:03","update_time":"2019-02-04 13:58:03","last_updated_by_user_id":1,"created_by_user_id":1,"active_flag":true,"edit_flag":true,"index_visible_flag":true,"details_visible_flag":true,"add_visible_flag":false,"important_flag":false,"bulk_edit_allowed":true,"searchable_flag":false,"filtering_allowed":true,"sortable_flag":true,"options":[{"id":190,"label":"Private person"},{"id":191,"label":"Company"},{"id":192,"label":"Government"}],"mandatory_flag":true}}
+
 Updates a person field. For more information, see the tutorial for updating custom fields' values.
 
 API v1
@@ -454,8 +490,13 @@ add_visible_flag
 boolean
 Whether the field is available in 'add new' modal or not (both in web and mobile app)
 
-Defaulttrue.               Update a product
-Copy link
+Defaulttrue.               
+
+
+## Update a product
+
+{"success":true,"data":{"id":1,"name":"Mechanical Pencil","code":"MPENCIL","description":"Product description","unit":"","tax":0,"category":"Retail","is_linkable":true,"is_deleted":false,"visible_to":3,"owner_id":1234,"add_time":"2019-12-19T11:36:49Z","update_time":"2019-12-19T11:36:49Z","billing_frequency":"monthly","billing_frequency_cycles":4,"prices":[{"product_id":1,"price":5,"currency":"EUR","cost":2,"direct_cost":1,"notes":"this is a note"}],"custom_fields":{"6d74315176adcc4c97108440449b93ba57d20704":16}}}
+
 Updates product data.
 
 
@@ -564,8 +605,13 @@ When billing_frequency is set to weekly, this field cannot be null
 
 For all the other values of billing_frequency, null represents a product billed indefinitely
 
-Must be a positive integer less or equal to 208.             Update a product field
-Copy link
+Must be a positive integer less or equal to 208.             
+
+
+## Update a product field
+
+{"success":true,"data":[{"id":20,"key":"name","name":"Name","order_nr":1,"picklist_data":null,"field_type":"varchar","add_time":"2019-11-25 13:34:03","update_time":"2019-11-25 13:34:02","last_updated_by_user_id":1,"created_by_user_id":1,"active_flag":true,"edit_flag":false,"index_visible_flag":true,"details_visible_flag":false,"add_visible_flag":true,"important_flag":false,"bulk_edit_allowed":true,"searchable_flag":false,"filtering_allowed":true,"sortable_flag":true,"mandatory_flag":true},{"id":24,"key":"visible_to","name":"Visible to","order_nr":5,"field_type":"double","add_time":"2019-11-25 13:34:03","update_time":"2019-11-25 13:34:02","last_updated_by_user_id":1,"created_by_user_id":1,"active_flag":true,"edit_flag":false,"index_visible_flag":true,"details_visible_flag":true,"add_visible_flag":false,"important_flag":false,"bulk_edit_allowed":true,"searchable_flag":false,"filtering_allowed":true,"sortable_flag":true,"options":[{"id":1,"label":"Owner & followers"},{"id":3,"label":"Entire company"}],"mandatory_flag":true}],"additional_data":{"pagination":{"start":0,"limit":100,"more_items_in_collection":false}}}
+
 Updates a product field. For more information, see the tutorial for updating custom fields' values.
 
 API v1

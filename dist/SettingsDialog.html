@@ -1,0 +1,2960 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <base target="_top">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <style>
+    :root {
+      --primary-color: #1a73e8;
+      --primary-dark: #1967d2;
+      --primary-light: #d2e3fc;
+      --success-color: #0f9d58;
+      --warning-color: #f4b400;
+      --error-color: #d93025;
+      --text-dark: #202124;
+      --text-light: #5f6368;
+      --bg-light: #f8f9fa;
+      --border-color: #dadce0;
+      --section-bg: #f8f9fa;
+      --shadow: 0 1px 3px rgba(60, 64, 67, 0.15);
+      --shadow-hover: 0 4px 8px rgba(60, 64, 67, 0.2);
+      --transition: all 0.2s ease;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Roboto', Arial, sans-serif;
+      color: var(--text-dark);
+      line-height: 1.5;
+      margin: 0;
+      padding: 20px;
+      font-size: 14px;
+      background-color: #fff;
+    }
+
+    h3 {
+      font-size: 20px;
+      font-weight: 500;
+      margin-bottom: 20px;
+      color: var(--primary-color);
+      letter-spacing: 0.25px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 12px;
+    }
+
+    .header {
+      margin-bottom: 16px;
+    }
+
+    h3 {
+      font-size: 18px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      color: var(--text-dark);
+    }
+
+    .sheet-info {
+      background-color: var(--bg-light);
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 14px;
+      border-left: 4px solid var(--primary-color);
+      display: flex;
+      align-items: center;
+    }
+
+    .sheet-info svg {
+      margin-right: 12px;
+      fill: var(--primary-color);
+    }
+
+    .info {
+      font-size: 13px;
+      color: var(--text-light);
+      margin-bottom: 16px;
+    }
+
+    .container {
+      display: flex;
+      height: 400px;
+      gap: 16px;
+    }
+
+    .column {
+      width: 50%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .column-header {
+      font-weight: 500;
+      margin-bottom: 8px;
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .column-count {
+      font-size: 12px;
+      color: var(--text-light);
+      font-weight: normal;
+    }
+
+    .search {
+      padding: 10px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      margin-bottom: 12px;
+      font-size: 14px;
+      width: 100%;
+      transition: var(--transition);
+    }
+
+    .search:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+    }
+
+    .scrollable {
+      flex-grow: 1;
+      overflow-y: auto;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      background-color: white;
+    }
+
+    .item {
+      padding: 8px 12px;
+      margin: 2px 4px;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+    }
+
+    .item:hover {
+      background-color: rgba(66, 133, 244, 0.08);
+    }
+
+    .item.selected {
+      background-color: #e8f0fe;
+      position: relative;
+    }
+
+    .item.selected:hover {
+      background-color: #d2e3fc;
+    }
+
+    .category {
+      font-weight: 500;
+      padding: 8px 12px;
+      background-color: var(--bg-light);
+      margin: 8px 4px 4px 4px;
+      border-radius: 4px;
+      color: var(--text-dark);
+      font-size: 13px;
+    }
+
+    .nested {
+      margin-left: 16px;
+      position: relative;
+    }
+
+    .nested::before {
+      content: '';
+      position: absolute;
+      left: -8px;
+      top: 50%;
+      width: 6px;
+      height: 1px;
+      background-color: var(--border-color);
+    }
+
+    .footer {
+      margin-top: 16px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 4px;
+      font-weight: 500;
+      cursor: pointer;
+      font-size: 14px;
+      transition: var(--transition);
+    }
+
+    button:focus {
+      outline: none;
+    }
+
+    button:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
+    .primary-btn {
+      background-color: var(--primary-color);
+      color: white;
+    }
+
+    .primary-btn:hover {
+      background-color: var(--primary-dark);
+      box-shadow: var(--shadow-hover);
+    }
+
+    .secondary-btn {
+      background-color: transparent;
+      color: var(--primary-color);
+    }
+
+    .secondary-btn:hover {
+      background-color: rgba(66, 133, 244, 0.08);
+    }
+
+    .action-btns {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .drag-handle {
+      display: inline-block;
+      width: 12px;
+      height: 20px;
+      background-image: radial-gradient(circle, var(--text-light) 1px, transparent 1px);
+      background-size: 3px 3px;
+      background-position: center;
+      background-repeat: repeat;
+      margin-right: 8px;
+      cursor: grab;
+      opacity: 0.5;
+    }
+
+    .selected:hover .drag-handle {
+      opacity: 0.8;
+    }
+
+    .column-text {
+      flex-grow: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .add-btn,
+    .remove-btn,
+    .rename-btn {
+      opacity: 0;
+      margin-left: 6px;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      flex-shrink: 0;
+      font-size: 14px;
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    .add-btn {
+      color: var(--success-color);
+      background-color: rgba(15, 157, 88, 0.08);
+    }
+
+    .add-btn:hover {
+      background-color: rgba(15, 157, 88, 0.15);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .add-btn:active {
+      transform: translateY(0);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    .remove-btn {
+      color: var(--error-color);
+      background-color: rgba(219, 68, 55, 0.08);
+    }
+
+    .remove-btn:hover {
+      background-color: rgba(219, 68, 55, 0.15);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .remove-btn:active {
+      transform: translateY(0);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    .rename-btn {
+      color: var(--primary-color);
+      background-color: rgba(66, 133, 244, 0.08);
+    }
+
+    .rename-btn:hover {
+      background-color: rgba(66, 133, 244, 0.15);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .rename-btn:active {
+      transform: translateY(0);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    .item.selected {
+      position: relative;
+      padding-right: 8px;
+    }
+
+    .selected .action-buttons {
+      display: flex;
+      align-items: center;
+      margin-left: auto;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .selected:hover .action-buttons {
+      opacity: 1;
+    }
+
+    .selected .remove-btn,
+    .selected .rename-btn {
+      margin-left: 6px;
+      opacity: 1;
+    }
+
+    .action-icon {
+      font-size: 14px;
+      line-height: 1;
+      position: relative;
+      top: 0px;
+    }
+
+    .item:hover .add-btn {
+      opacity: 0.9;
+    }
+
+    /* Styles for address components */
+    .address-component {
+      background-color: rgba(0, 0, 0, 0.02);
+      border-left: 3px solid var(--muted-color);
+      position: relative;
+    }
+
+    .address-component::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 24px;
+      background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.02));
+      pointer-events: none;
+    }
+
+    .address-label {
+      display: inline-block;
+      font-size: 9px;
+      background-color: var(--muted-color);
+      color: white;
+      padding: 1px 4px;
+      border-radius: 3px;
+      margin-right: 6px;
+      vertical-align: middle;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Visual indicator for read-only fields */
+    .read-only-indicator {
+      display: inline-flex;
+      align-items: center;
+      margin-left: 6px;
+      font-size: 10px;
+      color: var(--muted-color);
+      opacity: 0.8;
+      border-radius: 3px;
+      padding: 0 4px;
+      background-color: rgba(0, 0, 0, 0.03);
+    }
+
+    .read-only-indicator i {
+      font-size: 12px;
+      margin-right: 3px;
+    }
+
+    .loading {
+      display: none;
+      align-items: center;
+      margin-right: 8px;
+    }
+
+    .loader {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(66, 133, 244, 0.2);
+      border-radius: 50%;
+      border-top-color: var(--primary-color);
+      animation: spin 1s ease-in-out infinite;
+    }
+
+    .dragging {
+      opacity: 0.4;
+      box-shadow: var(--shadow-hover);
+    }
+
+    .over {
+      border-top: 2px solid var(--primary-color);
+    }
+
+    .indicator {
+      display: none;
+      padding: 12px 16px;
+      border-radius: 4px;
+      margin-bottom: 16px;
+      font-weight: 500;
+    }
+
+    .indicator.success {
+      background-color: rgba(15, 157, 88, 0.1);
+      color: var(--success-color);
+      border-left: 4px solid var(--success-color);
+    }
+
+    .indicator.error {
+      background-color: rgba(219, 68, 55, 0.1);
+      color: var(--error-color);
+      border-left: 4px solid var(--error-color);
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Address field styling */
+    .address-component {
+      position: relative;
+      padding-left: 4px;
+      border-left: 2px solid rgba(66, 133, 244, 0.2);
+    }
+
+    .address-component::before {
+      content: '';
+      position: absolute;
+      left: -4px;
+      top: 50%;
+      width: 4px;
+      height: 1px;
+      background-color: rgba(66, 133, 244, 0.5);
+    }
+
+    .address-label {
+      font-size: 11px;
+      padding: 1px 4px;
+      border-radius: 3px;
+      background-color: rgba(66, 133, 244, 0.1);
+      color: var(--primary-color);
+      margin-right: 4px;
+    }
+
+    /* Read-only field styling */
+    .read-only {
+      position: relative;
+    }
+
+    .read-only::after {
+      content: '🔒';
+      font-size: 11px;
+      margin-left: 5px;
+      opacity: 0.7;
+    }
+
+    /* Required field styling */
+    .required {
+      position: relative;
+      background-color: rgba(66, 133, 244, 0.1);
+      border-left: 3px solid var(--primary-color);
+    }
+
+    .required::after {
+      content: '★';
+      font-size: 11px;
+      margin-left: 5px;
+      color: var(--primary-color);
+      opacity: 0.8;
+    }
+
+    /* Editable field styling */
+    .editable::after {
+      content: '✏️';
+      font-size: 11px;
+      margin-left: 5px;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .editable:hover::after {
+      opacity: 0.7;
+    }
+
+    /* Info tooltip */
+    .info-tooltip {
+      padding: 10px 14px;
+      background-color: #fff8e1;
+      border-radius: 8px;
+      border-left: none;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+      margin-bottom: 12px;
+      font-size: 12px;
+      color: #5d4901;
+      display: flex;
+      align-items: flex-start;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.2s ease;
+    }
+
+    .info-tooltip:hover {
+      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .info-tooltip::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      background-color: var(--warning-color);
+    }
+
+    .info-tooltip-icon {
+      margin-right: 10px;
+      flex-shrink: 0;
+      opacity: 0.9;
+      font-size: 14px;
+    }
+
+    .info-tooltip-content {
+      margin: 0;
+      flex: 1;
+    }
+
+    .info-tooltip-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2px;
+    }
+
+    .info-tooltip-title {
+      font-weight: 500;
+      font-size: 13px;
+      color: #33280b;
+    }
+
+    .info-tooltip-toggle {
+      color: var(--primary-color);
+      font-weight: 500;
+      cursor: pointer;
+      font-size: 11px;
+      text-decoration: none;
+      margin-left: 8px;
+      white-space: nowrap;
+      opacity: 0.85;
+      transition: opacity 0.2s ease;
+      display: flex;
+      align-items: center;
+    }
+
+    .info-tooltip-toggle:hover {
+      opacity: 1;
+    }
+
+    .info-tooltip-toggle::after {
+      content: '▼';
+      font-size: 8px;
+      margin-left: 4px;
+      transition: transform 0.2s ease;
+    }
+
+    .info-tooltip-toggle.expanded::after {
+      transform: rotate(180deg);
+    }
+
+    .info-tooltip-description {
+      font-size: 12px;
+      opacity: 0.9;
+    }
+
+    .info-tooltip-details {
+      display: none;
+      margin-top: 8px;
+      border-top: 1px solid rgba(95, 74, 0, 0.1);
+      padding-top: 8px;
+    }
+
+    .info-tooltip-details.expanded {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(-5px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .info-tooltip ul {
+      margin: 4px 0 0 18px;
+      padding: 0;
+    }
+
+    .info-tooltip li {
+      margin-bottom: 4px;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .info-tooltip-icons {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 5px;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .info-icon-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 20px;
+      background-color: rgba(255, 255, 255, 0.7);
+      font-size: 11px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    /* Hide address component label on smaller screens */
+    @media (max-width: 600px) {
+      .address-label {
+        display: none;
+      }
+    }
+
+    /* Enhanced selected columns list */
+    #selectedList,
+    #availableList {
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+      background: #fcfcfc;
+      margin-bottom: 8px;
+      max-height: 550px;
+      overflow-y: auto;
+    }
+
+    .list .item {
+      padding: 10px 12px;
+      border-bottom: 1px solid #f0f0f0;
+      transition: background-color 0.15s ease;
+    }
+
+    .list .item:last-child {
+      border-bottom: none;
+    }
+
+    .list .item:hover {
+      background-color: rgba(66, 133, 244, 0.05);
+    }
+
+    .list .item.selected {
+      background-color: rgba(66, 133, 244, 0.1);
+    }
+
+    .column-text {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      word-break: break-word;
+      padding-right: 8px;
+    }
+
+    /* Style for custom named columns */
+    .custom-named {
+      font-style: italic;
+      color: var(--primary-color);
+      position: relative;
+    }
+
+    .column-count {
+      font-size: 12px;
+      background-color: #f5f5f5;
+      color: #666;
+      padding: 2px 8px;
+      border-radius: 12px;
+      margin-left: 8px;
+      font-weight: normal;
+    }
+
+    .lock-icon {
+      display: inline-block;
+      margin-left: 5px;
+      font-size: 12px;
+      color: #666;
+      vertical-align: middle;
+    }
+
+    .read-only {
+      color: #666;
+      cursor: default;
+      background-color: #f5f5f5;
+    }
+
+    /* Always show action buttons for ID column */
+    .required .action-buttons {
+      opacity: 1;
+    }
+
+    .selected .remove-btn,
+    .selected .rename-btn {
+      margin-left: 6px;
+      opacity: 1;
+    }
+
+    .info-tooltip-detail {
+      margin-top: 8px;
+      margin-bottom: 0;
+      font-size: 12px;
+      color: #666;
+    }
+
+    .entity-tooltip {
+      background-color: #fff3e0;
+      border-left: 4px solid #ff9800;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #5d4037;
+    }
+
+    .entity-tooltip-title {
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 20px;
+    }
+
+    .tab {
+      padding: 12px 20px;
+      cursor: pointer;
+      position: relative;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+
+    .tab.active {
+      color: var(--primary-color);
+    }
+
+    .tab.active:after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background-color: var(--primary-color);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--text-dark);
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-color);
+      letter-spacing: 0.1px;
+    }
+
+    .form-container {
+      max-width: 100%;
+    }
+
+    .sheet-info {
+      background-color: #e8f0fe;
+      padding: 14px 16px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+      border-left: 4px solid var(--primary-color);
+      display: flex;
+      align-items: center;
+      font-size: 13px;
+      box-shadow: var(--shadow);
+      animation: slideIn 0.3s ease-out;
+    }
+
+    .sheet-info svg {
+      margin-right: 12px;
+      fill: var(--primary-color);
+      flex-shrink: 0;
+    }
+
+    .section {
+      background-color: var(--section-bg);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      border: 1px solid var(--border-color);
+      box-shadow: var(--shadow);
+      transition: box-shadow 0.3s;
+      animation: fadeIn 0.4s;
+    }
+
+    .section:hover {
+      box-shadow: 0 2px 5px rgba(60, 64, 67, 0.2);
+    }
+
+    .form-row {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+      flex: 1;
+    }
+
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: var(--text-dark);
+      font-size: 14px;
+      letter-spacing: 0.1px;
+    }
+
+    input,
+    select {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      font-size: 14px;
+      transition: all 0.2s;
+      background-color: white;
+    }
+
+    select {
+      appearance: none;
+      background-image: url('data:image/svg+xml;utf8,<svg fill="%235F6368" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/><path d="M0 0h24v24H0z" fill="none"/></svg>');
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+    }
+
+    input:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+    }
+
+    .tooltip {
+      display: block;
+      font-size: 12px;
+      color: var(--text-light);
+      margin-top: 6px;
+      transition: color 0.2s;
+    }
+
+    .form-group:hover .tooltip {
+      color: var(--text-dark);
+    }
+
+    .button-container {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .button-primary {
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 10px 24px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: var(--transition);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .button-primary:hover {
+      background-color: var(--primary-dark);
+      box-shadow: var(--shadow-hover);
+    }
+
+    .button-primary:active {
+      background-color: #185abc;
+      transform: translateY(1px);
+    }
+
+    .button-secondary {
+      background-color: transparent;
+      color: var(--primary-color);
+      border: 1px solid var(--primary-color);
+      padding: 9px 16px;
+      margin-right: 12px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .button-secondary:hover {
+      background-color: rgba(26, 115, 232, 0.04);
+      color: var(--primary-dark);
+    }
+
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+      margin-right: 10px;
+      vertical-align: middle;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .3s;
+      border-radius: 34px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked+.toggle-slider {
+      background-color: var(--primary-color);
+    }
+
+    input:focus+.toggle-slider {
+      box-shadow: 0 0 1px var(--primary-color);
+    }
+
+    input:checked+.toggle-slider:before {
+      transform: translateX(16px);
+    }
+
+    .toggle-wrapper {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .toggle-label {
+      font-weight: normal;
+      cursor: pointer;
+    }
+
+    .filter-section {
+      margin-bottom: 0;
+    }
+
+    .connected-status {
+      background-color: #e6f4ea;
+      border-left: 4px solid #34a853;
+      padding: 14px 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      box-shadow: var(--shadow);
+      animation: slideIn 0.3s ease-out;
+    }
+
+    .loading {
+      display: none;
+      margin-right: 10px;
+      align-items: center;
+    }
+
+    .loader {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(26, 115, 232, 0.2);
+      border-radius: 50%;
+      border-top-color: var(--primary-color);
+      animation: spin 1s ease-in-out infinite;
+      vertical-align: middle;
+    }
+
+    .filter-toggle {
+      display: inline-block;
+      color: var(--primary-color);
+      font-size: 13px;
+      cursor: pointer;
+      margin-top: 12px;
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.2s;
+      position: relative;
+    }
+
+    .filter-toggle:after {
+      content: '';
+      position: absolute;
+      width: 100%;
+      height: 1px;
+      bottom: -2px;
+      left: 0;
+      background-color: var(--primary-color);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .filter-toggle:hover {
+      color: var(--primary-dark);
+    }
+
+    .filter-toggle:hover:after {
+      opacity: 1;
+    }
+
+    .status {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-100px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      min-width: 300px;
+      max-width: 420px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), 
+                  opacity 0.3s ease;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .status.active {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .status-icon {
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      margin-right: 12px;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-size: contain;
+    }
+
+    .status-message {
+      flex-grow: 1;
+      line-height: 1.4;
+    }
+
+    .status-close {
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+      margin-left: 10px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 18px;
+      opacity: 0.7;
+      transition: opacity 0.2s, background-color 0.2s;
+    }
+
+    .status-close:hover {
+      opacity: 1;
+      background-color: rgba(0, 0, 0, 0.1);
+    }
+
+    .status.success {
+      background-color: #e6f4ea;
+      color: var(--success-color);
+      border-left: 4px solid var(--success-color);
+    }
+
+    .status.success .status-icon {
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%2334a853"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>');
+    }
+
+    .status.error {
+      background-color: #fce8e6;
+      color: var(--error-color);
+      border-left: 4px solid var(--error-color);
+    }
+
+    .status.error .status-icon {
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%23ea4335"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>');
+    }
+
+    .status.info {
+      background-color: #e8f0fe;
+      color: #1a73e8;
+      border-left: 4px solid #1a73e8;
+    }
+
+    .status.info .status-icon {
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%231a73e8"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>');
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .loading-filters {
+      color: var(--text-light);
+      font-style: italic;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .loading-filters:before {
+      content: '';
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(26, 115, 232, 0.2);
+      border-radius: 50%;
+      border-top-color: var(--primary-color);
+      animation: spin 1s linear infinite;
+    }
+
+    .ripple {
+      position: absolute;
+      background: rgba(255, 255, 255, 0.5);
+      border-radius: 50%;
+      transform: scale(0);
+      animation: ripple 0.6s;
+      pointer-events: none;
+    }
+
+    /* Reconnect button styling */
+    .reconnect-btn {
+      margin-left: auto;
+      background-color: #f1f3f4;
+      color: #202124;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .reconnect-btn:hover {
+      background-color: #e8eaed;
+      box-shadow: 0 1px 2px rgba(60, 64, 67, 0.2);
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    @keyframes ripple {
+      to {
+        transform: scale(2);
+        opacity: 0;
+      }
+    }
+
+    /* Add this CSS for button loading states */
+    .button-loading {
+      position: relative;
+      pointer-events: none;
+      color: transparent !important;
+    }
+
+    .button-loading:after {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      top: 50%;
+      left: 50%;
+      margin: -10px 0 0 -10px;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 0.8s linear infinite;
+      box-sizing: border-box;
+    }
+
+    .button-primary.button-loading:after,
+    .primary-btn.button-loading:after {
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+    }
+
+    .button-secondary.button-loading:after,
+    .secondary-btn.button-loading:after {
+      border: 2px solid rgba(26, 115, 232, 0.2);
+      border-top-color: var(--primary-color);
+    }
+  </style>
+  <?!= dataScript ?>
+</head>
+
+<body>
+  <h3>Pipedrive Integration Settings</h3>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="settings">Filter Settings</div>
+    <div class="tab" data-tab="columns">Column Selection</div>
+  </div>
+
+  <!-- Shared status notification that works for all tabs -->
+  <div id="status" class="status">
+    <div class="status-icon"></div>
+    <div class="status-message"></div>
+    <div class="status-close">&times;</div>
+  </div>
+
+  <div id="settings-tab" class="tab-content active">
+
+    <div class="connected-status">
+      <span style="color: #34a853; font-size: 20px; margin-right: 12px;">✓</span>
+      <div>
+        <strong>Connected to Pipedrive</strong><br>
+        <span style="font-size: 12px; color: var(--text-light);">Company:
+          <?= savedSubdomain ?>.pipedrive.com
+        </span>
+      </div>
+      <button class="reconnect-btn" onclick="reconnect()">Reconnect</button>
+    </div>
+
+    <div class="sheet-info">
+      <svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+        <path d="M0 0h24v24H0z" fill="none" />
+        <path
+          d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+      </svg>
+      <div>Configuring settings for sheet: <strong>"
+          <?= activeSheetName ?>"
+        </strong></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Data Settings</div>
+      <div class="form-group">
+        <label for="entityType">Data Type</label>
+        <select id="entityType" onchange="loadFiltersForEntity()">
+          <option value="deals" <?=savedEntityType==='deals' ? 'selected' : '' ?>>Deals</option>
+          <option value="persons" <?=savedEntityType==='persons' ? 'selected' : '' ?>>Persons</option>
+          <option value="organizations" <?=savedEntityType==='organizations' ? 'selected' : '' ?>>Organizations</option>
+          <option value="activities" <?=savedEntityType==='activities' ? 'selected' : '' ?>>Activities</option>
+          <option value="leads" <?=savedEntityType==='leads' ? 'selected' : '' ?>>Leads</option>
+          <option value="products" <?=savedEntityType==='products' ? 'selected' : '' ?>>Products</option>
+        </select>
+        <span class="tooltip">Select the type of data to sync from Pipedrive</span>
+      </div>
+    </div>
+
+    <div class="section filter-section">
+      <div class="section-title">Filter Selection</div>
+      <div class="form-group">
+        <label for="filterSelector">Pipedrive Filter</label>
+        <div id="filterSelectorContainer">
+          <select id="filterSelector" style="display: none;"></select>
+          <input type="text" id="filterId" value="<?= savedFilterId ?>" style="display: none;"
+            placeholder="Enter filter ID manually" />
+          <div id="loadingFilters" class="loading-filters">Loading filters...</div>
+        </div>
+        <div class="filter-toggle" id="toggleManualEntry">Switch to manual ID entry</div>
+        <span class="tooltip">Select a saved filter from Pipedrive or enter a filter ID manually</span>
+      </div>
+    </div>
+
+    <input type="hidden" id="sheetName" value="<?= activeSheetName ?>" />
+
+    <div class="button-container">
+      <button type="button" id="saveBtn" class="button-primary" onclick="saveSettings()">Save Settings</button>
+    </div>
+
+  </div>
+
+  <!-- Columns Tab Content -->
+  <div id="columns-tab" class="tab-content">
+
+    <div class="header">
+      <h3>Column Selection</h3>
+
+      <div class="sheet-info">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
+          <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z" />
+          <path d="M7 12h10v2H7zm0-4h10v2H7zm0 8h7v2H7z" />
+        </svg>
+        <div>
+          Configuring columns for <strong>
+            <?= entityTypeName ?>
+          </strong> in sheet <strong>"
+            <?= sheetName ?>"
+          </strong>
+        </div>
+      </div>
+
+      <p class="info">
+        Select which Pipedrive data columns to display in your sheet. Drag items in the right panel to change their
+        order.
+        <strong>Note: The ID column (★) is required</strong> for proper Pipedrive integration and cannot be removed.
+      </p>
+
+      <div class="info-tooltip">
+        <div class="info-tooltip-icon">⚠️</div>
+        <div class="info-tooltip-content">
+          <div class="info-tooltip-header">
+            <div class="info-tooltip-title">Field Editability in Pipedrive</div>
+            <span class="info-tooltip-toggle" id="apiDetailsToggle" onclick="toggleApiDetails()">Details</span>
+          </div>
+          <div class="info-tooltip-description">Fields marked with 🔒 are read-only and cannot be pushed back to
+            Pipedrive.</div>
+
+          <div class="info-tooltip-details" id="apiDetails">
+            <div class="info-tooltip-icons">
+              <span class="info-icon-item">🔒 Read-only fields</span>
+              <span class="info-icon-item">✏️ Editable fields</span>
+            </div>
+
+            Read-only fields include:
+            <ul>
+              <li>System fields (timestamps, counts, creator info)</li>
+              <li>Calculated values (formatted values, weighted values)</li>
+              <li>Fields from related entities (you can only edit fields of the current entity type)</li>
+              <li>Most ID fields except certain linkable references</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="entity-tooltip">
+        <div class="entity-tooltip-title">Current entity type: <strong>
+            <?= entityTypeName ?>
+          </strong></div>
+        <div>
+          You can only edit fields that belong directly to <strong>
+            <?= entityTypeName ?>
+          </strong>.
+          Any fields from related entities (like Organization fields when viewing Deals) will appear as read-only.
+          To edit those fields, you must use a filter for the corresponding entity type.
+        </div>
+      </div>
+    </div>
+
+    <div class="container">
+      <div class="column">
+        <input type="text" id="searchBox" class="search" placeholder="Search for columns...">
+        <div class="column-header">
+          Available Columns <span id="availableCount" class="column-count"></span>
+        </div>
+        <div id="availableList" class="scrollable list">
+          <!-- Available columns will be populated here by JavaScript -->
+        </div>
+      </div>
+
+      <div class="column">
+        <div class="column-header">
+          Selected Columns <span id="selectedCount" class="column-count"></span>
+        </div>
+        <div id="selectedList" class="scrollable list">
+          <!-- Selected columns will be populated here by JavaScript -->
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="action-btns">
+        <button class="secondary-btn" id="helpBtn">Help & Tips</button>
+      </div>
+      <div class="action-btns">
+        <button class="secondary-btn" id="cancelBtn">Cancel</button>
+        <button class="primary-btn" id="columnsTabSaveBtn">Save & Close</button>
+      </div>
+    </div>
+  </div>
+
+
+
+
+
+
+
+
+  <script>
+    let manualEntry = false;
+    let filtersForEntity = {};
+
+    // Define variables for column selector functionality
+    // These will be initialized either from dataScript or with defaults
+    let availableColumns = typeof window.availableColumns !== 'undefined' ? window.availableColumns : [];
+    let selectedColumns = typeof window.selectedColumns !== 'undefined' ? window.selectedColumns : [];
+    let entityType = typeof window.entityType !== 'undefined' ? window.entityType : '';
+    let sheetName = typeof window.sheetName !== 'undefined' ? window.sheetName : '';
+    let entityTypeName = typeof window.entityTypeName !== 'undefined' ? window.entityTypeName : '';
+
+    // Add this tab switching functionality
+    document.addEventListener('DOMContentLoaded', function() {
+      const tabs = document.querySelectorAll('.tab');
+      
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          // Remove active class from all tabs
+          tabs.forEach(t => t.classList.remove('active'));
+          
+          // Add active class to clicked tab
+          tab.classList.add('active');
+          
+          // Hide all tab content
+          document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+          });
+          
+          // Show selected tab content
+          const tabId = tab.getAttribute('data-tab');
+          document.getElementById(tabId + '-tab').classList.add('active');
+
+          // Initialize columns data if switching to columns tab
+          if (tabId === 'columns') {
+            console.log("Switching to columns tab, checking data availability");
+            
+            if (!window.availableColumns || window.availableColumns.length === 0) {
+              console.log("Available columns not found, fetching data from server");
+              // Fetch column data if not already loaded
+              fetchColumnsData();
+            } else {
+              console.log("Using existing columns data:", window.availableColumns.length + " columns available");
+              // Just initialize with existing data
+              initializeColumns();
+              renderLists();
+            }
+          }
+        });
+      });
+      
+      // Set initial active tab based on parameter passed from server
+      const initialTab = '<?= initialTab ?>' || 'settings';
+      
+      // Find the tab with that data-tab attribute
+      tabs.forEach(tab => {
+        if (tab.getAttribute('data-tab') === initialTab) {
+          // Simulate a click on this tab
+          tab.click();
+        }
+      });
+    });
+
+    // Load filters immediately for the currently selected entity type
+    document.addEventListener('DOMContentLoaded', function () {
+      loadFiltersForEntity();
+      addRippleEffect();
+    });
+
+    function loadFiltersForEntity() {
+      const entityType = document.getElementById('entityType').value;
+      const loadingElement = document.getElementById('loadingFilters');
+      const filterSelector = document.getElementById('filterSelector');
+      const filterIdInput = document.getElementById('filterId');
+
+      // Hide both selector and input initially
+      filterSelector.style.display = 'none';
+      filterIdInput.style.display = 'none';
+      loadingElement.style.display = 'flex';
+
+      // If we already have cached filters for this entity type, use them
+      if (filtersForEntity[entityType]) {
+        populateFilters(filtersForEntity[entityType]);
+        return;
+      }
+
+      // Otherwise fetch filters from the server
+      google.script.run
+        .withSuccessHandler(function (filters) {
+          // Cache the filters
+          filtersForEntity[entityType] = filters;
+          populateFilters(filters);
+        })
+        .withFailureHandler(function (error) {
+          loadingElement.style.display = 'none';
+          if (manualEntry) {
+            filterIdInput.style.display = 'block';
+          } else {
+            filterSelector.style.display = 'block';
+            filterSelector.innerHTML = '<option value="">No filters available</option>';
+          }
+          console.error('Error loading filters:', error);
+          showStatus('error', 'Error loading filters: ' + error.message);
+        })
+        .getFiltersForEntityType(entityType);
+    }
+
+    function populateFilters(filters) {
+      const loadingElement = document.getElementById('loadingFilters');
+      const filterSelector = document.getElementById('filterSelector');
+      const filterIdInput = document.getElementById('filterId');
+      const savedFilterId = "<?= savedFilterId ?>";
+
+      loadingElement.style.display = 'none';
+
+      // Clear existing options
+      filterSelector.innerHTML = '';
+
+      // Add default option
+      const defaultOption = document.createElement('option');
+      defaultOption.value = '';
+      defaultOption.textContent = '-- Select a filter --';
+      filterSelector.appendChild(defaultOption);
+
+      if (filters && filters.length > 0) {
+        // Sort filters alphabetically by name
+        filters.sort((a, b) => a.name.localeCompare(b.name));
+
+        // Add each filter as an option
+        filters.forEach(filter => {
+          const option = document.createElement('option');
+          option.value = filter.id;
+          option.textContent = filter.name;
+
+          // Select if this matches the saved filter ID
+          if (filter.id.toString() === savedFilterId) {
+            option.selected = true;
+          }
+
+          filterSelector.appendChild(option);
+        });
+
+        // Display the appropriate input method
+        if (manualEntry) {
+          filterIdInput.style.display = 'block';
+          filterSelector.style.display = 'none';
+        } else {
+          filterSelector.style.display = 'block';
+          filterIdInput.style.display = 'none';
+          // Add animation class
+          filterSelector.classList.add('fade-in');
+        }
+      } else {
+        // No filters found
+        const noFiltersOption = document.createElement('option');
+        noFiltersOption.value = '';
+        noFiltersOption.textContent = 'No filters available for this entity type';
+        filterSelector.appendChild(noFiltersOption);
+
+        // Always show manual entry if no filters
+        filterIdInput.style.display = 'block';
+        filterSelector.style.display = 'none';
+        manualEntry = true;
+        document.getElementById('toggleManualEntry').textContent = 'Switch to filter selection';
+      }
+    }
+
+    // Toggle between dropdown and manual entry
+    document.getElementById('toggleManualEntry').addEventListener('click', function () {
+      const filterSelector = document.getElementById('filterSelector');
+      const filterIdInput = document.getElementById('filterId');
+
+      manualEntry = !manualEntry;
+
+      if (manualEntry) {
+        filterSelector.style.opacity = '0';
+        filterSelector.style.transform = 'translateY(-10px)';
+        filterSelector.style.transition = 'opacity 0.3s, transform 0.3s';
+
+        setTimeout(() => {
+          filterSelector.style.display = 'none';
+          filterIdInput.style.display = 'block';
+          filterIdInput.style.opacity = '0';
+          filterIdInput.style.transform = 'translateY(10px)';
+
+          // Trigger reflow
+          void filterIdInput.offsetWidth;
+
+          filterIdInput.style.transition = 'opacity 0.3s, transform 0.3s';
+          filterIdInput.style.opacity = '1';
+          filterIdInput.style.transform = 'translateY(0)';
+        }, 300);
+
+        this.textContent = 'Switch to filter selection';
+
+        // Sync the selected filter ID to the input
+        if (filterSelector.value) {
+          filterIdInput.value = filterSelector.value;
+        }
+      } else {
+        filterIdInput.style.opacity = '0';
+        filterIdInput.style.transform = 'translateY(-10px)';
+        filterIdInput.style.transition = 'opacity 0.3s, transform 0.3s';
+
+        setTimeout(() => {
+          filterIdInput.style.display = 'none';
+          filterSelector.style.display = 'block';
+          filterSelector.style.opacity = '0';
+          filterSelector.style.transform = 'translateY(10px)';
+
+          // Trigger reflow
+          void filterSelector.offsetWidth;
+
+          filterSelector.style.transition = 'opacity 0.3s, transform 0.3s';
+          filterSelector.style.opacity = '1';
+          filterSelector.style.transform = 'translateY(0)';
+        }, 300);
+
+        this.textContent = 'Switch to manual ID entry';
+
+        // Try to select the filter with this ID
+        if (filterIdInput.value) {
+          const options = filterSelector.options;
+          for (let i = 0; i < options.length; i++) {
+            if (options[i].value === filterIdInput.value) {
+              options[i].selected = true;
+              break;
+            }
+          }
+        }
+      }
+    });
+
+    function showStatus(type, message) {
+      // Always use the main status element, regardless of which tab we're on
+      const statusElement = document.getElementById('status');
+      
+      // Make sure we have the status element
+      if (!statusElement) {
+        console.error('Status element not found!');
+        return;
+      }
+      
+      // Update the message
+      const messageElement = statusElement.querySelector('.status-message');
+      if (messageElement) {
+        messageElement.textContent = message;
+      } else {
+        // Fallback if message element not found
+        statusElement.textContent = message;
+      }
+      
+      // Reset classes
+      statusElement.className = 'status';
+      statusElement.classList.add(type);
+      
+      // Remove active class first (if it exists) to restart animation
+      statusElement.classList.remove('active');
+      
+      // Add active class after a brief delay to trigger animation
+      setTimeout(() => {
+        statusElement.classList.add('active');
+      }, 10);
+      
+      // Set up close button if it exists
+      const closeButton = statusElement.querySelector('.status-close');
+      if (closeButton) {
+        closeButton.onclick = function() {
+          hideStatus();
+        };
+      }
+      
+      // Auto-hide success messages after a delay
+      if (type === 'success') {
+        setTimeout(function() {
+          hideStatus();
+        }, 3000);
+      }
+      
+      // Log the status message for debugging
+      console.log(`Status (${type}): ${message}`);
+    }
+    
+    function hideStatus() {
+      const statusElement = document.getElementById('status');
+      if (statusElement) {
+        statusElement.classList.remove('active');
+      }
+    }
+    
+    // Ensure close button functionality is initialized
+    document.addEventListener('DOMContentLoaded', function() {
+      const statusElement = document.getElementById('status');
+      const closeButton = statusElement.querySelector('.status-close');
+      closeButton.onclick = function() {
+        hideStatus();
+      };
+    });
+
+    function saveSettings() {
+      const entityType = document.getElementById('entityType').value;
+      const filterId = manualEntry ?
+        document.getElementById('filterId').value :
+        document.getElementById('filterSelector').value;
+      const sheetName = document.getElementById('sheetName').value;
+
+      // Validate inputs
+      if (!filterId) {
+        showStatus('error', 'Filter ID is required');
+
+        // Shake the filter selector or input to indicate error
+        const element = manualEntry ?
+          document.getElementById('filterId') :
+          document.getElementById('filterSelector');
+
+        element.style.animation = 'shake 0.5s';
+        setTimeout(() => {
+          element.style.animation = '';
+        }, 500);
+
+        return;
+      }
+
+      // Get the save button
+      const saveBtn = document.getElementById('saveBtn');
+      
+      // Add loading state - visually transform the button
+      saveBtn.classList.add('button-loading');
+      saveBtn.disabled = true;
+      
+      // Add ripple effect
+      addRippleToElement(saveBtn, event);
+
+      google.script.run
+        .withSuccessHandler(function () {
+          // Remove loading state
+          saveBtn.classList.remove('button-loading');
+          saveBtn.disabled = false;
+          
+          // Show success message
+          showStatus('success', 'Settings saved successfully!');
+          setTimeout(() => google.script.host.close(), 1500);
+        })
+        .withFailureHandler(function (error) {
+          // Remove loading state
+          saveBtn.classList.remove('button-loading');
+          saveBtn.disabled = false;
+          
+          // Show error message
+          showStatus('error', 'Error saving settings: ' + error.message);
+        })
+        .saveSettings('', entityType, filterId, '', sheetName);
+    }
+
+    /* Add a helper function for ripple effect */
+    function addRippleToElement(element, event) {
+      if (!element || !event) return;
+      
+      const ripple = document.createElement('span');
+      ripple.className = 'ripple';
+      
+      const rect = element.getBoundingClientRect();
+      const size = Math.max(rect.width, rect.height);
+      
+      ripple.style.width = ripple.style.height = size + 'px';
+      ripple.style.left = (event.clientX - rect.left - size / 2) + 'px';
+      ripple.style.top = (event.clientY - rect.top - size / 2) + 'px';
+      
+      element.appendChild(ripple);
+      
+      setTimeout(() => {
+        ripple.remove();
+      }, 600);
+    }
+
+    function reconnect() {
+      const btn = document.querySelector('.reconnect-btn');
+
+      // Add ripple effect
+      const ripple = document.createElement('span');
+      ripple.className = 'ripple';
+      const rect = btn.getBoundingClientRect();
+      ripple.style.width = ripple.style.height = Math.max(rect.width, rect.height) + 'px';
+      ripple.style.left = (event.clientX - rect.left - ripple.offsetWidth / 2) + 'px';
+      ripple.style.top = (event.clientY - rect.top - ripple.offsetHeight / 2) + 'px';
+      btn.appendChild(ripple);
+
+      // Add loading state
+      btn.innerHTML = '<span style="display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(60,64,67,0.2); border-radius: 50%; border-top-color: #202124; animation: spin 1s linear infinite; margin-right: 8px; vertical-align: middle;"></span> Reconnecting...';
+      btn.disabled = true;
+
+      setTimeout(() => {
+        google.script.host.close();
+        google.script.run.showAuthorizationDialog();
+      }, 500);
+    }
+
+    // Add ripple effect to all buttons
+    function addRippleEffect() {
+      const buttons = document.querySelectorAll('button');
+
+      buttons.forEach(button => {
+        button.addEventListener('click', function (e) {
+          const ripple = document.createElement('span');
+          ripple.className = 'ripple';
+
+          const rect = this.getBoundingClientRect();
+          const size = Math.max(rect.width, rect.height);
+
+          ripple.style.width = ripple.style.height = size + 'px';
+          ripple.style.left = (e.clientX - rect.left - size / 2) + 'px';
+          ripple.style.top = (e.clientY - rect.top - size / 2) + 'px';
+
+          this.appendChild(ripple);
+
+          setTimeout(() => {
+            ripple.remove();
+          }, 600);
+        });
+      });
+    }
+
+    /* 
+     * Using global variables from SettingsDialogUI.gs:
+     * - availableColumns
+     * - selectedColumns
+     */
+
+    // DOM elements
+    const availableList = document.getElementById('availableList');
+    const selectedList = document.getElementById('selectedList');
+    const searchBox = document.getElementById('searchBox');
+    const availableCountEl = document.getElementById('availableCount');
+    const selectedCountEl = document.getElementById('selectedCount');
+
+    // Create a deep copy of the original available columns to ensure we don't lose data
+    function initializeColumns() {
+      // Debug information
+      console.log("Working with availableColumns:", availableColumns ? availableColumns.length : "none");
+      
+      // Make sure we're working with the latest data
+      if (!availableColumns || availableColumns.length === 0) {
+        console.log("Local variable empty, checking window.availableColumns");
+        if (window.availableColumns && window.availableColumns.length > 0) {
+          console.log("Found data in window.availableColumns, using that");
+          availableColumns = window.availableColumns;
+        } else {
+          console.error("No available columns found! This is a problem.");
+        }
+      } else {
+        console.log("Using existing local availableColumns variable");
+      }
+      
+      // Now that we have the data, create a copy for the original columns
+      window.originalAvailableColumns = availableColumns ? JSON.parse(JSON.stringify(availableColumns)) : [];
+      console.log("Original available columns copy created with length:", window.originalAvailableColumns.length);
+    }
+
+    // Render the lists
+    function renderAvailableList(searchTerm = '') {
+      console.log("Rendering available list with search term:", searchTerm);
+      console.log("Available columns before rendering:", availableColumns.length);
+      console.log("Original available columns before rendering:", window.originalAvailableColumns.length);
+
+      availableList.innerHTML = '';
+
+      // Ensure search term is lowercase for case-insensitive comparison
+      searchTerm = (typeof searchTerm === 'string' ? searchTerm : '').toLowerCase();
+
+      // Group columns by parent key or top-level
+      const topLevel = [];
+      const nested = {};
+      let availableCount = 0;
+
+      // Always use the original available columns array as source of truth
+      window.originalAvailableColumns.forEach(col => {
+        // Check if this column is already selected
+        if (!selectedColumns.some(selected => selected.key === col.key)) {
+          availableCount++;
+
+          // Apply special formatting for address component names
+          if (col.key && (col.key.includes('sublocality') || col.key.includes('locality'))) {
+            // Make names match the display labels we want
+            if (col.key.includes('sublocality')) {
+              col.name = col.name.replace('District/sublocality', 'District/Borough');
+              col.name = col.name.replace('Neighborhood', 'District/Borough');
+            }
+            if (col.key.includes('locality') && !col.key.includes('sublocality')) {
+              col.name = col.name.replace('City/town/village/locality', 'City');
+            }
+          }
+          
+          // Handle custom fields with generic names
+          if ((col.name === 'Custom Field' || /^[a-f0-9]{20,}$/i.test(col.key)) && col.key && /[a-f0-9]{20,}/i.test(col.key)) {
+            // Try to get a better name from the server
+            google.script.run.withSuccessHandler(function(betterName) {
+              if (betterName && betterName !== 'Custom Field') {
+                // Find the element and update it
+                const elements = document.querySelectorAll(`.item[data-key="${col.key}"] .column-text`);
+                elements.forEach(el => {
+                  el.textContent = betterName;
+                });
+                
+                // Update our local data too
+                col.name = betterName;
+              }
+            }).getFormattedColumnName(col.key);
+            
+            // Also try a basic client-side improvement showing the field key's last part
+            const keyParts = col.key.split('.');
+            if (keyParts.length > 1) {
+              // Get the last part after the hash
+              const lastPart = keyParts[keyParts.length - 1];
+              if (lastPart && lastPart !== 'label_ids' && !/^[a-f0-9]{20,}$/i.test(lastPart)) {
+                col.name = lastPart.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+              }
+            } else if (col.name === 'Custom Field') {
+              // Extract key part if it's an address component
+              const addrComponentMatch = col.key.match(/([a-f0-9]{20,})_(subpremise|street_number|route|locality|admin_area|country|postal_code)/i);
+              if (addrComponentMatch) {
+                const component = addrComponentMatch[2];
+                switch(component) {
+                  case 'subpremise':
+                    col.name = 'Suite/Apartment';
+                    break;
+                  case 'street_number':
+                    col.name = 'Street Number';
+                    break;
+                  case 'route':
+                    col.name = 'Street Name';
+                    break;
+                  case 'locality':
+                    col.name = 'City';
+                    break;
+                  case 'sublocality':
+                    col.name = 'District/Borough';
+                    break;
+                  case 'admin_area_level_1':
+                    col.name = 'State/Province';
+                    break;
+                  case 'country':
+                    col.name = 'Country';
+                    break;
+                  case 'postal_code':
+                    col.name = 'ZIP/Postal Code';
+                    break;
+                  default:
+                    col.name = 'Address Component';
+                }
+              } else {
+                // As a last resort, give it a more friendly name than "Custom Field"
+                col.name = 'Pipedrive Field';
+              }
+            }
+          }
+
+          if (!searchTerm || col.name.toLowerCase().includes(searchTerm)) {
+            if (!col.isNested) {
+              topLevel.push(col);
+            } else {
+              const parentKey = col.parentKey || 'unknown';
+              if (!nested[parentKey]) {
+                nested[parentKey] = [];
+              }
+              nested[parentKey].push(col);
+            }
+          }
+        }
+      });
+
+      console.log("Top level columns:", topLevel.length);
+      console.log("Nested column categories:", Object.keys(nested).length);
+      console.log("Total available count:", availableCount);
+
+      // Update available count
+      availableCountEl.textContent = '(' + availableCount + ')';
+
+      // Add top-level columns first
+      if (topLevel.length > 0) {
+        const topLevelHeader = document.createElement('div');
+        topLevelHeader.className = 'category';
+        topLevelHeader.textContent = 'Main Fields';
+        availableList.appendChild(topLevelHeader);
+
+        topLevel.forEach(col => {
+          const item = document.createElement('div');
+          item.className = 'item';
+          item.dataset.key = col.key;
+
+          // Add read-only class for address components
+          if (isReadOnlyField(col.key, col)) {
+            item.classList.add('read-only');
+          } else {
+            item.classList.add('editable');
+          }
+
+          // Mark the ID column as required
+          if (col.key === 'id') {
+            item.classList.add('required');
+          }
+
+          // Add column name (no drag handle in available list)
+          const columnText = document.createElement('span');
+          columnText.className = 'column-text';
+
+          // Add a lock icon to clearly indicate read-only status
+          if (isReadOnlyField(col.key, col)) {
+            const lockIcon = document.createElement('span');
+            lockIcon.className = 'lock-icon';
+            lockIcon.textContent = '🔒';
+            lockIcon.title = 'This field is read-only and cannot be modified in Pipedrive';
+            columnText.appendChild(lockIcon);
+          }
+
+          columnText.appendChild(document.createTextNode(col.name));
+          if (col.customName) {
+            columnText.title = "Original field: " + col.name;
+            columnText.style.fontStyle = 'italic';
+            columnText.classList.add('custom-named');
+          }
+          item.appendChild(columnText);
+
+          // Create add button
+          const addBtn = document.createElement('span');
+          addBtn.className = 'add-btn';
+          addBtn.title = 'Add column';
+          addBtn.innerHTML = '<i class="material-icons" style="font-size:18px">add</i>';
+          addBtn.onclick = (e) => {
+            e.stopPropagation();
+            addColumn(col);
+          };
+          item.appendChild(addBtn);
+
+          item.onclick = () => addColumn(col);
+          availableList.appendChild(item);
+        });
+      }
+
+      // Then add nested columns by parent
+      for (const parentKey in nested) {
+        if (nested[parentKey].length > 0) {
+          // Find the parent name from the original available columns or format the key
+          let parentName = parentKey;
+          
+          // First try to find the name from available columns
+          const parentObj = window.originalAvailableColumns.find(col => col.key === parentKey);
+          if (parentObj && parentObj.name) {
+            parentName = parentObj.name;
+          } else {
+            // If it has a hash ID, try to get a better name
+            if (/[a-f0-9]{20,}/i.test(parentKey)) {
+              // Try to extract the hash part for the API call
+              const hashMatch = parentKey.match(/([a-f0-9]{20,})/i);
+              if (hashMatch && hashMatch[1]) {
+                const hashId = hashMatch[1];
+                
+                // Call through to server-side formatting if possible for the hash ID
+                google.script.run.withSuccessHandler(formattedName => {
+                  if (formattedName && formattedName !== 'Custom Field') {
+                    const categoryHeader = document.querySelector(`.category[data-parent-key="${parentKey}"]`);
+                    if (categoryHeader) {
+                      categoryHeader.textContent = formattedName;
+                    }
+                  }
+                }).getFormattedColumnName(hashId);
+              }
+            
+              // Call through to server-side formatting for the key
+              google.script.run.withSuccessHandler(formattedName => {
+                const categoryHeader = document.querySelector(`.category[data-parent-key="${parentKey}"]`);
+                if (categoryHeader) {
+                  categoryHeader.textContent = formattedName;
+                }
+              }).getFormattedColumnName(parentKey);
+            }
+            
+            // Also do basic formatting on client side immediately
+            if (/^org_/i.test(parentKey)) {
+              parentName = "Organization";
+            } else if (/^person_/i.test(parentKey)) {
+              parentName = "Person";
+            } else if (/^user_/i.test(parentKey)) {
+              parentName = "User";
+            } else if (parentKey === "creator_user_id") {
+              parentName = "Creator";  
+            } else if (parentKey === "org_id") {
+              parentName = "Organization";
+            } else if (parentKey === "person_id") {
+              parentName = "Person";
+            } else {
+              // Basic fallback formatting
+              parentName = parentKey.split('.').pop()
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, l => l.toUpperCase());
+              
+              // If it still contains a hash ID, replace with something more descriptive
+              if (/[a-f0-9]{20,}/i.test(parentName)) {
+                // Check if we have a hash ID with a more descriptive name in available columns
+                const matchingCol = window.originalAvailableColumns.find(col => 
+                  col.key.includes(parentKey) && col.name && 
+                  col.name !== 'Custom Field' && col.name !== 'Pipedrive Field'
+                );
+                
+                if (matchingCol) {
+                  // Extract the base name without any components
+                  parentName = matchingCol.name.split(' - ')[0];
+                } else {
+                  // Use field type if available
+                  parentName = "Custom Field";
+                }
+              }
+            }
+          }
+          
+          const categoryHeader = document.createElement('div');
+          categoryHeader.className = 'category';
+          categoryHeader.setAttribute('data-parent-key', parentKey);
+          categoryHeader.textContent = parentName;
+          availableList.appendChild(categoryHeader);
+
+          nested[parentKey].forEach(col => {
+            const item = document.createElement('div');
+            item.className = 'item nested';
+            item.dataset.key = col.key;
+
+            // Add read-only class for address components
+            if (isReadOnlyField(col.key, col)) {
+              item.classList.add('read-only');
+            } else {
+              item.classList.add('editable');
+            }
+
+            // Mark the ID column as required
+            if (col.key === 'id') {
+              item.classList.add('required');
+            }
+
+            // Add column name (no drag handle in available list)
+            const columnText = document.createElement('span');
+            columnText.className = 'column-text';
+
+            // Add a lock icon to clearly indicate read-only status
+            if (isReadOnlyField(col.key, col)) {
+              const lockIcon = document.createElement('span');
+              lockIcon.className = 'lock-icon';
+              lockIcon.textContent = '🔒';
+              lockIcon.title = 'This field is read-only and cannot be modified in Pipedrive';
+              columnText.appendChild(lockIcon);
+            }
+
+            columnText.appendChild(document.createTextNode(col.name));
+            if (col.customName) {
+              columnText.title = "Original field: " + col.name;
+              columnText.style.fontStyle = 'italic';
+              columnText.classList.add('custom-named');
+            }
+            item.appendChild(columnText);
+
+            // Create add button
+            const addBtn = document.createElement('span');
+            addBtn.className = 'add-btn';
+            addBtn.title = 'Add column';
+            addBtn.innerHTML = '<i class="material-icons" style="font-size:18px">add</i>';
+            addBtn.onclick = (e) => {
+              e.stopPropagation();
+              addColumn(col);
+            };
+            item.appendChild(addBtn);
+
+            item.onclick = () => addColumn(col);
+            availableList.appendChild(item);
+          });
+        }
+      }
+
+      // Show "no results" message if nothing matches search
+      if (availableList.children.length === 0 && searchTerm) {
+        const noResults = document.createElement('div');
+        noResults.style.padding = '16px';
+        noResults.style.textAlign = 'center';
+        noResults.style.color = 'var(--text-light)';
+        noResults.textContent = 'No matching columns found';
+        availableList.appendChild(noResults);
+      }
+    }
+
+    function renderSelectedList() {
+      selectedList.innerHTML = '';
+
+      // Update selected count
+      selectedCountEl.textContent = '(' + selectedColumns.length + ')';
+
+      if (selectedColumns.length === 0) {
+        const emptyState = document.createElement('div');
+        emptyState.style.padding = '16px';
+        emptyState.style.textAlign = 'center';
+        emptyState.style.color = 'var(--text-light)';
+        emptyState.innerHTML = 'No columns selected yet<br>Select columns from the left panel';
+        selectedList.appendChild(emptyState);
+        return;
+      }
+
+      selectedColumns.forEach((col, index) => {
+        // Apply special formatting for address component names
+        if (col.key && (col.key.includes('sublocality') || col.key.includes('locality'))) {
+          // Make names match the display labels we want
+          if (col.key.includes('sublocality')) {
+            col.name = col.name.replace('District/sublocality', 'District/Borough');
+            col.name = col.name.replace('Neighborhood', 'District/Borough');
+            if (col.customName && col.customName.includes('District/sublocality')) {
+              col.customName = col.customName.replace('District/sublocality', 'District/Borough');
+            }
+          }
+          if (col.key.includes('locality') && !col.key.includes('sublocality')) {
+            col.name = col.name.replace('City/town/village/locality', 'City');
+            if (col.customName && col.customName.includes('City/town/village/locality')) {
+              col.customName = col.customName.replace('City/town/village/locality', 'City');
+            }
+          }
+        }
+
+        const item = document.createElement('div');
+        item.className = 'item selected';
+        item.dataset.key = col.key;
+        item.dataset.index = index;
+        // Make the ID column non-draggable
+        item.draggable = col.key !== 'id';
+
+        // Add read-only class for address components
+        if (isReadOnlyField(col.key, col)) {
+          item.classList.add('read-only');
+        } else {
+          item.classList.add('editable');
+        }
+
+        // Mark the ID column as required
+        if (col.key === 'id') {
+          item.classList.add('required');
+          // Add a visual indicator that this column must be first
+          const lockIndicator = document.createElement('div');
+          lockIndicator.style.position = 'absolute';
+          lockIndicator.style.left = '8px';
+          lockIndicator.style.top = '8px';
+          lockIndicator.style.fontSize = '11px';
+          lockIndicator.title = 'This column must remain first';
+          lockIndicator.innerHTML = '📌';
+          lockIndicator.style.color = 'var(--primary-color)';
+          lockIndicator.style.fontWeight = 'bold';
+          item.style.position = 'relative';
+          item.style.paddingLeft = '28px';
+          item.appendChild(lockIndicator);
+        }
+
+        // Add column name
+        const columnText = document.createElement('span');
+        columnText.className = 'column-text';
+
+        // Special handling for address components
+        if (col.key && (col.key.includes('address.') || col.key.includes('.subpremise'))) {
+          // Add special styling for address components
+          item.classList.add('address-component');
+
+          // Extract the component type for display
+          let addressType = '';
+          if (col.key.includes('subpremise')) {
+            addressType = 'SUITE';
+          } else if (col.key.includes('street_number')) {
+            addressType = 'STREET#';
+          } else if (col.key.includes('route')) {
+            addressType = 'STREET';
+          } else if (col.key.includes('sublocality')) {
+            addressType = 'DISTRICT/BOROUGH';
+          } else if (col.key.includes('locality')) {
+            addressType = 'CITY';
+          } else if (col.key.includes('admin_area_level_1')) {
+            addressType = 'STATE';
+          } else if (col.key.includes('postal_code')) {
+            addressType = 'ZIP';
+          } else if (col.key.includes('country')) {
+            addressType = 'COUNTRY';
+          }
+
+          // Only add the type label if we have a recognized type
+          if (addressType) {
+            const addressLabel = document.createElement('span');
+            addressLabel.className = 'address-label';
+            addressLabel.textContent = addressType;
+            columnText.appendChild(addressLabel);
+
+            // Remove read-only indicator since address components are updatable
+            // according to Pipedrive API documentation
+          }
+        }
+
+        columnText.appendChild(document.createTextNode(col.customName || col.name));
+        if (col.customName) {
+          columnText.title = "Original field: " + col.name;
+          columnText.style.fontStyle = 'italic';
+          columnText.classList.add('custom-named');
+        }
+        item.appendChild(columnText);
+
+        // Create container for action buttons
+        const actionButtons = document.createElement('div');
+        actionButtons.className = 'action-buttons';
+
+        // Add rename button
+        const renameBtn = document.createElement('span');
+        renameBtn.className = 'rename-btn';
+        renameBtn.innerHTML = '<i class="material-icons" style="font-size:18px">edit</i>';
+        renameBtn.title = 'Rename column';
+        renameBtn.onclick = (e) => {
+          e.stopPropagation();
+          renameColumn(index);
+        };
+        actionButtons.appendChild(renameBtn);
+
+        // Add remove button (but disable for ID column)
+        const removeBtn = document.createElement('span');
+        removeBtn.className = 'remove-btn';
+        removeBtn.innerHTML = '<i class="material-icons" style="font-size:18px">close</i>';
+        removeBtn.title = col.key === 'id' ? 'ID column cannot be removed' : 'Remove column';
+        removeBtn.onclick = (e) => {
+          e.stopPropagation();
+          removeColumn(col);
+        };
+        if (col.key === 'id') {
+          removeBtn.style.opacity = '0.5';
+          removeBtn.style.cursor = 'not-allowed';
+        }
+        actionButtons.appendChild(removeBtn);
+
+        // Add the action buttons container to the item
+        item.appendChild(actionButtons);
+
+        // Set up drag events
+        if (col.key !== 'id') { // Only set up drag events for non-ID columns
+          item.ondragstart = handleDragStart;
+          item.ondragover = handleDragOver;
+          item.ondrop = handleDrop;
+          item.ondragend = handleDragEnd;
+        }
+
+        selectedList.appendChild(item);
+      });
+    }
+
+    // Drag and drop functionality
+    let draggedItem = null;
+
+    function handleDragStart(e) {
+      // Make sure this isn't the ID column
+      if (this.dataset.key === 'id') {
+        e.preventDefault();
+        return false;
+      }
+
+      draggedItem = this;
+      this.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', this.dataset.index);
+
+      // Add a small delay to make the visual change noticeable
+      setTimeout(() => {
+        this.style.opacity = '0.4';
+      }, 0);
+    }
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      this.classList.add('over');
+    }
+
+    function handleDrop(e) {
+      e.preventDefault();
+      this.classList.remove('over');
+
+      const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+      const toIndex = parseInt(this.dataset.index);
+
+      // Don't allow reordering if trying to move the ID column or place another column before it
+      if (selectedColumns[fromIndex]?.key === 'id' || toIndex === 0) {
+        // Show error message if trying to move ID column
+        if (selectedColumns[fromIndex]?.key === 'id') {
+          showStatus('error', 'The ID column cannot be moved from the first position');
+        } else if (toIndex === 0) {
+          showStatus('error', 'No column can be placed before the ID column');
+        }
+        return;
+      }
+
+      if (fromIndex !== toIndex) {
+        const item = selectedColumns[fromIndex];
+        selectedColumns.splice(fromIndex, 1);
+        selectedColumns.splice(toIndex, 0, item);
+        renderSelectedList();
+      }
+    }
+
+    function handleDragEnd() {
+      this.classList.remove('dragging');
+      document.querySelectorAll('.item').forEach(item => {
+        item.classList.remove('over');
+      });
+    }
+
+    // Column management
+    function addColumn(column) {
+      // Find the column in the original available columns array to ensure we have complete data
+      const fullColumn = window.originalAvailableColumns.find(col => col.key === column.key);
+      if (fullColumn) {
+        // Add a deep copy to prevent reference issues
+        const columnCopy = JSON.parse(JSON.stringify(fullColumn));
+
+        // If this is the ID column and not already in selectedColumns, add it at the beginning
+        if (columnCopy.key === 'id' && !selectedColumns.some(col => col.key === 'id')) {
+          selectedColumns.unshift(columnCopy);
+        } else {
+          // Add non-ID columns to the end
+          selectedColumns.push(columnCopy);
+        }
+
+        renderAvailableList(searchBox.value);
+        renderSelectedList();
+      }
+    }
+
+    function removeColumn(column) {
+      // Prevent removing the ID column
+      if (column.key === 'id') {
+        showStatus('error', 'The ID column is required and cannot be removed');
+        return;
+      }
+
+      const index = selectedColumns.findIndex(col => col.key === column.key);
+      if (index !== -1) {
+        selectedColumns.splice(index, 1);
+        renderAvailableList(searchBox.value);
+        renderSelectedList();
+      }
+    }
+
+    function renameColumn(columnIndex) {
+      const column = selectedColumns[columnIndex];
+      const currentName = column.customName || column.name;
+      const newName = prompt("Enter custom header name for '" + column.name + "'", currentName);
+
+      if (newName !== null) {
+        // Update the column with the custom name
+        selectedColumns[columnIndex].customName = newName;
+        renderSelectedList();
+        showStatus('success', 'Column renamed to: ' + newName);
+      }
+    }
+
+    // Event listeners
+    window.onload = function () {
+      console.log("Window loaded, initializing application...");
+      
+      // Initialize columns first
+      loadData();
+      
+      // Then initialize the application
+      initApp();
+
+      // Set up event listeners
+      searchBox.addEventListener('input', function () {
+        // Call the existing renderAvailableList function with the search value
+        renderAvailableList(this.value);
+      });
+
+      document.getElementById('columnsTabSaveBtn').addEventListener('click', function () {
+        saveColumns();
+      });
+
+      document.getElementById('cancelBtn').addEventListener('click', function () {
+        google.script.host.close();
+      });
+
+      document.getElementById('helpBtn').addEventListener('click', function () {
+        showHelp();
+      });
+
+      document.getElementById('apiDetailsToggle').addEventListener('click', function () {
+        toggleApiDetails();
+      });
+    };
+
+    function toggleApiDetails() {
+      const detailsElement = document.getElementById('apiDetails');
+      const toggleButton = document.getElementById('apiDetailsToggle');
+
+      if (detailsElement.style.display === 'none' || !detailsElement.style.display) {
+        detailsElement.style.display = 'block';
+        toggleButton.textContent = 'Hide';
+      } else {
+        detailsElement.style.display = 'none';
+        toggleButton.textContent = 'Details';
+      }
+    }
+
+    function loadData() {
+      try {
+        console.log("Attempting to load data from server...");
+        
+        // Check if data is already in window properties (from dataScript)
+        if (typeof window.availableColumns !== 'undefined' && window.availableColumns.length > 0) {
+          console.log('Data already loaded from server script:', 
+            window.availableColumns.length + ' available columns, ' + 
+            window.selectedColumns.length + ' selected columns');
+          
+          // Just assign to local variables for ease of use
+          availableColumns = window.availableColumns;
+          selectedColumns = window.selectedColumns;
+          
+          console.log('Local variables updated: availableColumns =', 
+                     availableColumns.length, ', selectedColumns =', 
+                     selectedColumns.length);
+          
+          return true;
+        }
+        
+        // If we get here, we don't have data yet
+        console.error('No data available from server. Using empty arrays as fallback.');
+        availableColumns = [];
+        selectedColumns = [];
+        return false;
+      } catch (error) {
+        console.error('Error in loadData function:', error);
+        // Initialize with empty arrays to prevent further errors
+        availableColumns = [];
+        selectedColumns = [];
+        return false;
+      }
+    }
+
+    function filterAvailableList(query) {
+      const filteredColumns = availableColumns.filter(col => {
+        const name = col.name ? col.name.toLowerCase() : '';
+        const key = col.key ? col.key.toLowerCase() : '';
+        return name.includes(query) || key.includes(query);
+      });
+
+      renderAvailableList(filteredColumns);
+    }
+
+    function renderLists() {
+      renderSelectedList();
+      renderAvailableList();
+
+      // Update column counts
+      selectedCountEl.textContent = selectedColumns.length;
+      availableCountEl.textContent = availableColumns.length;
+    }
+
+    // Initialize the application
+    function initApp() {
+      try {
+        console.log("Initializing column selector app...");
+
+        // Make sure we have loaded our data
+        if (availableColumns && availableColumns.length > 0) {
+          console.log("Using already loaded columns:", availableColumns.length);
+        } else if (window.availableColumns && window.availableColumns.length > 0) {
+          console.log("Using window.availableColumns:", window.availableColumns.length);
+          availableColumns = window.availableColumns;
+          selectedColumns = window.selectedColumns || [];
+        } else {
+          console.warn("No column data available on init - will fetch when needed");
+        }
+
+        // Initialize the original columns array
+        initializeColumns();
+
+        // Render the UI
+        renderLists();
+
+        console.log("App initialized successfully.");
+      } catch (error) {
+        console.error("Error initializing app:", error);
+      }
+    }
+
+    // Add this helper function to check if a field is read-only
+    function isReadOnlyField(key, column) {
+      // Check if the column object has a readOnly property
+      if (column && column.readOnly === true) {
+        return true;
+      }
+
+      // Entity-specific read-only checks
+      // Fields that belong to related entities should be read-only
+      if (key) {
+        // Check if this is a field from a related entity based on the current entity type
+        // For example, org_* fields should be read-only in a Deals sheet
+
+        // Organization fields are only editable when in Organization entity type
+        if ((key.startsWith('org.') || key.startsWith('org_') ||
+          key.startsWith('organization.') || key.startsWith('organization_')) &&
+          entityType !== 'organizations') {
+          return true;
+        }
+
+        // Person fields are only editable when in Person entity type
+        if ((key.startsWith('person.') || key.startsWith('person_')) &&
+          entityType !== 'persons') {
+          return true;
+        }
+
+        // Deal fields are only editable when in Deal entity type
+        if ((key.startsWith('deal.') || key.startsWith('deal_')) &&
+          entityType !== 'deals') {
+          return true;
+        }
+
+        // Activity fields are only editable when in Activity entity type
+        if ((key.startsWith('activity.') || key.startsWith('activity_')) &&
+          entityType !== 'activities') {
+          return true;
+        }
+
+        // Product fields are only editable when in Product entity type
+        if ((key.startsWith('product.') || key.startsWith('product_')) &&
+          entityType !== 'products') {
+          return true;
+        }
+
+        // Lead fields are only editable when in Lead entity type
+        if ((key.startsWith('lead.') || key.startsWith('lead_')) &&
+          entityType !== 'leads') {
+          return true;
+        }
+
+        // Organization address components are only editable in Organization entity type
+        if (key.includes('address.') && entityType !== 'organizations') {
+          return true;
+        }
+      }
+
+      // Common read-only fields across all entity types
+      if (key && (
+        // System-generated fields
+        key === 'creator_user_id' ||
+        key === 'followers_count' ||
+        key === 'participants_count' ||
+        key === 'activities_count' ||
+        key === 'done_activities_count' ||
+        key === 'undone_activities_count' ||
+        key === 'files_count' ||
+        key === 'notes_count' ||
+        key === 'email_messages_count' ||
+        key === 'people_count' ||
+        key === 'products_count' ||
+
+        // Formatted or calculated fields
+        key === 'formatted_value' ||
+        key === 'weighted_value' ||
+        key === 'formatted_weighted_value' ||
+        key === 'weighted_value_currency' ||
+        key.startsWith('formatted_') ||
+
+        // System fields
+        key === 'first_char' ||
+        key === 'active_flag' ||
+        key === 'cc_email' ||
+        key === 'next_activity_id' ||
+        key === 'last_activity_id' ||
+        key === 'last_incoming_mail_time' ||
+        key === 'last_outgoing_mail_time' ||
+        key === 'rotten_time' ||
+        key === 'next_activity_date' || // Except for Leads where it's updatable
+        key === 'next_activity_time' ||
+        key === 'next_activity_type' ||
+        key === 'next_activity_duration' ||
+        key === 'next_activity_note' ||
+        key === 'archive_time' ||
+        key === 'local_close_date' ||
+        key === 'local_won_date' ||
+        key === 'local_lost_date' ||
+
+        // Deal-specific read-only fields
+        key === 'stage_order_nr' ||
+        key === 'person_name' ||
+        key === 'org_name' ||
+        key === 'origin' ||
+        key === 'origin_id' ||
+
+        // Person/Org specific read-only fields
+        key === 'has_pic' ||
+        key === 'pic_hash' ||
+        key === 'owner_name' ||
+        key === 'org_hidden' ||
+        key === 'person_hidden'
+      )) {
+        return true;
+      }
+
+      return false;
+    }
+
+    // Add this function before renderLists()
+    function searchColumns(searchTerm) {
+      console.log("Searching columns with term:", searchTerm);
+      renderAvailableList(searchTerm);
+    }
+
+    // Replace the existing searchBox event handler
+    searchBox.oninput = function () {
+      searchColumns(this.value);
+    };
+
+    // Initial render
+    renderAvailableList();
+    renderSelectedList();
+
+    // Add the saveColumns and showHelp functions
+    function saveColumns() {
+      // Validate - must have at least one column and ID column must be first
+      if (selectedColumns.length === 0) {
+        showStatus('error', 'Please select at least one column');
+        return;
+      }
+      
+      // Make sure we have the ID column
+      if (!selectedColumns.some(col => col.key === 'id')) {
+        // Add the ID column if it's missing
+        const idColumn = window.originalAvailableColumns.find(col => col.key === 'id');
+        if (idColumn) {
+          selectedColumns.unshift(idColumn);
+          showStatus('info', 'ID column automatically added as it is required');
+          renderSelectedList(); // Update the UI
+        }
+      }
+      
+      // Get both save and cancel buttons
+      const saveBtn = document.getElementById('columnsTabSaveBtn');
+      const cancelBtn = document.getElementById('cancelBtn');
+      
+      // Add loading state to save button
+      saveBtn.classList.add('button-loading');
+      saveBtn.disabled = true;
+      cancelBtn.disabled = true;
+      
+      // Add ripple effect if we have an event
+      if (event) {
+        addRippleToElement(saveBtn, event);
+      }
+      
+      // Get current entity type and sheet name
+      const entityType = window.entityType || document.getElementById('entityType')?.value;
+      const sheetName = window.sheetName || document.getElementById('sheetName')?.value;
+      
+      console.log('Calling handleSaveColumns with:', {
+        columns: selectedColumns.map(c => ({ key: c.key, name: c.name, customName: c.customName })),
+        entityType,
+        sheetName
+      });
+      
+      google.script.run
+        .withSuccessHandler((result) => {
+          console.log('Save successful, result:', result);
+          
+          // Remove loading state
+          saveBtn.classList.remove('button-loading');
+          saveBtn.disabled = false;
+          cancelBtn.disabled = false;
+          
+          // Show success message
+          showStatus('success', 'Column preferences saved successfully!');
+          
+          // Close after a short delay to show the success message
+          setTimeout(() => {
+            google.script.host.close();
+          }, 1500);
+        })
+        .withFailureHandler((error) => {
+          console.error('Save failed:', error);
+          
+          // Remove loading state
+          saveBtn.classList.remove('button-loading');
+          saveBtn.disabled = false;
+          cancelBtn.disabled = false;
+          
+          // Show error message
+          showStatus('error', 'Error: ' + error.message);
+        })
+        .handleSaveColumns(selectedColumns, entityType, sheetName);
+    }
+
+    function showHelp() {
+      const helpContent = 'Tips for selecting columns:\n' +
+        '\n• Search for specific columns using the search box' +
+        '\n• Main fields are top-level Pipedrive fields' +
+        '\n• Nested fields provide more detailed information' +
+        '\n• Drag and drop to reorder selected columns' +
+        '\n• The column order here determines the order in your sheet';
+
+      alert(helpContent);
+    }
+
+    // Function to fetch column data from the server
+    function fetchColumnsData() {
+      console.log("Fetching column data from server for entity type:", entityType);
+      
+      // Show loading state
+      const availableList = document.getElementById('availableList');
+      const selectedList = document.getElementById('selectedList');
+      
+      availableList.innerHTML = '<div style="padding: 20px; text-align: center;"><div class="loader" style="display: inline-block; margin-right: 10px;"></div> Loading column data...</div>';
+      
+      // Reset selected columns display
+      selectedList.innerHTML = '<div style="padding: 20px; text-align: center;">Column data is being loaded...</div>';
+      
+      // Get entity type and sheet name
+      const currentEntityType = window.entityType || document.getElementById('entityType')?.value;
+      const currentSheetName = window.sheetName || "<?= activeSheetName ?>";
+      
+      if (!currentEntityType) {
+        availableList.innerHTML = '<div style="padding: 20px; text-align: center; color: #d93025;">Error: No entity type specified</div>';
+        return;
+      }
+      
+      // Call server to get column data
+      google.script.run
+        .withSuccessHandler(function(result) {
+          console.log("Successfully fetched column data from server:", result);
+          
+          // Set the data on window for global access
+          window.availableColumns = result.availableColumns || [];
+          window.selectedColumns = result.selectedColumns || [];
+          
+          // Update local variables to match window properties
+          availableColumns = window.availableColumns;
+          selectedColumns = window.selectedColumns;
+          
+          // Initialize columns
+          initializeColumns();
+          renderLists();
+        })
+        .withFailureHandler(function(error) {
+          console.error("Failed to fetch column data:", error);
+          availableList.innerHTML = `<div style="padding: 20px; text-align: center; color: #d93025;">Failed to load column data: ${error.message || error}</div>`;
+        })
+        .getColumnsDataForEntity(currentEntityType, currentSheetName);
+    }
+  </script>
+</body>
+</html>

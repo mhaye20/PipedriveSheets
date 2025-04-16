@@ -1,0 +1,137 @@
+## List of API Endpoints for API v2
+
+All URIs are relative to _https://api.pipedrive.com/api/v2_
+
+Class        | Method        | HTTP request  | Description   |
+------------ | ------------- | ------------- | ------------- |
+ActivitiesApi | addActivity | **POST** /activities | Add a new activity
+ActivitiesApi | deleteActivity | **DELETE** /activities/{id} | Delete an activity
+ActivitiesApi | getActivities | **GET** /activities | Get all activities
+ActivitiesApi | getActivity | **GET** /activities/{id} | Get details of an activity
+ActivitiesApi | updateActivity | **PATCH** /activities/{id} | Update an activity
+BetaApi | deleteInstallment | **DELETE** /deals/{id}/installments/{installment_id} | Delete an installment from a deal
+BetaApi | getInstallments | **GET** /deals/installments | List installments added to a list of deals
+BetaApi | postInstallment | **POST** /deals/{id}/installments | Add an installment to a deal
+BetaApi | updateInstallment | **PATCH** /deals/{id}/installments/{installment_id} | Update an installment added to a deal
+DealsApi | addDeal | **POST** /deals | Add a new deal
+DealsApi | addDealFollower | **POST** /deals/{id}/followers | Add a follower to a deal
+DealsApi | addDealProduct | **POST** /deals/{id}/products | Add a product to a deal
+DealsApi | deleteAdditionalDiscount | **DELETE** /deals/{id}/discounts/{discount_id} | Delete a discount from a deal
+DealsApi | deleteDeal | **DELETE** /deals/{id} | Delete a deal
+DealsApi | deleteDealFollower | **DELETE** /deals/{id}/followers/{follower_id} | Delete a follower from a deal
+DealsApi | deleteDealProduct | **DELETE** /deals/{id}/products/{product_attachment_id} | Delete an attached product from a deal
+DealsApi | deleteInstallment | **DELETE** /deals/{id}/installments/{installment_id} | Delete an installment from a deal
+DealsApi | getAdditionalDiscounts | **GET** /deals/{id}/discounts | List discounts added to a deal
+DealsApi | getDeal | **GET** /deals/{id} | Get details of a deal
+DealsApi | getDealFollowers | **GET** /deals/{id}/followers | List followers of a deal
+DealsApi | getDealFollowersChangelog | **GET** /deals/{id}/followers/changelog | List followers changelog of a deal
+DealsApi | getDealProducts | **GET** /deals/{id}/products | List products attached to a deal
+DealsApi | getDeals | **GET** /deals | Get all deals
+DealsApi | getDealsProducts | **GET** /deals/products | Get deal products of several deals
+DealsApi | getInstallments | **GET** /deals/installments | List installments added to a list of deals
+DealsApi | postAdditionalDiscount | **POST** /deals/{id}/discounts | Add a discount to a deal
+DealsApi | postInstallment | **POST** /deals/{id}/installments | Add an installment to a deal
+DealsApi | searchDeals | **GET** /deals/search | Search deals
+DealsApi | updateAdditionalDiscount | **PATCH** /deals/{id}/discounts/{discount_id} | Update a discount added to a deal
+DealsApi | updateDeal | **PATCH** /deals/{id} | Update a deal
+DealsApi | updateDealProduct | **PATCH** /deals/{id}/products/{product_attachment_id} | Update the product attached to a deal
+DealsApi | updateInstallment | **PATCH** /deals/{id}/installments/{installment_id} | Update an installment added to a deal
+ItemSearchApi | searchItem | **GET** /itemSearch | Perform a search from multiple item types
+ItemSearchApi | searchItemByField | **GET** /itemSearch/field | Perform a search using a specific field from an item type
+LeadsApi | searchLeads | **GET** /leads/search | Search leads
+OrganizationsApi | addOrganization | **POST** /organizations | Add a new organization
+OrganizationsApi | addOrganizationFollower | **POST** /organizations/{id}/followers | Add a follower to an organization
+OrganizationsApi | deleteOrganization | **DELETE** /organizations/{id} | Delete a organization
+OrganizationsApi | deleteOrganizationFollower | **DELETE** /organizations/{id}/followers/{follower_id} | Delete a follower from an organization
+OrganizationsApi | getOrganization | **GET** /organizations/{id} | Get details of a organization
+OrganizationsApi | getOrganizationFollowers | **GET** /organizations/{id}/followers | List followers of an organization
+OrganizationsApi | getOrganizationFollowersChangelog | **GET** /organizations/{id}/followers/changelog | List followers changelog of an organization
+OrganizationsApi | getOrganizations | **GET** /organizations | Get all organizations
+OrganizationsApi | searchOrganization | **GET** /organizations/search | Search organizations
+OrganizationsApi | updateOrganization | **PATCH** /organizations/{id} | Update a organization
+PersonsApi | addPerson | **POST** /persons | Add a new person
+PersonsApi | addPersonFollower | **POST** /persons/{id}/followers | Add a follower to a person
+PersonsApi | deletePerson | **DELETE** /persons/{id} | Delete a person
+PersonsApi | deletePersonFollower | **DELETE** /persons/{id}/followers/{follower_id} | Delete a follower from a person
+PersonsApi | getPerson | **GET** /persons/{id} | Get details of a person
+PersonsApi | getPersonFollowers | **GET** /persons/{id}/followers | List followers of a person
+PersonsApi | getPersonFollowersChangelog | **GET** /persons/{id}/followers/changelog | List followers changelog of a person
+PersonsApi | getPersons | **GET** /persons | Get all persons
+PersonsApi | searchPersons | **GET** /persons/search | Search persons
+PersonsApi | updatePerson | **PATCH** /persons/{id} | Update a person
+PipelinesApi | addPipeline | **POST** /pipelines | Add a new pipeline
+PipelinesApi | deletePipeline | **DELETE** /pipelines/{id} | Delete a pipeline
+PipelinesApi | getPipeline | **GET** /pipelines/{id} | Get one pipeline
+PipelinesApi | getPipelines | **GET** /pipelines | Get all pipelines
+PipelinesApi | updatePipeline | **PATCH** /pipelines/{id} | Update a pipeline
+ProductsApi | addProduct | **POST** /products | Add a product
+ProductsApi | addProductFollower | **POST** /products/{id}/followers | Add a follower to a product
+ProductsApi | addProductVariation | **POST** /products/{id}/variations | Add a product variation
+ProductsApi | deleteProduct | **DELETE** /products/{id} | Delete a product
+ProductsApi | deleteProductFollower | **DELETE** /products/{id}/followers/{follower_id} | Delete a follower from a product
+ProductsApi | deleteProductVariation | **DELETE** /products/{id}/variations/{product_variation_id} | Delete a product variation
+ProductsApi | getProduct | **GET** /products/{id} | Get one product
+ProductsApi | getProductFollowers | **GET** /products/{id}/followers | List followers of a product
+ProductsApi | getProductFollowersChangelog | **GET** /products/{id}/followers/changelog | List followers changelog of a product
+ProductsApi | getProductVariations | **GET** /products/{id}/variations | Get all product variations
+ProductsApi | getProducts | **GET** /products | Get all products
+ProductsApi | searchProducts | **GET** /products/search | Search products
+ProductsApi | updateProduct | **PATCH** /products/{id} | Update a product
+ProductsApi | updateProductVariation | **PATCH** /products/{id}/variations/{product_variation_id} | Update a product variation
+StagesApi | addStage | **POST** /stages | Add a new stage
+StagesApi | deleteStage | **DELETE** /stages/{id} | Delete a stage
+StagesApi | getStage | **GET** /stages/{id} | Get one stage
+StagesApi | getStages | **GET** /stages | Get all stages
+StagesApi | updateStage | **PATCH** /stages/{id} | Update stage details
+UsersApi | getUserFollowers | **GET** /users/{id}/followers | List followers of a user
+
+## Documentation for Authorization
+
+
+
+### api_key
+
+
+- **Type**: API key
+- **API key parameter name**: api_token
+- **Location**: URL query string
+
+
+
+### basic_authentication
+
+- **Type**: HTTP basic authentication
+
+
+
+### oauth2
+
+
+- **Type**: OAuth
+- **Flow**: accessCode
+- **Authorization URL**: https://oauth.pipedrive.com/oauth/authorize
+- **Scopes**: 
+   - base: Read settings of the authorized user and currencies in an account
+ - deals:read: Read most of the data about deals and related entities - deal fields, products, followers, participants; all notes, files, filters, pipelines, stages, and statistics. Does not include access to activities (except the last and next activity related to a deal)
+ - deals:full: Create, read, update and delete deals, its participants and followers; all files, notes, and filters. It also includes read access to deal fields, pipelines, stages, and statistics. Does not include access to activities (except the last and next activity related to a deal)
+ - mail:read: Read mail threads and messages
+ - mail:full: Read, update and delete mail threads. Also grants read access to mail messages
+ - activities:read: Read activities, its fields and types; all files and filters
+ - activities:full: Create, read, update and delete activities and all files and filters. Also includes read access to activity fields and types
+ - contacts:read: Read the data about persons and organizations, their related fields and followers; also all notes, files, filters
+ - contacts:full: Create, read, update and delete persons and organizations and their followers; all notes, files, filters. Also grants read access to contacts-related fields
+ - products:read: Read products, its fields, files, followers and products connected to a deal
+ - products:full: Create, read, update and delete products and its fields; add products to deals
+ - projects:read: Read projects and its fields, tasks and project templates
+ - projects:full: Create, read, update and delete projects and its fields; add projects templates and project related tasks
+ - users:read: Read data about users (people with access to a Pipedrive account), their permissions, roles and followers
+ - recents:read: Read all recent changes occurred in an account. Includes data about activities, activity types, deals, files, filters, notes, persons, organizations, pipelines, stages, products and users
+ - search:read: Search across the account for deals, persons, organizations, files and products, and see details about the returned results
+ - admin: Allows to do many things that an administrator can do in a Pipedrive company account - create, read, update and delete pipelines and its stages; deal, person and organization fields; activity types; users and permissions, etc. It also allows the app to create webhooks and fetch and delete webhooks that are created by the app
+ - leads:read: Read data about leads and lead labels
+ - leads:full: Create, read, update and delete leads and lead labels
+ - phone-integration: Enables advanced call integration features like logging call duration and other metadata, and play call recordings inside Pipedrive
+ - goals:read: Read data on all goals
+ - goals:full: Create, read, update and delete goals
+ - video-calls: Allows application to register as a video call integration provider and create conference links
+ - messengers-integration: Allows application to register as a messengers integration provider and allows them to deliver incoming messages and their statuses

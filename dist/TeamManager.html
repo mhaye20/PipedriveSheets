@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <?!= HtmlService.createHtmlOutput('<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Material+Icons&display=swap" rel="stylesheet">').getContent(); ?>
+    <style>
+      <?!= TeamManagerUI.getStyles(); ?>
+    </style>
+  </head>
+  <body>
+    <div id="main-container">
+      <div class="header">
+        <h3><?= hasTeam ? 'Team Management' : 'Team Access' ?></h3>
+        
+        <div class="user-info">
+          <i class="material-icons">account_circle</i>
+          <div>Current user: <strong><?= userEmail ?></strong></div>
+        </div>
+      </div>
+      
+      <div id="status-container"></div>
+      
+      <!-- Tab Navigation - Only show when there are multiple tabs (non-team users who are script owners) -->
+      <? if (!hasTeam && isScriptOwner) { ?>
+      <div class="tab-container">
+        <div class="tabs">
+          <div class="tab <?= initialTab === 'join' ? 'active' : '' ?>" data-tab="join">
+            <i class="material-icons">group_add</i>
+            <span>Join Team</span>
+          </div>
+          <div class="tab <?= initialTab === 'create' ? 'active' : '' ?>" data-tab="create">
+            <i class="material-icons">add_circle</i>
+            <span>Create Team</span>
+          </div>
+        </div>
+      <? } else { ?>
+      <div class="tab-container">
+      <? } ?>  
+        
+        <? if (!hasTeam) { ?>
+        <!-- Join Team Tab -->
+        <div id="join-tab" class="tab-content <?= (!isScriptOwner || initialTab === 'join') ? 'active' : '' ?>">
+          <div class="card">
+            <div class="card-header">
+              <i class="material-icons">group_add</i>
+              <h4>Join an Existing Team</h4>
+            </div>
+            <div class="card-body">
+              <p>Enter the team ID provided by your team administrator:</p>
+              <div class="form-group">
+                <div class="input-container">
+                  <i class="material-icons input-icon">key</i>
+                  <input type="text" id="team-id-input" placeholder="Team ID">
+                </div>
+              </div>
+              <div class="button-container">
+                <button id="join-team-button" class="button-primary">
+                  <span class="button-text">Join Team</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <? if (isScriptOwner) { ?>
+        <!-- Create Team Tab -->
+        <div id="create-tab" class="tab-content <?= initialTab === 'create' ? 'active' : '' ?>">
+          <div class="card">
+            <div class="card-header">
+              <i class="material-icons">add_circle</i>
+              <h4>Create a New Team</h4>
+            </div>
+            <div class="card-body">
+              <p>Create a new team to share Pipedrive configuration with your colleagues. The team plan allows up to 5 users total (you + 4 team members).</p>
+              <div class="form-group">
+                <div class="input-container">
+                  <i class="material-icons input-icon">groups</i>
+                  <input type="text" id="team-name-input" placeholder="Team Name">
+                </div>
+              </div>
+              <div class="button-container">
+                <button id="create-team-button" class="button-primary">
+                  <span class="button-text">Create Team</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <? } ?>
+        <? } else { ?>
+        
+        <!-- Manage Team Tab -->
+        <div id="manage-tab" class="tab-content active">
+          <div class="card team-dashboard">
+            <div class="card-header">
+              <div class="team-name-container">
+                <i class="material-icons">groups</i>
+                <h4><?= teamName ?></h4>
+              </div>
+              <div class="badge <?= userRole === 'Admin' ? 'admin' : '' ?>">
+                <i class="material-icons"><?= userRole === 'Admin' ? 'admin_panel_settings' : 'person' ?></i>
+                <span><?= userRole ?></span>
+              </div>
+            </div>
+            
+            <div class="card-body">
+              <div class="team-id-section">
+                <div class="label">Team ID:</div>
+                <div class="team-id-display-container">
+                  <span id="team-id-display"><?= teamId ?></span>
+                  <button id="copy-team-id" class="icon-button" title="Copy Team ID">
+                    <i class="material-icons">content_copy</i>
+                  </button>
+                </div>
+                <div class="tooltip">Share this ID with team members you want to invite</div>
+              </div>
+              
+              <!-- Team Members Section -->
+              <div class="section">
+                <div class="section-header">
+                  <i class="material-icons">people</i>
+                  <h5>Team Members</h5>
+                  <span class="member-count"><?= teamMembers.length ?>/5</span>
+                </div>
+                <div class="team-members">
+                  <? for (var i = 0; i < teamMembers.length; i++) { ?>
+                  <? var member = teamMembers[i]; ?>
+                  <div class="team-member">
+                    <div class="member-info">
+                      <i class="material-icons"><?= member.role === 'Admin' ? 'admin_panel_settings' : 'person' ?></i>
+                      <div>
+                        <div class="member-email"><?= member.email ?></div>
+                        <div class="badge <?= member.role === 'Admin' ? 'admin' : '' ?>"><?= member.role ?></div>
+                        <? if (member.email === teamCreator) { ?>
+                        <div class="badge owner">Owner</div>
+                        <? } ?>
+                      </div>
+                    </div>
+                    <? if (userRole === 'Admin' && member.email !== userEmail) { ?>
+                    <div class="member-actions">
+                      <? if (member.role !== 'Admin') { ?>
+                      <button class="icon-button promote-member" data-email="<?= member.email ?>" title="Make Admin">
+                        <i class="material-icons">upgrade</i>
+                      </button>
+                      <? } else if (member.email !== teamCreator) { ?>
+                      <!-- Only show demote button for admins who are not the team creator (script owner) -->
+                      <button class="icon-button demote-member" data-email="<?= member.email ?>" title="Remove Admin">
+                        <i class="material-icons">remove_moderator</i>
+                      </button>
+                      <? } ?>
+                      <button class="icon-button remove-member" data-email="<?= member.email ?>" title="Remove Member">
+                        <i class="material-icons">person_remove</i>
+                      </button>
+                    </div>
+                    <? } ?>
+                  </div>
+                  <? } ?>
+                </div>
+              </div>
+              
+              <? if (userRole === 'Admin' && teamMembers.length < 5) { ?>
+              <!-- Add Member Form -->
+              <div class="section">
+                <div class="section-header">
+                  <i class="material-icons">person_add</i>
+                  <h5>Add Team Member</h5>
+                </div>
+                <div class="add-member-form">
+                  <div class="input-container">
+                    <i class="material-icons input-icon">email</i>
+                    <input type="email" id="new-member-email" placeholder="Email Address">
+                  </div>
+                  <button id="add-member-button" class="button-primary">
+                    <i class="material-icons">add</i>
+                    <span class="button-text">Add</span>
+                  </button>
+                </div>
+              </div>
+              <? } else if (userRole === 'Admin' && teamMembers.length >= 5) { ?>
+              <!-- Member limit reached message -->
+              <div class="section">
+                <div class="member-limit-message">
+                  <i class="material-icons">info</i>
+                  <span>Your team has reached the maximum of 5 members allowed in the team plan.</span>
+                </div>
+              </div>
+              <? } ?>
+              
+              <!-- Team Actions -->
+              <div class="team-actions">
+                <? if (userEmail !== teamCreator) { ?>
+                <!-- Only show Leave Team button for non-script owners -->
+                <button id="leave-team-button" class="button-danger">
+                  <i class="material-icons">exit_to_app</i>
+                  <span class="button-text">Leave Team</span>
+                </button>
+                <? } ?>
+                
+                <? if (userEmail === teamCreator) { ?>
+                <!-- Only show Rename Team button for script owner -->
+                <button id="rename-team-button" class="button-primary">
+                  <i class="material-icons">edit</i>
+                  <span class="button-text">Rename Team</span>
+                </button>
+                <? } ?>
+                
+                <? if (userRole === 'Admin') { ?>
+                <button id="delete-team-button" class="button-danger">
+                  <i class="material-icons">delete</i>
+                  <span class="button-text">Delete Team</span>
+                </button>
+                <? } ?>
+              </div>
+            </div>
+          </div>
+        </div>
+        <? } ?>
+      </div>
+      
+      <div class="footer">
+        <button id="close-button" class="button-secondary">
+          <i class="material-icons">close</i>
+          <span>Close</span>
+        </button>
+      </div>
+    </div>
+    
+    <div id="loading-container" class="loading hidden">
+      <div class="spinner-container">
+        <div class="spinner"></div>
+      </div>
+    </div>
+    
+    <script>
+      <?!= TeamManagerUI.getScripts(); ?>
+    </script>
+  </body>
+</html> 
