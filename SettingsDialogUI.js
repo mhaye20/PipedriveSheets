@@ -2215,44 +2215,83 @@ function getColumnsDataForEntity(entityType, sheetName) {
           break;
       }
       
+      // Pre-process data to find date/time range custom fields
+      const dateTimeRangeFields = new Map();
       if (sampleData && sampleData.length > 0) {
-        Logger.log(`Got sample data for ${entityType}, extracting columns`);
-        // Extract column information from the sample data
-        availableColumns = extractColumnsFromData(sampleData[0], entityType);
-      } else {
-        // If no sample data, provide at least the ID column and some basic fields
-        Logger.log(`No sample data found for ${entityType}, using fallback columns`);
-        availableColumns = getFallbackColumns(entityType);
-      }
-      
-      // IMPORTANT: Apply our improved column naming algorithm
-      Logger.log(`Improving column names for ${availableColumns.length} available columns...`);
-      availableColumns = improveColumnNamesForUI(availableColumns, entityType);
-      
-      // Also apply improved naming to selected columns
-      if (selectedColumns && selectedColumns.length > 0) {
-        Logger.log(`Improving column names for ${selectedColumns.length} selected columns...`);
-        selectedColumns.forEach(column => {
-          // Only update if no custom name is set
-          if (!column.customName) {
-            column.name = formatColumnName(column.key);
+        const item = sampleData[0];
+        // Look for fields with _until suffix which indicates a date/time range field
+        for (const key in item) {
+          if (key.match(/[a-f0-9]{20,}_until$/i)) {
+            // This is an end date/time field
+            const baseKey = key.replace(/_until$/, '');
+            if (item[baseKey] !== undefined) {
+              // We found both the start and end fields
+              dateTimeRangeFields.set(baseKey, {
+                startKey: baseKey,
+                endKey: key
+              });
+            }
           }
-        });
+        }
       }
       
-    } catch (e) {
-      Logger.log(`Error getting sample data: ${e.message}`);
-      // Provide fallback columns if there's an error
-      availableColumns = getFallbackColumns(entityType);
+      // Extract available columns from sample data
+      if (sampleData && sampleData.length > 0) {
+        availableColumns = extractColumnsFromData(sampleData[0], entityType);
+        
+        // Post-process columns for date/time range fields
+        if (dateTimeRangeFields.size > 0) {
+          // Create a map of available columns by key for easy lookup
+          const columnsMap = new Map();
+          availableColumns.forEach(col => {
+            columnsMap.set(col.key, col);
+          });
+          
+          // Add missing Start fields for date/time ranges
+          dateTimeRangeFields.forEach((range, baseKey) => {
+            // If we already have the base field but not explicitly as a Start field
+            if (columnsMap.has(baseKey)) {
+              // Create an explicit Start field
+              const baseCol = columnsMap.get(baseKey);
+              const startCol = {
+                key: baseKey,
+                name: `${baseCol.name} - Start`,
+                isNested: false,
+                parentKey: null,
+                category: baseCol.category,
+                readOnly: baseCol.readOnly
+              };
+              
+              // Update the base field's name if it doesn't already indicate it's the Start field
+              if (!baseCol.name.includes('Start')) {
+                baseCol.name = startCol.name;
+              }
+            }
+          });
+        }
+        
+        // Improve column names for the UI
+        availableColumns = improveColumnNamesForUI(availableColumns, entityType);
+      }
+    } catch (error) {
+      Logger.log(`Error getting available columns: ${error.message}`);
+      Logger.log(`Stack: ${error.stack}`);
+      throw error;
     }
     
     return {
-      availableColumns: availableColumns,
-      selectedColumns: selectedColumns
+      availableColumns,
+      selectedColumns
     };
-  } catch (e) {
-    Logger.log(`Error in getColumnsDataForEntity: ${e.message}`);
-    throw new Error(`Failed to get column data: ${e.message}`);
+  } catch (error) {
+    Logger.log(`Error in getColumnsDataForEntity: ${error.message}`);
+    Logger.log(`Stack: ${error.stack}`);
+    
+    // Return a minimal set of columns as fallback
+    return {
+      availableColumns: getFallbackColumns(entityType),
+      selectedColumns: []
+    };
   }
 }
 
@@ -2272,8 +2311,13 @@ function extractColumnsFromData(data, entityType) {
     
     // Helper function to add a column with category
     function addColumn(key, name, isNested = false, parentKey = null, category = mainCategoryName, readOnly = false, required = false) {
+      // Skip specific fields that shouldn't be shown
+      if (shouldSkipField(key, processedKeys)) {
+        return;
+      }
+      
       if (!processedKeys.has(key)) {
-    columns.push({
+        columns.push({
           key, 
           name, 
           isNested, 
@@ -2284,6 +2328,50 @@ function extractColumnsFromData(data, entityType) {
         });
         processedKeys.add(key);
       }
+    }
+    
+    // Helper to determine if a field should be skipped
+    function shouldSkipField(key, processedKeys) {
+      if (processedKeys.has(key)) return true;
+      
+      // Skip timezone fields which are not useful on their own
+      if (key.includes('timezone') || key.endsWith('.timezone') || 
+          key.includes('timezone_id') || key.endsWith('_timezone_id')) {
+        return true;
+      }
+      
+      // Skip currency fields which are part of money fields
+      if (key.endsWith('.currency') || key.endsWith('_currency')) {
+        return true;
+      }
+      
+      // Skip "complete_address" or "formatted_address" in address components
+      if (key.includes('complete_address') || key.includes('formatted_address') || 
+          key.includes('_formatted_address') || key.includes('_complete') || 
+          key.includes('.complete') || key.includes('.formatted')) {
+        return true;
+      }
+      
+      // Skip duplicate admin_area_level fields - we'll add them with clear naming
+      if ((key.includes('admin_area_level') || key.includes('_admin_area_level')) && 
+          !key.includes('admin_area_level_1') && !key.includes('admin_area_level_2')) {
+        return true;
+      }
+      
+      // Skip "End Time/Date" fields since we want to show both start and end together
+      // But only skip them if they're part of a date/time range that we're handling specially
+      if ((key.includes('_range') || key.includes('date_range') || key.includes('time_range')) &&
+          (key.endsWith('.end') || key.endsWith('_end') || key.endsWith('.until') || key.endsWith('_until'))) {
+        // Instead, ensure we have the parent field which contains both start and end
+        const parentField = key.split(/[._](?:end|until)/)[0];
+        if (!processedKeys.has(parentField)) {
+          return false; // Let it through if we need to process the parent
+        } else {
+          return true; // Skip if parent is already processed
+        }
+      }
+      
+      return false;
     }
 
     // 1. Always include the ID column
@@ -2350,6 +2438,12 @@ function extractColumnsFromData(data, entityType) {
       if (processedKeys.has(key)) continue; // Already added as top-level (e.g., custom field hash)
 
       if (typeof value === 'object' && value !== null) {
+        // Special handling for complex field types
+        // For date/time range fields, ensure we add both start and end fields
+        const isDateRange = key.includes('date_range') || key.includes('time_range');
+        const isMoneyField = key.includes('money') && typeof value === 'object' && value.currency !== undefined;
+        const isAddressField = key.includes('address') && typeof value === 'object';
+        
         // Determine category based on the parent key
         let category = metadataCategory; // Default
         let relatedEntityType = null;
@@ -2368,9 +2462,146 @@ function extractColumnsFromData(data, entityType) {
         if (key.endsWith('_id') && !key.startsWith('next_') && !key.startsWith('last_')) {
             addColumn(key, formatColumnName(key), false, null, category); 
         }
-
-        // Recursively process properties within the object
-        processNestedObject(value, key, category, relatedEntityType, addColumn, 1);
+        
+        // For date/time range fields, ensure we add the parent field
+        if (isDateRange) {
+            // Add the parent field
+            addColumn(key, formatColumnName(key), false, null, category);
+            
+            // Add start field if it exists
+            if (value.start !== undefined) {
+                const startPath = `${key}.start`;
+                addColumn(startPath, `${formatColumnName(key)} - Start`, true, key, category);
+            }
+            
+            // Add end field if it exists
+            if (value.end !== undefined) {
+                const endPath = `${key}.end`;
+                addColumn(endPath, `${formatColumnName(key)} - End`, true, key, category);
+            }
+        }
+        // For money fields, only add the amount value but not the currency
+        else if (isMoneyField) {
+            // Add the parent field for the money field
+            addColumn(key, formatColumnName(key), false, null, category);
+            
+            // Only add the amount component
+            if (value.amount !== undefined) {
+                const amountPath = `${key}.amount`;
+                addColumn(amountPath, `${formatColumnName(key)} - Amount`, true, key, category);
+            }
+        }
+        // For address fields, properly handle all components
+        else if (isAddressField) {
+            // Add the parent address field
+            addColumn(key, formatColumnName(key), false, null, category);
+            
+            // Add specific address components with clear names
+            const addressComponents = [
+                { key: 'street_number', name: 'Street Number' },
+                { key: 'route', name: 'Street Name' },
+                { key: 'sublocality', name: 'District' },
+                { key: 'locality', name: 'City' },
+                { key: 'admin_area_level_1', name: 'State/Province' },
+                { key: 'admin_area_level_2', name: 'County' },
+                { key: 'country', name: 'Country' },
+                { key: 'postal_code', name: 'ZIP/Postal Code' },
+                { key: 'subpremise', name: 'Suite/Apt' },
+            ];
+            
+            // Add each address component with clear naming
+            for (const component of addressComponents) {
+                if (value[component.key] !== undefined || 
+                    value['_' + component.key] !== undefined ||
+                    value[component.key + '_'] !== undefined) {
+                    const compPath = `${key}.${component.key}`;
+                    addColumn(compPath, `${formatColumnName(key)} - ${component.name}`, true, key, category);
+                }
+            }
+            
+            // Special handling for custom field address components with key suffix naming
+            if (key.match(/[a-f0-9]{20,}/i)) {
+                // This is a custom field with hash ID format
+                const hashId = key;
+                
+                // Look for components that follow the pattern hashId_component_name
+                for (const component of addressComponents) {
+                    const customCompKey = `${hashId}_${component.key}`;
+                    if (data[customCompKey] !== undefined) {
+                        addColumn(customCompKey, `${formatColumnName(key)} - ${component.name}`, true, key, category);
+                    }
+                }
+            }
+        }
+        // For date/time range fields, ensure we add both start and end fields
+        else if (isDateRange) {
+            // Add the parent field
+            addColumn(key, formatColumnName(key), false, null, category);
+            
+            // For date/time range fields, properly add start and end fields
+            let hasStart = false;
+            let hasEnd = false;
+            
+            // Check if this is a custom field with component fields in main data structure
+            if (key.match(/[a-f0-9]{20,}/i)) {
+                // Custom field - look for fields like hashId_until
+                const hashId = key;
+                
+                // Look for _until field (used for end date/time)
+                const untilKey = `${hashId}_until`;
+                if (data[untilKey] !== undefined) {
+                    hasEnd = true;
+                    addColumn(untilKey, `${formatColumnName(key)} - End`, true, key, category);
+                }
+                
+                // The main field itself is the start
+                hasStart = true;
+                addColumn(key, `${formatColumnName(key)} - Start`, false, null, category);
+            }
+            // For standard nested objects with start/end properties
+            else {
+                // Add start field if it exists
+                if (value.start !== undefined) {
+                    hasStart = true;
+                    const startPath = `${key}.start`;
+                    addColumn(startPath, `${formatColumnName(key)} - Start`, true, key, category);
+                }
+                
+                // Add end field if it exists
+                if (value.end !== undefined) {
+                    hasEnd = true;
+                    const endPath = `${key}.end`;
+                    addColumn(endPath, `${formatColumnName(key)} - End`, true, key, category);
+                }
+                
+                // Check for until field (alternate to end)
+                if (value.until !== undefined) {
+                    hasEnd = true;
+                    const untilPath = `${key}.until`;
+                    addColumn(untilPath, `${formatColumnName(key)} - End`, true, key, category);
+                }
+            }
+            
+            // If we only found end but not start, make sure to add start
+            if (hasEnd && !hasStart) {
+                // For date ranges, the main field itself is often the start date
+                addColumn(key, `${formatColumnName(key)} - Start`, false, null, category);
+            }
+            
+            // If we only found start but not end, add a placeholder for end
+            if (hasStart && !hasEnd && key.match(/[a-f0-9]{20,}/i)) {
+                // For custom fields, look for the _until variant
+                const untilKey = `${key}_until`;
+                if (data[untilKey] !== undefined) {
+                    addColumn(untilKey, `${formatColumnName(key)} - End`, true, key, category);
+                }
+            }
+        }
+        // Standard nested object processing for other field types
+        else {
+            // Recursively process properties within the object
+            processNestedObject(value, key, category, relatedEntityType, addColumn, 1);
+        }
       }
     }
     
@@ -2426,10 +2657,23 @@ function processNestedObject(obj, parentKey, parentCategory, relatedEntityType, 
 
    // Special check for Owner fields
    const isOwnerField = parentKey === 'owner_id';
+   
+   // Special handling for complex field types
+   const isDateRange = parentKey.includes('date_range') || parentKey.includes('time_range');
+   const isMoneyField = parentKey.includes('money') && obj && obj.currency !== undefined;
+   const isAddressField = parentKey.includes('address');
+   
+   // Skip processing for fields we handle specially in the extractColumnsFromData function
+   if (isDateRange || isMoneyField || isAddressField) {
+     return; // Skip processing as these are handled in the parent function
+   }
 
    for (const key in obj) {
      if (key === 'id' && parentKey.endsWith('_id')) continue; // Avoid adding parent_id.id
      if (key.startsWith('_')) continue; // Skip internal props
+     if (key === 'timezone' || key === 'currency') continue; // Skip timezone/currency fields
+     if (key === 'complete_address' || key === 'formatted_address') continue; // Skip duplicates
+     if (key === 'admin_area_level' && !key.match(/admin_area_level_[12]/)) continue; // Skip ambiguous admin levels
      
      const value = obj[key];
      const currentPath = `${parentKey}.${key}`;
@@ -2815,37 +3059,184 @@ function improveColumnNamesForUI(columns, entityType) {
   try {
     Logger.log(`Improving column names for ${columns.length} columns of type ${entityType}`);
     
-    // Ensure the cache is properly initialized first for the given entity type
-    initializeCustomFieldsCache(entityType);
+    // First pass: identify date/time range fields
+    const dateRangeFields = new Map();
     
-    // Process each column
+    columns.forEach(column => {
+      // Look for date/time range fields that might be part of a pair
+      if (column.key.match(/[a-f0-9]{20,}$/i) && // Custom field hash
+          (column.name.toLowerCase().includes('date range') || 
+           column.name.toLowerCase().includes('time range'))) {
+        // This might be a date/time range start field
+        dateRangeFields.set(column.key, {
+          startCol: column,
+          endCol: null
+        });
+      }
+      else if (column.key.match(/[a-f0-9]{20,}_until$/i)) {
+        // This is an end field - find its corresponding start field
+        const baseKey = column.key.replace(/_until$/, '');
+        if (dateRangeFields.has(baseKey)) {
+          // Link it with its start field
+          const pair = dateRangeFields.get(baseKey);
+          pair.endCol = column;
+        }
+      }
+    });
+    
+    // Second pass: improve column names
     return columns.map(column => {
       // Skip if it already has a custom name set
       if (column.customName) {
         return column;
       }
       
-      // Rely entirely on formatColumnName for the correct name
-      column.name = formatColumnName(column.key);
-      
-      // For nested fields
-      if (column.isNested) {
-        // Update name to reflect parent relationship
-        const parentKey = column.parentKey;
-        
-        if (parentKey) { // Check if parentKey is valid
-        let parentName = '';
-        
-          // Get parent name using formatColumnName to ensure consistency
-          parentName = formatColumnName(parentKey);
-          
-          // Avoid redundant parent name prefixes if already present
-          if (!column.name.startsWith(parentName)) {
-          column.name = `${parentName} - ${column.name}`;
+      // Special handling for date/time range start fields
+      if (dateRangeFields.has(column.key)) {
+        const pair = dateRangeFields.get(column.key);
+        if (pair.startCol === column) {
+          // This is a start field - make sure it's labeled as such
+          if (!column.name.includes('Start')) {
+            column.name = `${formatColumnName(column.key)} - Start`;
           }
+        }
+      }
+      
+      // Special handling for date/time range end fields
+      else if (column.key.match(/[a-f0-9]{20,}_until$/i)) {
+        const baseKey = column.key.replace(/_until$/, '');
+        if (dateRangeFields.has(baseKey)) {
+          // This is an end field linked to a known start field
+          const startField = dateRangeFields.get(baseKey).startCol;
+          const baseName = startField.name.replace(/ - Start$/, '');
+          column.name = `${baseName} - End`;
         } else {
-          // If parent key exists but we couldn't format it, use a fallback
-          column.name = `${formatBasicName(parentKey)} - ${column.name}`;
+          // End field without a linked start field
+          column.name = `${formatColumnName(baseKey)} - End`;
+        }
+      }
+      
+      // Special handling for date/time range custom fields
+      else if (column.key.match(/[a-f0-9]{20,}/i) && column.key.match(/_until$/i)) {
+        // This is a custom field with _until suffix (end date/time)
+        const baseKey = column.key.replace(/_until$/, '');
+        const parentName = formatColumnName(baseKey);
+        column.name = `${parentName} - End`;
+      }
+      // Special handling for date/time range fields with start/end components
+      else if ((column.key.includes('date_range') || column.key.includes('time_range')) && 
+               column.key.match(/\.(start|end)$/)) {
+        const isStart = column.key.endsWith('.start');
+        const baseKey = column.key.replace(/\.(start|end)$/, '');
+        const parentName = formatColumnName(baseKey);
+        column.name = `${parentName} - ${isStart ? 'Start' : 'End'}`;
+      }
+      
+      // Special handling for address components
+      else if (column.key.includes('address.') && column.isNested) {
+        const parentName = formatColumnName(column.parentKey);
+        
+        // Map address components to user-friendly names
+        const addressComponentNames = {
+          'street_number': 'Street Number',
+          'route': 'Street Name',
+          'sublocality': 'District',
+          'locality': 'City',
+          'admin_area_level_1': 'State/Province',
+          'admin_area_level_2': 'County',
+          'country': 'Country',
+          'postal_code': 'ZIP/Postal Code',
+          'subpremise': 'Suite/Apt'
+        };
+        
+        // Extract the component name from the key
+        const parts = column.key.split('.');
+        const component = parts[parts.length - 1];
+        
+        if (addressComponentNames[component]) {
+          column.name = `${parentName} - ${addressComponentNames[component]}`;
+        }
+      }
+      
+      // Special handling for custom field address components
+      else if (column.key.match(/[a-f0-9]{20,}_admin_area_level_1/i)) {
+        // This is a custom field admin_area_level_1 (state/province)
+        const baseKey = column.key.replace(/_admin_area_level_1$/, '');
+        const parentName = formatColumnName(baseKey);
+        column.name = `${parentName} - State/Province`;
+      }
+      else if (column.key.match(/[a-f0-9]{20,}_admin_area_level_2/i)) {
+        // This is a custom field admin_area_level_2 (county)
+        const baseKey = column.key.replace(/_admin_area_level_2$/, '');
+        const parentName = formatColumnName(baseKey);
+        column.name = `${parentName} - County`;
+      }
+      else if (column.key.match(/[a-f0-9]{20,}_locality/i)) {
+        // This is a custom field locality (city)
+        const baseKey = column.key.replace(/_locality$/, '');
+        const parentName = formatColumnName(baseKey);
+        column.name = `${parentName} - City`;
+      }
+      else if (column.key.match(/[a-f0-9]{20,}_country/i)) {
+        // This is a custom field country
+        const baseKey = column.key.replace(/_country$/, '');
+        const parentName = formatColumnName(baseKey);
+        column.name = `${parentName} - Country`;
+      }
+      else if (column.key.match(/[a-f0-9]{20,}_postal_code/i)) {
+        // This is a custom field postal_code
+        const baseKey = column.key.replace(/_postal_code$/, '');
+        const parentName = formatColumnName(baseKey);
+        column.name = `${parentName} - ZIP/Postal Code`;
+      }
+      else if (column.key.match(/[a-f0-9]{20,}_route/i)) {
+        // This is a custom field route (street name)
+        const baseKey = column.key.replace(/_route$/, '');
+        const parentName = formatColumnName(baseKey);
+        column.name = `${parentName} - Street Name`;
+      }
+      else if (column.key.match(/[a-f0-9]{20,}_street_number/i)) {
+        // This is a custom field street_number
+        const baseKey = column.key.replace(/_street_number$/, '');
+        const parentName = formatColumnName(baseKey);
+        column.name = `${parentName} - Street Number`;
+      }
+      else if (column.key.match(/[a-f0-9]{20,}_sublocality/i)) {
+        // This is a custom field sublocality (district)
+        const baseKey = column.key.replace(/_sublocality$/, '');
+        const parentName = formatColumnName(baseKey);
+        column.name = `${parentName} - District`;
+      }
+      else if (column.key.match(/[a-f0-9]{20,}_subpremise/i)) {
+        // This is a custom field subpremise (suite/apt)
+        const baseKey = column.key.replace(/_subpremise$/, '');
+        const parentName = formatColumnName(baseKey);
+        column.name = `${parentName} - Suite/Apt`;
+      }
+      // Default handling for regular columns
+      else {
+        // Rely entirely on formatColumnName for the correct name
+        column.name = formatColumnName(column.key);
+        
+        // For nested fields (not already handled by special cases)
+        if (column.isNested) {
+          // Update name to reflect parent relationship
+          const parentKey = column.parentKey;
+          
+          if (parentKey) { // Check if parentKey is valid
+            let parentName = '';
+          
+            // Get parent name using formatColumnName to ensure consistency
+            parentName = formatColumnName(parentKey);
+            
+            // Avoid redundant parent name prefixes if already present
+            if (!column.name.startsWith(parentName)) {
+              column.name = `${parentName} - ${column.name}`;
+            }
+          } else {
+            // If parent key exists but we couldn't format it, use a fallback
+            column.name = `${formatBasicName(parentKey)} - ${column.name}`;
+          }
         }
       }
       
