@@ -3556,211 +3556,60 @@ async function pushChangesToPipedrive(
                     const value = payloadToSend.custom_fields[key];
 
                     // Special handling for address objects
-                    if (value && typeof value === 'object' &&
-                      (value.locality || value.route || value.street_number || value.postal_code)) {
+if (value && typeof value === 'object' &&
+  (value.locality || value.route || value.street_number || value.postal_code)) {
 
-                      // Look up the current address data in Pipedrive to preserve existing components
-                      let currentAddressComponents = {};
-                      try {
-                        // Get the deal's current data from Pipedrive
-                        const dealId = payloadToSend.id; // Make sure we have a valid ID
+  // Fetch the current address object using getCurrentAddressData
+  let currentAddress = {};
+  try {
+    currentAddress = getCurrentAddressData('deals', rowData.id, key) || {};
+    Logger.log(`Fetched original address object for merging: ${JSON.stringify(currentAddress)}`);
+  } catch (e) {
+    Logger.log(`Error fetching original address object: ${e.message}`);
+  }
 
-                        Logger.log(`Fetching current deal data for ID ${dealId} to preserve address components`);
+  // Merge updated components into the original address object
+  const mergedAddress = { ...currentAddress, ...value };
 
-                        // Use the existing token and subdomain
-                        const dealUrl = `https://${subdomain}.pipedrive.com/api/v1/deals/${dealId}?api_token=${encodeURIComponent(pipedriveToken)}`;
-                        const response = UrlFetchApp.fetch(dealUrl, {
-                          muteHttpExceptions: true
-                        });
-                        const dealData = JSON.parse(response.getContentText());
+  // Rebuild the full address string from all components
+  const addressParts = [];
+  if (mergedAddress.street_number) addressParts.push(mergedAddress.street_number);
+  if (mergedAddress.route) {
+    if (addressParts.length > 0) {
+      addressParts[0] = addressParts[0] + " " + mergedAddress.route;
+    } else {
+      addressParts.push(mergedAddress.route);
+    }
+  }
+  if (mergedAddress.locality) addressParts.push(mergedAddress.locality);
+  if (mergedAddress.admin_area_level_1) addressParts.push(mergedAddress.admin_area_level_1);
+  if (mergedAddress.postal_code) addressParts.push(mergedAddress.postal_code);
+  // Optionally add more components (country, etc.) as needed
 
-                        if (dealData && dealData.success && dealData.data) {
-                          // Capture existing address components
-                          if (dealData.data[`${key}_admin_area_level_1`]) {
-                            currentAddressComponents.admin_area_level_1 = dealData.data[`${key}_admin_area_level_1`];
-                          }
-                          if (dealData.data[`${key}_country`]) {
-                            currentAddressComponents.country = dealData.data[`${key}_country`];
-                          }
+  mergedAddress.value = addressParts.join(', ');
 
-                          Logger.log(`Found existing address components: ${JSON.stringify(currentAddressComponents)}`);
-                        }
-                      } catch (e) {
-                        Logger.log(`Error fetching current address data: ${e.message}`);
-                        // Continue with what we have
-                      }
+  // Set merged address to the payload in all required places
+  finalPayload[key] = mergedAddress.value;
+  if (!finalPayload.custom_fields) finalPayload.custom_fields = {};
+  finalPayload.custom_fields[key] = { ...mergedAddress };
 
-                      // Extract state from original value string if available
-                      const originalValue = value.value;
-                      if (originalValue && typeof originalValue === 'string') {
-                        Logger.log(`Checking original value for components: ${originalValue}`);
+  // Add individual components as separate fields if required by Pipedrive
+  if (mergedAddress.street_number) finalPayload[`${key}_street_number`] = mergedAddress.street_number;
+  if (mergedAddress.route) finalPayload[`${key}_route`] = mergedAddress.route;
+  if (mergedAddress.locality) finalPayload[`${key}_locality`] = mergedAddress.locality;
+  if (mergedAddress.postal_code) finalPayload[`${key}_postal_code`] = mergedAddress.postal_code;
+  if (mergedAddress.admin_area_level_1) finalPayload[`${key}_admin_area_level_1`] = mergedAddress.admin_area_level_1;
+  if (mergedAddress.admin_area_level_2) finalPayload[`${key}_admin_area_level_2`] = mergedAddress.admin_area_level_2;
+  if (mergedAddress.country) finalPayload[`${key}_country`] = mergedAddress.country;
+  if (mergedAddress.sublocality) finalPayload[`${key}_sublocality`] = mergedAddress.sublocality;
+  if (mergedAddress.subpremise) finalPayload[`${key}_subpremise`] = mergedAddress.subpremise;
+  if (mergedAddress.formatted_address) finalPayload[`${key}_formatted_address`] = mergedAddress.formatted_address;
 
-                        // Look for "Albany, NY" pattern in the original string
-                        const stateMatch = originalValue.match(/([A-Za-z\s]+),\s+([A-Z]{2})\s+/);
-                        if (stateMatch && stateMatch[2]) {
-                          // This captures the state code (NY)
-                          Logger.log(`Found state in original value: ${stateMatch[2]}`);
-                          value.admin_area_level_1 = stateMatch[2];
-                        }
-                      }
-
-                      Logger.log(`Found address field: ${key} with components: ${JSON.stringify(value)}`);
-
-                      // Look up the current address data in Pipedrive to preserve existing components
-                      try {
-                        // Get the deal's current data from Pipedrive
-                        const dealId = payloadToSend.id;
-
-                        Logger.log(`Fetching current deal data for ID ${dealId} to preserve address components`);
-
-                        // Use the existing token and subdomain
-                        const dealUrl = `https://${subdomain}.pipedrive.com/api/v1/deals/${dealId}?api_token=${encodeURIComponent(pipedriveToken)}`;
-                        const response = UrlFetchApp.fetch(dealUrl, {
-                          muteHttpExceptions: true
-                        });
-                        const dealData = JSON.parse(response.getContentText());
-
-                        // Extract all existing components from the API response
-                        const existingComponents = {};
-
-                        if (dealData && dealData.success && dealData.data) {
-                          // First method: Look for explicit component fields
-                          for (const fieldKey in dealData.data) {
-                            if (fieldKey.startsWith(`${key}_`) && fieldKey !== `${key}_formatted_address`) {
-                              const component = fieldKey.replace(`${key}_`, '');
-                              existingComponents[component] = dealData.data[fieldKey];
-                              Logger.log(`Found existing component from direct field - ${component}: ${existingComponents[component]}`);
-                            }
-                          }
-
-                          // Second method: Parse the original address value to extract any missing components
-                          if (dealData.data[key] && typeof dealData.data[key] === 'string') {
-                            const originalAddress = dealData.data[key];
-                            Logger.log(`Original address value: ${originalAddress}`);
-
-                            // Extract state from address formats like "City, ST ZIP" or "City, State ZIP"
-                            if (!existingComponents.admin_area_level_1) {
-                              const stateMatch = originalAddress.match(/,\s+([A-Z]{2}|[A-Za-z\s]+)(?=\s+\d{5})/);
-                              if (stateMatch && stateMatch[1]) {
-                                existingComponents.admin_area_level_1 = stateMatch[1].trim();
-                                Logger.log(`Extracted state from original address: ${existingComponents.admin_area_level_1}`);
-                              }
-                            }
-
-                            // Extract country if it appears at the end
-                            if (!existingComponents.country) {
-                              const countryMatch = originalAddress.match(/,\s+([A-Za-z\s]+)$/);
-                              if (countryMatch && countryMatch[1] && !countryMatch[1].match(/^\d{5}/)) {
-                                existingComponents.country = countryMatch[1].trim();
-                                Logger.log(`Extracted country from original address: ${existingComponents.country}`);
-                              }
-                            }
-                          }
-                        }
-
-                        // Merge the existing components with the updated ones
-                        // Only use existing components for fields that aren't being explicitly updated
-                        for (const component in existingComponents) {
-                          if (!value[component]) {
-                            value[component] = existingComponents[component];
-                            Logger.log(`Added preserved component ${component}: ${value[component]}`);
-                          }
-                        }
-                      } catch (e) {
-                        Logger.log(`Error preserving address components: ${e.message}`);
-                        // Continue with what we have
-                      }
-
-                      // Format the address string
-                      const addressParts = [];
-                      if (value.street_number) addressParts.push(value.street_number);
-                      if (value.route) {
-                        if (addressParts.length > 0) {
-                          addressParts[0] = addressParts[0] + " " + value.route;
-                        } else {
-                          addressParts.push(value.route);
-                        }
-                      }
-                      if (value.locality) addressParts.push(value.locality);
-
-                      // Add state from original data if not provided in current update
-                      if (value.admin_area_level_1) {
-                        addressParts.push(value.admin_area_level_1);
-                      } else if (currentAddressComponents.admin_area_level_1) {
-                        // Use preserved state
-                        addressParts.push(currentAddressComponents.admin_area_level_1);
-                        // Also update the value object for consistency
-                        value.admin_area_level_1 = currentAddressComponents.admin_area_level_1;
-                      }
-
-                      if (value.postal_code) addressParts.push(value.postal_code);
-
-                      // Main address field
-                      finalPayload[key] = addressParts.join(', ');
-
-                      // After line 3575, replace the existing code with this enhanced implementation:
-
-                      // Add individual components as separate fields with Pipedrive's naming convention
-                      if (value.street_number) finalPayload[`${key}_street_number`] = value.street_number;
-                      if (value.route) finalPayload[`${key}_route`] = value.route;
-                      if (value.locality) finalPayload[`${key}_locality`] = value.locality;
-                      if (value.postal_code) finalPayload[`${key}_postal_code`] = value.postal_code;
-                      if (value.admin_area_level_1) finalPayload[`${key}_admin_area_level_1`] = value.admin_area_level_1;
-                      if (value.admin_area_level_2) finalPayload[`${key}_admin_area_level_2`] = value.admin_area_level_2;
-                      if (value.country) finalPayload[`${key}_country`] = value.country;
-                      if (value.sublocality) finalPayload[`${key}_sublocality`] = value.sublocality;
-                      if (value.subpremise) finalPayload[`${key}_subpremise`] = value.subpremise;
-
-                      // Critical: Create a formatted_address field if not present
-                      if (!value.formatted_address && addressParts.length > 0) {
-                        // Main address field - include all components
-                        const fullAddressParts = [];
-
-                        // Street address line
-                        const streetLine = [];
-                        if (value.street_number) streetLine.push(value.street_number);
-                        if (value.route) streetLine.push(value.route);
-                        if (streetLine.length > 0) fullAddressParts.push(streetLine.join(' '));
-
-                        // City, state, zip line
-                        const cityLine = [];
-                        if (value.locality) cityLine.push(value.locality);
-                        if (value.admin_area_level_1) cityLine.push(value.admin_area_level_1);
-                        if (value.postal_code) cityLine.push(value.postal_code);
-                        if (cityLine.length > 0) fullAddressParts.push(cityLine.join(', '));
-
-                        // Country
-                        if (value.country) fullAddressParts.push(value.country);
-
-                        // Create complete address 
-                        finalPayload[key] = fullAddressParts.join(', ');
-                        Logger.log(`Final address with all components: ${finalPayload[key]}`);
-                      }
-
-                      // Add a "value" property for the custom field which is the complete address
-                      // This is critical for Pipedrive to recognize it as a valid address
-                      if (!finalPayload.custom_fields) finalPayload.custom_fields = {};
-                      finalPayload.custom_fields[key] = {
-                        value: addressParts.join(', ')
-                      };
-
-                      // Copy all address components to the custom field object
-                      if (value.street_number) finalPayload.custom_fields[key].street_number = value.street_number;
-                      if (value.route) finalPayload.custom_fields[key].route = value.route;
-                      if (value.locality) finalPayload.custom_fields[key].locality = value.locality;
-                      if (value.postal_code) finalPayload.custom_fields[key].postal_code = value.postal_code;
-                      if (value.admin_area_level_1) finalPayload.custom_fields[key].admin_area_level_1 = value.admin_area_level_1;
-                      if (value.admin_area_level_2) finalPayload.custom_fields[key].admin_area_level_2 = value.admin_area_level_2;
-                      if (value.country) finalPayload.custom_fields[key].country = value.country;
-                      if (value.sublocality) finalPayload.custom_fields[key].sublocality = value.sublocality;
-                      if (value.subpremise) finalPayload.custom_fields[key].subpremise = value.subpremise;
-                      if (value.formatted_address) finalPayload.custom_fields[key].formatted_address = value.formatted_address;
-
-                      Logger.log(`Added address components to custom_fields[${key}]: ${JSON.stringify(finalPayload.custom_fields[key])}`);
-                    } else {
-                      // For all other custom fields, add them directly to the final payload
-                      finalPayload[key] = value;
-                    }
+  Logger.log(`Merged and rebuilt address for ${key}: ${JSON.stringify(finalPayload.custom_fields[key])}`);
+} else {
+  // For all other custom fields, add them directly to the final payload
+  finalPayload[key] = value;
+}
                   });
                 }
 
