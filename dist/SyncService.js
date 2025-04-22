@@ -3097,21 +3097,6 @@ async function pushChangesToPipedrive(
       entityType
     );
 
-    // Fetch field definitions for formatting (including options for enum/set types)
-    let fieldDefinitions = {};
-    try {
-      fieldDefinitions = getFieldDefinitionsMap(entityType); // Assumes getFieldDefinitionsMap exists in PipedriveAPI.gs or Utilities.gs
-      Logger.log(
-        `Fetched ${Object.keys(fieldDefinitions).length
-        } field definitions for ${entityType}`
-      );
-    } catch (defError) {
-      Logger.log(
-        `Error fetching field definitions: ${defError.message}. Formatting might be incomplete.`
-      );
-      // Continue without definitions, relying on basic formatting
-    }
-
     // Get sync status column position
     const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${activeSheetName}`;
     const syncStatusColumnPos = scriptProperties.getProperty(
@@ -3365,6 +3350,13 @@ async function pushChangesToPipedrive(
 
         // Final processed payload ready to send
         let payloadToSend = rowData.data; // This would be the final processed data in your original code
+
+        // IMPORTANT: ADD THIS CODE HERE - Process date and time fields in the payload
+        const fieldDefinitions = getFieldDefinitionsMap(entityType);
+        if (fieldDefinitions && Object.keys(fieldDefinitions).length > 0) {
+          payloadToSend = processDateTimeFields(payloadToSend, rowData, fieldDefinitions, headerToFieldKeyMap);
+          Logger.log(`Date/time fields processed in payload for row ${rowIndex + 1}`);
+        }
 
         // Use the npm client to update the entity
         let responseBody;
@@ -5679,68 +5671,167 @@ function columnToLetter(column) {
 }
 
 /**
- * Formats date and time values for Pipedrive API
+ * Formats a date or date-time field for Pipedrive API
  * @param {*} value - The date/time value to format
- * @param {string} fieldType - Type of field ('date', 'time', 'daterange', 'timerange')
- * @return {string|object} Properly formatted value for Pipedrive API
+ * @param {Object} fieldDefinition - The field definition from Pipedrive
+ * @return {string} Properly formatted date/time string for Pipedrive API
  */
-function formatDateTimeForPipedrive(value, fieldType) {
-  if (!value) return null;
-
+function formatDateTimeForPipedrive(value, fieldDefinition) {
   try {
-    // Convert to Date object if it's not already
-    let dateObj = value;
-    if (!(value instanceof Date)) {
-      if (typeof value === "string") {
-        dateObj = new Date(value);
-      } else if (typeof value === "number") {
+    if (!value) return null;
+    
+    // Convert to a Date object if not already
+    let dateObj;
+    if (typeof value === 'string') {
+      // Handle Excel/Sheets date formats
+      if (value.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+        const parts = value.split('/');
+        dateObj = new Date(parts[2], parts[0] - 1, parts[1]);
+      } else {
         dateObj = new Date(value);
       }
+    } else if (value instanceof Date) {
+      dateObj = value;
+    } else {
+      // For numbers (Excel serial dates) or other formats
+      try {
+        dateObj = new Date(value);
+      } catch (e) {
+        Logger.log(`Error converting value to date: ${e.message}`);
+        return null;
+      }
     }
-
-    // Check if we have a valid date
+    
+    // Check if the date is valid
     if (isNaN(dateObj.getTime())) {
       Logger.log(`Invalid date value: ${value}`);
-      return value; // Return original if we can't parse it
+      return null;
     }
-
-    // Format based on field type
-    switch (fieldType.toLowerCase()) {
-      case "date":
-        // Format as YYYY-MM-DD
-        return dateObj.toISOString().split("T")[0];
-
-      case "time":
-        // Format as HH:MM
-        const hours = String(dateObj.getHours()).padStart(2, "0");
-        const minutes = String(dateObj.getMinutes()).padStart(2, "0");
-        return `${hours}:${minutes}`;
-
-      case "daterange":
-        // Format as object with start/end dates
-        const dateStr = dateObj.toISOString().split("T")[0];
-        return {
-          start: dateStr,
-            end: dateStr, // Use same date for both if only one date provided
-        };
-
-      case "timerange":
-        // Format as object with start/end times
-        const timeHours = String(dateObj.getHours()).padStart(2, "0");
-        const timeMinutes = String(dateObj.getMinutes()).padStart(2, "0");
-        const timeStr = `${timeHours}:${timeMinutes}`;
-        return {
-          start: timeStr,
-            end: timeStr, // Use same time for both if only one time provided
-        };
-
-      default:
-        // For unknown types, return ISO string without time part
-        return dateObj.toISOString().split("T")[0];
+    
+    // Determine if the field is a date-only or a datetime field
+    let isDateOnly = false;
+    if (fieldDefinition && fieldDefinition.field_type) {
+      isDateOnly = fieldDefinition.field_type === 'date';
+    } else {
+      // If no field definition, try to guess based on time part
+      isDateOnly = dateObj.getHours() === 0 && 
+                  dateObj.getMinutes() === 0 && 
+                  dateObj.getSeconds() === 0;
     }
-  } catch (e) {
-    Logger.log(`Error formatting date/time value: ${e.message}`);
-    return value; // Return original value if formatting fails
+    
+    // Format appropriately
+    if (isDateOnly) {
+      // Format as YYYY-MM-DD for date fields
+      return dateObj.toISOString().split('T')[0];
+    } else {
+      // Format as full ISO string for datetime fields
+      return dateObj.toISOString();
+    }
+  } catch (error) {
+    Logger.log(`Error formatting date/time: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Modifies the final payload to properly handle date and time fields
+ * @param {Object} payload - The payload to be sent to Pipedrive
+ * @param {Object} rowData - The original row data
+ * @param {Object} fieldDefinitions - Field definitions from Pipedrive
+ * @param {Object} headerFieldMap - Mapping of headers to field keys
+ * @return {Object} Updated payload with properly formatted dates
+ */
+function processDateTimeFields(payload, rowData, fieldDefinitions, headerFieldMap) {
+  try {
+    Logger.log("Processing date and time fields in payload...");
+    const fieldKeys = Object.keys(payload);
+    
+    // Create a reverse mapping from field keys to headers
+    const fieldKeyToHeader = {};
+    for (const header in headerFieldMap) {
+      const fieldKey = headerFieldMap[header];
+      fieldKeyToHeader[fieldKey] = header;
+    }
+    
+    // Track which fields were processed as date/time
+    const processedDateTimeFields = [];
+    
+    // Process each field in the payload
+    for (const key of fieldKeys) {
+      // Skip non-custom fields and known non-date fields
+      if (key === 'title' || key === 'custom_fields' || key.includes('_route') || 
+          key.includes('_street_number') || key.includes('_postal_code')) {
+        continue;
+      }
+      
+      // Check if this is a custom field with a definition
+      const fieldDef = fieldDefinitions[key];
+      if (fieldDef) {
+        Logger.log(`Checking field ${key} of type ${fieldDef.field_type}`);
+        
+        // Handle date and time fields
+        if (fieldDef.field_type === 'date' || fieldDef.field_type === 'time') {
+          const originalValue = payload[key];
+          const formattedValue = formatDateTimeForPipedrive(originalValue, fieldDef);
+          
+          Logger.log(`Formatting ${fieldDef.field_type} field ${key}: Original value: ${originalValue}, Formatted: ${formattedValue}`);
+          
+          if (formattedValue !== null) {
+            // Update in payload
+            payload[key] = formattedValue;
+            
+            // Also update in custom_fields
+            if (payload.custom_fields) {
+              payload.custom_fields[key] = formattedValue;
+            }
+            
+            processedDateTimeFields.push({
+              key: key,
+              fieldType: fieldDef.field_type,
+              originalValue: originalValue,
+              formattedValue: formattedValue
+            });
+          }
+        }
+      }
+    }
+    
+    // Also check the custom_fields object specifically
+    if (payload.custom_fields) {
+      const customFieldKeys = Object.keys(payload.custom_fields);
+      
+      for (const key of customFieldKeys) {
+        // Skip already processed fields
+        if (processedDateTimeFields.some(f => f.key === key)) {
+          continue;
+        }
+        
+        const fieldDef = fieldDefinitions[key];
+        if (fieldDef && (fieldDef.field_type === 'date' || fieldDef.field_type === 'time')) {
+          const originalValue = payload.custom_fields[key];
+          const formattedValue = formatDateTimeForPipedrive(originalValue, fieldDef);
+          
+          Logger.log(`Formatting custom field ${key} (${fieldDef.field_type}): Original value: ${originalValue}, Formatted: ${formattedValue}`);
+          
+          if (formattedValue !== null) {
+            payload.custom_fields[key] = formattedValue;
+            processedDateTimeFields.push({
+              key: key,
+              fieldType: fieldDef.field_type,
+              originalValue: originalValue,
+              formattedValue: formattedValue
+            });
+          }
+        }
+      }
+    }
+    
+    Logger.log(`Processed ${processedDateTimeFields.length} date/time fields`);
+    return payload;
+  } catch (error) {
+    Logger.log(`Error processing date/time fields: ${error.message}`);
+    // Return original payload as fallback
+    return payload;
   }
 }
 

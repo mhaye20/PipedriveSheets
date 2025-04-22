@@ -22,6 +22,39 @@ function updateDealDirect(dealId, payload, accessToken, basePath) {
     const dealUrl = `${basePath}/deals/${dealId}`;
     Logger.log(`Direct API: Using URL: ${dealUrl}`);
     
+    // Create a copy of the payload to prevent modifying the original
+    const finalPayload = JSON.parse(JSON.stringify(payload));
+    
+    // Check for date fields in the payload root - for direct API calls,
+    // date fields should use YYYY-MM-DD format
+    for (const key in finalPayload) {
+      const value = finalPayload[key];
+      // Check if the value is an ISO date string with time part
+      if (typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+        // If this looks like a date field, convert to YYYY-MM-DD format
+        // This conversion might need to be conditional based on field definitions,
+        // but for direct API we'll use a simpler approach
+        if (key.includes('_date') || key.includes('date_') || key === 'expected_close_date') {
+          Logger.log(`Direct API: Converting date format for field ${key}`);
+          finalPayload[key] = value.split('T')[0];
+        }
+      }
+    }
+    
+    // Also check in custom_fields object
+    if (finalPayload.custom_fields) {
+      for (const key in finalPayload.custom_fields) {
+        const value = finalPayload.custom_fields[key];
+        if (typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+          // Apply the same logic for custom fields
+          if (key.includes('_date') || key.includes('date_')) {
+            Logger.log(`Direct API: Converting date format for custom field ${key}`);
+            finalPayload.custom_fields[key] = value.split('T')[0];
+          }
+        }
+      }
+    }
+    
     // Create fetch options
     const options = {
       method: 'PUT',
@@ -31,12 +64,12 @@ function updateDealDirect(dealId, payload, accessToken, basePath) {
         'Accept': 'application/json'
       },
       muteHttpExceptions: true,
-      payload: JSON.stringify(payload)
+      payload: JSON.stringify(finalPayload)
     };
     
     // Log the request for debugging
     Logger.log(`Direct API: Making PUT request to: ${dealUrl}`);
-    Logger.log(`Direct API: With payload: ${JSON.stringify(payload).substring(0, 500)}...`);
+    Logger.log(`Direct API: With payload: ${JSON.stringify(finalPayload).substring(0, 500)}...`);
     
     // Make the request directly with UrlFetchApp
     const response = UrlFetchApp.fetch(dealUrl, options);
