@@ -5680,7 +5680,79 @@ function formatDateTimeForPipedrive(value, fieldDefinition) {
   try {
     if (!value) return null;
     
-    // Convert to a Date object if not already
+    // Check if this is a time-only field (special format required)
+    if (fieldDefinition && fieldDefinition.field_type === 'time') {
+      Logger.log(`Processing time-only field with value: ${value}`);
+      
+      // If value is already in HH:MM:SS format, use it directly
+      if (typeof value === 'string' && value.match(/^\d{1,2}:\d{2}(:\d{2})?$/)) {
+        // Ensure it has seconds if not present
+        if (!value.includes(':')) {
+          return value + ':00';
+        }
+        return value;
+      }
+      
+      // Handle time values in date objects or various formats
+      let hours, minutes, seconds = '00';
+      
+      if (value instanceof Date) {
+        // Extract time components from Date object
+        hours = value.getHours();
+        minutes = value.getMinutes();
+      } else if (typeof value === 'string') {
+        // Try to parse various time formats
+        
+        // Format: "4:30 PM" or "4:30 AM"
+        const amPmMatch = value.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)/i);
+        if (amPmMatch) {
+          hours = parseInt(amPmMatch[1], 10);
+          minutes = parseInt(amPmMatch[2], 10);
+          if (amPmMatch[3]) seconds = amPmMatch[3];
+          
+          // Adjust for PM
+          if (amPmMatch[4].toUpperCase() === 'PM' && hours < 12) {
+            hours += 12;
+          }
+          // Adjust for AM 12-hour
+          if (amPmMatch[4].toUpperCase() === 'AM' && hours === 12) {
+            hours = 0;
+          }
+        } 
+        // Format: "16:30" or "16:30:00"
+        else if (value.match(/^\d{1,2}:\d{2}(:\d{2})?$/)) {
+          const parts = value.split(':');
+          hours = parseInt(parts[0], 10);
+          minutes = parseInt(parts[1], 10);
+          if (parts.length > 2) seconds = parts[2];
+        }
+        // Try to parse as full date and extract time
+        else {
+          try {
+            const dateObj = new Date(value);
+            if (!isNaN(dateObj.getTime())) {
+              hours = dateObj.getHours();
+              minutes = dateObj.getMinutes();
+              seconds = String(dateObj.getSeconds()).padStart(2, '0');
+            }
+          } catch (e) {
+            Logger.log(`Could not parse time value: ${value}`);
+            return null;
+          }
+        }
+      }
+      
+      // If we couldn't extract time components, return null
+      if (hours === undefined || minutes === undefined) {
+        Logger.log(`Could not extract time components from: ${value}`);
+        return null;
+      }
+      
+      // Format time as HH:MM:SS - THIS IS THE KEY PART FOR PIPEDRIVE API
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${seconds}`;
+    }
+    
+    // For regular date fields, continue with the existing logic
     let dateObj;
     if (typeof value === 'string') {
       // Handle Excel/Sheets date formats
@@ -5708,7 +5780,7 @@ function formatDateTimeForPipedrive(value, fieldDefinition) {
       return null;
     }
     
-    // Determine if the field is a date-only or a datetime field
+    // Determine if the field is a date-only field
     let isDateOnly = false;
     if (fieldDefinition && fieldDefinition.field_type) {
       isDateOnly = fieldDefinition.field_type === 'date';
@@ -5815,6 +5887,21 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerFieldMa
           
           if (formattedValue !== null) {
             payload.custom_fields[key] = formattedValue;
+            
+            // For time fields in custom_fields, ensure the proper format is retained when sent to Pipedrive
+            if (fieldDef.field_type === 'time' && typeof formattedValue === 'string') {
+              // Ensure we're using 24-hour time format with seconds (HH:MM:SS)
+              const timeMatch = formattedValue.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+              if (timeMatch) {
+                const hours = String(parseInt(timeMatch[1], 10)).padStart(2, '0');
+                const minutes = timeMatch[2];
+                const seconds = timeMatch[3] || '00';
+                payload.custom_fields[key] = `${hours}:${minutes}:${seconds}`;
+                
+                Logger.log(`Ensured time format for API: ${payload.custom_fields[key]}`);
+              }
+            }
+            
             processedDateTimeFields.push({
               key: key,
               fieldType: fieldDef.field_type,

@@ -25,6 +25,9 @@ function updateDealDirect(dealId, payload, accessToken, basePath) {
     // Create a copy of the payload to prevent modifying the original
     const finalPayload = JSON.parse(JSON.stringify(payload));
     
+    // Process time fields - ensure they're in the correct format for Pipedrive API
+    processTimeFields(finalPayload);
+    
     // Check for date fields in the payload root - for direct API calls,
     // date fields should use YYYY-MM-DD format
     for (const key in finalPayload) {
@@ -32,8 +35,6 @@ function updateDealDirect(dealId, payload, accessToken, basePath) {
       // Check if the value is an ISO date string with time part
       if (typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
         // If this looks like a date field, convert to YYYY-MM-DD format
-        // This conversion might need to be conditional based on field definitions,
-        // but for direct API we'll use a simpler approach
         if (key.includes('_date') || key.includes('date_') || key === 'expected_close_date') {
           Logger.log(`Direct API: Converting date format for field ${key}`);
           finalPayload[key] = value.split('T')[0];
@@ -45,11 +46,13 @@ function updateDealDirect(dealId, payload, accessToken, basePath) {
     if (finalPayload.custom_fields) {
       for (const key in finalPayload.custom_fields) {
         const value = finalPayload.custom_fields[key];
-        if (typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
-          // Apply the same logic for custom fields
-          if (key.includes('_date') || key.includes('date_')) {
-            Logger.log(`Direct API: Converting date format for custom field ${key}`);
-            finalPayload.custom_fields[key] = value.split('T')[0];
+        if (typeof value === 'string') {
+          // Handle date fields (convert ISO to YYYY-MM-DD)
+          if (value.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+            if (key.includes('_date') || key.includes('date_')) {
+              Logger.log(`Direct API: Converting date format for custom field ${key}`);
+              finalPayload.custom_fields[key] = value.split('T')[0];
+            }
           }
         }
       }
@@ -106,6 +109,134 @@ function updateDealDirect(dealId, payload, accessToken, basePath) {
       error: error.message,
       error_info: 'Exception in updateDealDirect method'
     };
+  }
+}
+
+/**
+ * Process time fields in a payload to ensure consistent format for Pipedrive API
+ * @param {Object} payload - The payload object to process
+ */
+function processTimeFields(payload) {
+  // Process top-level fields
+  for (const key in payload) {
+    const value = payload[key];
+    
+    // Skip objects (except for time objects with hour/minute)
+    if (typeof value === 'object' && value !== null) {
+      // Check if it's a time object with hour/minute properties
+      if (value.hour !== undefined && value.minute !== undefined) {
+        // Format as HH:MM:SS
+        const hours = String(value.hour).padStart(2, '0');
+        const minutes = String(value.minute).padStart(2, '0');
+        const seconds = value.seconds ? String(value.seconds).padStart(2, '0') : '00';
+        payload[key] = `${hours}:${minutes}:${seconds}`;
+        Logger.log(`Formatted time object to string: ${payload[key]}`);
+      }
+      // If it's a regular object, recursively process it
+      else {
+        processTimeFields(value);
+      }
+      continue;
+    }
+    
+    // Check if this looks like a time field by field name
+    if ((key.includes('_time') || key.includes('time_')) && !key.includes('timestamp')) {
+      if (typeof value === 'string') {
+        // Check if it's already in the correct format (HH:MM:SS)
+        if (value.match(/^\d{1,2}:\d{2}(:\d{2})?$/)) {
+          // Ensure it has seconds if not present
+          if (!value.includes(':')) {
+            payload[key] = value + ':00';
+            Logger.log(`Added seconds to time value: ${payload[key]}`);
+          }
+          // Ensure hours has 2 digits
+          const parts = value.split(':');
+          if (parts[0].length === 1) {
+            parts[0] = '0' + parts[0];
+            payload[key] = parts.join(':');
+            Logger.log(`Padded hours in time value: ${payload[key]}`);
+          }
+        }
+        // Try to convert AM/PM format to 24-hour
+        else if (value.match(/\d{1,2}:\d{2}\s*(AM|PM)/i)) {
+          const match = value.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+          if (match) {
+            let hours = parseInt(match[1], 10);
+            const minutes = match[2];
+            const ampm = match[3].toUpperCase();
+            
+            // Convert to 24-hour format
+            if (ampm === 'PM' && hours < 12) hours += 12;
+            if (ampm === 'AM' && hours === 12) hours = 0;
+            
+            // Format as HH:MM:SS
+            const formattedTime = `${String(hours).padStart(2, '0')}:${minutes}:00`;
+            payload[key] = formattedTime;
+            Logger.log(`Converted time from AM/PM: ${value} → ${formattedTime}`);
+          }
+        }
+      }
+    }
+  }
+  
+  // Process custom_fields if present
+  if (payload.custom_fields) {
+    for (const key in payload.custom_fields) {
+      const value = payload.custom_fields[key];
+      
+      // Skip objects that are not time objects
+      if (typeof value === 'object' && value !== null) {
+        // Check if it's a time object with hour/minute properties
+        if (value.hour !== undefined && value.minute !== undefined) {
+          // Format as HH:MM:SS
+          const hours = String(value.hour).padStart(2, '0');
+          const minutes = String(value.minute).padStart(2, '0');
+          const seconds = value.seconds ? String(value.seconds).padStart(2, '0') : '00';
+          payload.custom_fields[key] = `${hours}:${minutes}:${seconds}`;
+          Logger.log(`Formatted time object to string in custom_fields: ${payload.custom_fields[key]}`);
+        }
+        continue;
+      }
+      
+      // Check if this looks like a time field by field name or content
+      if ((key.includes('_time') || key.includes('time_')) && !key.includes('timestamp')) {
+        if (typeof value === 'string') {
+          // Check if it's already in the correct format (HH:MM:SS)
+          if (value.match(/^\d{1,2}:\d{2}(:\d{2})?$/)) {
+            // Ensure it has seconds if not present
+            if (!value.includes(':')) {
+              payload.custom_fields[key] = value + ':00';
+              Logger.log(`Added seconds to time value in custom_fields: ${payload.custom_fields[key]}`);
+            }
+            // Ensure hours has 2 digits
+            const parts = value.split(':');
+            if (parts[0].length === 1) {
+              parts[0] = '0' + parts[0];
+              payload.custom_fields[key] = parts.join(':');
+              Logger.log(`Padded hours in time value in custom_fields: ${payload.custom_fields[key]}`);
+            }
+          }
+          // Try to convert AM/PM format to 24-hour
+          else if (value.match(/\d{1,2}:\d{2}\s*(AM|PM)/i)) {
+            const match = value.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+            if (match) {
+              let hours = parseInt(match[1], 10);
+              const minutes = match[2];
+              const ampm = match[3].toUpperCase();
+              
+              // Convert to 24-hour format
+              if (ampm === 'PM' && hours < 12) hours += 12;
+              if (ampm === 'AM' && hours === 12) hours = 0;
+              
+              // Format as HH:MM:SS
+              const formattedTime = `${String(hours).padStart(2, '0')}:${minutes}:00`;
+              payload.custom_fields[key] = formattedTime;
+              Logger.log(`Converted time from AM/PM in custom_fields: ${value} → ${formattedTime}`);
+            }
+          }
+        }
+      }
+    }
   }
 }
 
