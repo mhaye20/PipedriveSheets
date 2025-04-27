@@ -3439,21 +3439,23 @@ async function pushChangesToPipedrive(
 
             // Only include a few simple custom fields first to test
             const simpleCustomFields = {};
-            Object.keys(customFields).forEach((key) => {
-              // Include address fields (objects with address components) and simple fields
-              if (
-                typeof customFields[key] === "string" ||
-                typeof customFields[key] === "number" ||
-                (typeof customFields[key] === "object" &&
-                  customFields[key] !== null &&
-                  (customFields[key].street_number ||
-                    customFields[key].route ||
-                    customFields[key].locality ||
-                    customFields[key].postal_code))
-              ) {
-                simpleCustomFields[key] = customFields[key];
-              }
-            });
+Object.keys(customFields).forEach((key) => {
+  // Include address fields, date/time fields (including _until fields), and simple fields
+  if (
+    typeof customFields[key] === "string" ||
+    typeof customFields[key] === "number" ||
+    key.endsWith('_until') ||  // Include time range end fields
+    key.match(/[a-f0-9]{20,}/) ||  // Include all custom fields by ID pattern
+    (typeof customFields[key] === "object" &&
+      customFields[key] !== null &&
+      (customFields[key].street_number ||
+        customFields[key].route ||
+        customFields[key].locality ||
+        customFields[key].postal_code))
+  ) {
+    simpleCustomFields[key] = customFields[key];
+  }
+});
 
             if (Object.keys(simpleCustomFields).length > 0) {
               simplifiedPayload.custom_fields = simpleCustomFields;
@@ -5828,11 +5830,41 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerFieldMa
     // Track which fields were processed as date/time
     const processedDateTimeFields = [];
     
+    // First identify date/time range pairs
+    const timeRangePairs = {};
+    for (const key of fieldKeys) {
+      // Skip non-custom fields
+      if (key === 'title' || key === 'custom_fields') continue;
+      
+      // Check for time/date range field pairs (_until suffix)
+      if (key.endsWith('_until')) {
+        const baseKey = key.replace(/_until$/, '');
+        if (fieldKeys.includes(baseKey)) {
+          timeRangePairs[baseKey] = key;
+          Logger.log(`Identified time range field pair: ${baseKey} and ${key}`);
+        }
+      }
+    }
+    
+    // Also check in custom_fields object
+    if (payload.custom_fields) {
+      const customFieldKeys = Object.keys(payload.custom_fields);
+      for (const key of customFieldKeys) {
+        if (key.endsWith('_until')) {
+          const baseKey = key.replace(/_until$/, '');
+          if (customFieldKeys.includes(baseKey)) {
+            timeRangePairs[baseKey] = key;
+            Logger.log(`Identified time range field pair in custom_fields: ${baseKey} and ${key}`);
+          }
+        }
+      }
+    }
+    
     // Process each field in the payload
     for (const key of fieldKeys) {
       // Skip non-custom fields and known non-date fields
       if (key === 'title' || key === 'custom_fields' || key.includes('_route') || 
-          key.includes('_street_number') || key.includes('_postal_code')) {
+          key.includes('_street_number') || key.includes('_postal_code') || key.endsWith('_until')) {
         continue;
       }
       
@@ -5863,6 +5895,33 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerFieldMa
               originalValue: originalValue,
               formattedValue: formattedValue
             });
+            
+            // If this is part of a time range pair, process the until field too
+            if (timeRangePairs[key] && payload[timeRangePairs[key]]) {
+              const untilKey = timeRangePairs[key];
+              const untilFieldDef = fieldDefinitions[untilKey] || fieldDef; // Use same field def if specific one not found
+              const untilOriginalValue = payload[untilKey];
+              const untilFormattedValue = formatDateTimeForPipedrive(untilOriginalValue, untilFieldDef);
+              
+              Logger.log(`Formatting ${untilFieldDef.field_type} range end field ${untilKey}: Original value: ${untilOriginalValue}, Formatted: ${untilFormattedValue}`);
+              
+              if (untilFormattedValue !== null) {
+                // Update in payload
+                payload[untilKey] = untilFormattedValue;
+                
+                // Also update in custom_fields
+                if (payload.custom_fields) {
+                  payload.custom_fields[untilKey] = untilFormattedValue;
+                }
+                
+                processedDateTimeFields.push({
+                  key: untilKey,
+                  fieldType: untilFieldDef.field_type,
+                  originalValue: untilOriginalValue,
+                  formattedValue: untilFormattedValue
+                });
+              }
+            }
           }
         }
       }
@@ -5873,8 +5932,8 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerFieldMa
       const customFieldKeys = Object.keys(payload.custom_fields);
       
       for (const key of customFieldKeys) {
-        // Skip already processed fields
-        if (processedDateTimeFields.some(f => f.key === key)) {
+        // Skip already processed fields and _until fields (processed with their base fields)
+        if (processedDateTimeFields.some(f => f.key === key) || key.endsWith('_until')) {
           continue;
         }
         
@@ -5908,6 +5967,42 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerFieldMa
               originalValue: originalValue,
               formattedValue: formattedValue
             });
+            
+            // Handle the corresponding _until field if this is part of a time range
+            if (timeRangePairs[key]) {
+              const untilKey = timeRangePairs[key];
+              if (payload.custom_fields[untilKey]) {
+                const untilFieldDef = fieldDefinitions[untilKey] || fieldDef;
+                const untilOriginalValue = payload.custom_fields[untilKey];
+                const untilFormattedValue = formatDateTimeForPipedrive(untilOriginalValue, untilFieldDef);
+                
+                Logger.log(`Formatting custom field ${untilKey} (${untilFieldDef.field_type}): Original value: ${untilOriginalValue}, Formatted: ${untilFormattedValue}`);
+                
+                if (untilFormattedValue !== null) {
+                  payload.custom_fields[untilKey] = untilFormattedValue;
+                  
+                  // Format time fields properly
+                  if (untilFieldDef.field_type === 'time' && typeof untilFormattedValue === 'string') {
+                    const timeMatch = untilFormattedValue.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+                    if (timeMatch) {
+                      const hours = String(parseInt(timeMatch[1], 10)).padStart(2, '0');
+                      const minutes = timeMatch[2];
+                      const seconds = timeMatch[3] || '00';
+                      payload.custom_fields[untilKey] = `${hours}:${minutes}:${seconds}`;
+                      
+                      Logger.log(`Ensured time format for API (until field): ${payload.custom_fields[untilKey]}`);
+                    }
+                  }
+                  
+                  processedDateTimeFields.push({
+                    key: untilKey,
+                    fieldType: untilFieldDef.field_type,
+                    originalValue: untilOriginalValue,
+                    formattedValue: untilFormattedValue
+                  });
+                }
+              }
+            }
           }
         }
       }
