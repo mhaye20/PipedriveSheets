@@ -536,11 +536,19 @@ function updateDealDirect(dealId, payload, accessToken, basePath, fieldDefinitio
       
       // ALWAYS set both values, even if one or both were null initially
       // This ensures the time range pair is properly handled by Pipedrive
-      const valueToUse = effectiveStartValue || effectiveEndValue || "00:00:00";
-      
-      // Set both values at root level
-      processedPayload[pair.startKey] = effectiveStartValue || valueToUse;
-      processedPayload[pair.endKey] = effectiveEndValue || valueToUse;
+      // But only use default if both values are truly missing
+      if (!effectiveStartValue && !effectiveEndValue) {
+        // Both are missing, use a default
+        const defaultValue = "00:00:00";
+        processedPayload[pair.startKey] = defaultValue;
+        processedPayload[pair.endKey] = defaultValue;
+        Logger.log(`Both time range values missing, using default: ${defaultValue}`);
+      } else {
+        // At least one value exists, use it
+        processedPayload[pair.startKey] = effectiveStartValue || effectiveEndValue;
+        processedPayload[pair.endKey] = effectiveEndValue || effectiveStartValue;
+        Logger.log(`Set time range values: start=${processedPayload[pair.startKey]}, end=${processedPayload[pair.endKey]}`);
+      }
       
       Logger.log(`ROOT LEVEL time range values set: ${pair.startKey}=${processedPayload[pair.startKey]}, ${pair.endKey}=${processedPayload[pair.endKey]}`);
       
@@ -549,9 +557,9 @@ function updateDealDirect(dealId, payload, accessToken, basePath, fieldDefinitio
         processedPayload.custom_fields = {};
       }
       
-      // Set both values in custom_fields
-      processedPayload.custom_fields[pair.startKey] = effectiveStartValue || valueToUse;
-      processedPayload.custom_fields[pair.endKey] = effectiveEndValue || valueToUse;
+      // Set both values in custom_fields (use same values as root)
+      processedPayload.custom_fields[pair.startKey] = processedPayload[pair.startKey];
+      processedPayload.custom_fields[pair.endKey] = processedPayload[pair.endKey];
       
       Logger.log(`CUSTOM_FIELDS time range values set: ${pair.startKey}=${processedPayload.custom_fields[pair.startKey]}, ${pair.endKey}=${processedPayload.custom_fields[pair.endKey]}`);
     });
@@ -638,13 +646,40 @@ function formatDateTimeValue(value, fieldType) {
  */
 function formatTimeValue(value) {
   try {
-    if (!value) return null;
+    if (!value && value !== 0 && value !== "0") return null;
+
+    // CRITICAL: Handle objects that might have a 'value' property
+    if (typeof value === 'object' && value !== null && !(value instanceof Date)) {
+      if (value.value !== undefined) {
+        Logger.log(`WARNING: formatTimeValue received object with value property, extracting: ${value.value}`);
+        value = value.value;
+      } else {
+        Logger.log(`ERROR: formatTimeValue received non-Date object without value property: ${JSON.stringify(value)}`);
+        return null;
+      }
+    }
 
     Logger.log(`Formatting time value: ${value} (type: ${typeof value})`);
     
+    // Quick check if it's already a properly formatted time string
+    if (typeof value === 'string' && value.match(/^\d{2}:\d{2}:\d{2}$/)) {
+      Logger.log(`Value is already in perfect HH:MM:SS format: ${value}`);
+      return value;
+    }
+    
     let timeObj;
     if (value instanceof Date) {
-      // For Date objects, extract time directly
+      // For Date objects, check if it's an Excel time-only date (1899-12-30)
+      if (value.getFullYear() === 1899 && value.getMonth() === 11 && value.getDate() === 30) {
+        // This is a time-only value, extract time components directly
+        const hours = value.getHours();
+        const minutes = value.getMinutes();
+        const seconds = value.getSeconds();
+        const formatted = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        Logger.log(`Excel time Date object converted directly: ${formatted}`);
+        return formatted;
+      }
+      // For other Date objects, extract time normally
       timeObj = value;
       Logger.log(`Value is a Date object with time: ${timeObj.getHours()}:${timeObj.getMinutes()}:${timeObj.getSeconds()}`);
     } else if (typeof value === 'string') {
@@ -657,6 +692,11 @@ function formatTimeValue(value) {
           const formatted = `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}:00`;
           Logger.log(`Added seconds to time: ${formatted}`);
           return formatted;
+        } else if (parts.length === 3) {
+          // Already has seconds, just ensure proper padding
+          const formatted = `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}:${parts[2].padStart(2, '0')}`;
+          Logger.log(`Formatted existing time with padding: ${formatted}`);
+          return formatted;
         }
         return value;
       }
@@ -665,6 +705,18 @@ function formatTimeValue(value) {
       if (value.includes("1899-12-30")) {
         Logger.log(`Detected Excel/Sheets time format: ${value}`);
         // This format indicates a time-only value stored as a date
+        // Extract time part directly from the ISO string to avoid timezone issues
+        const timePart = value.split("T")[1];
+        if (timePart) {
+          // Extract hours, minutes, seconds from the UTC time string
+          const timeMatch = timePart.match(/(\d{2}):(\d{2}):(\d{2})/);
+          if (timeMatch) {
+            const formatted = `${timeMatch[1]}:${timeMatch[2]}:${timeMatch[3]}`;
+            Logger.log(`Extracted time from Excel format ISO string: ${formatted}`);
+            return formatted;
+          }
+        }
+        // Fallback to Date parsing if string extraction fails
         const datePart = new Date(value);
         if (!isNaN(datePart.getTime())) {
           timeObj = datePart;

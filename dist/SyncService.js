@@ -3264,22 +3264,61 @@ async function pushChangesToPipedrive(
           // Handle custom fields (including time range _until fields)
           else if (fieldKey.match(/^[a-f0-9]{20,}(_until)?$/i)) {
             // This is a custom field ID (possibly with _until suffix for time ranges)
-            updateData.data.custom_fields[fieldKey] = value;
+            
+            // Special handling for time fields to prevent timezone conversion
+            let processedValue = value;
+            
+            // Check if this is a time field by examining the value
+            if (value instanceof Date) {
+              // Check if this is a time-only value (Excel epoch date)
+              if (value.getFullYear() === 1899 && value.getMonth() === 11 && value.getDate() === 30) {
+                // This is a time-only value, extract the time without timezone conversion
+                const hours = value.getHours();
+                const minutes = value.getMinutes();
+                const seconds = value.getSeconds();
+                processedValue = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                Logger.log(`Converted time-only Date object to time string: ${value} -> ${processedValue}`);
+              }
+            }
+            
+            // CRITICAL: Ensure we never store objects for time fields
+            // If processedValue is an object with a 'value' property, extract just the value
+            if (typeof processedValue === 'object' && processedValue !== null && processedValue.value !== undefined) {
+              Logger.log(`WARNING: Time field ${fieldKey} was an object, extracting value property: ${processedValue.value}`);
+              processedValue = processedValue.value;
+            }
+            
+            updateData.data.custom_fields[fieldKey] = processedValue;
             
             // Log field detection with value
-            Logger.log(`CUSTOM FIELD DETECTED: ${header} -> ${fieldKey} = ${value} (type: ${typeof value})`);
+            Logger.log(`CUSTOM FIELD DETECTED: ${header} -> ${fieldKey} = ${processedValue} (type: ${typeof processedValue})`);
 
             // Log time range field detection
             if (fieldKey.endsWith("_until")) {
               Logger.log(
-                `DETECTED TIME RANGE END FIELD: ${header} -> ${fieldKey} = ${value}`
+                `DETECTED TIME RANGE END FIELD: ${header} -> ${fieldKey} = ${processedValue}`
               );
             }
           }
           // Handle all other fields
           else {
             // Regular field
-            updateData.data[fieldKey] = value;
+            
+            // Apply time conversion for regular fields that might contain time values
+            let processedValue = value;
+            if (value instanceof Date) {
+              // Check if this is a time-only value (Excel epoch date)
+              if (value.getFullYear() === 1899 && value.getMonth() === 11 && value.getDate() === 30) {
+                // This is a time-only value, extract the time without timezone conversion
+                const hours = value.getHours();
+                const minutes = value.getMinutes();
+                const seconds = value.getSeconds();
+                processedValue = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                Logger.log(`Converted time-only Date object to time string for field ${fieldKey}: ${value} -> ${processedValue}`);
+              }
+            }
+            
+            updateData.data[fieldKey] = processedValue;
           }
         }
 
@@ -3363,9 +3402,24 @@ async function pushChangesToPipedrive(
               // Look for the end time in headers
               for (let k = 0; k < headers.length; k++) {
                 if (headerToFieldKeyMap[headers[k]] === untilKey && row[k]) {
-                  updateData.data.custom_fields[untilKey] = row[k];
+                  let endValue = row[k];
+                  
+                  // Apply same time conversion logic for end time
+                  if (endValue instanceof Date) {
+                    // Check if this is a time-only value (Excel epoch date)
+                    if (endValue.getFullYear() === 1899 && endValue.getMonth() === 11 && endValue.getDate() === 30) {
+                      // This is a time-only value, extract the time without timezone conversion
+                      const hours = endValue.getHours();
+                      const minutes = endValue.getMinutes();
+                      const seconds = endValue.getSeconds();
+                      endValue = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                      Logger.log(`Converted time-only Date object to time string for end field: ${row[k]} -> ${endValue}`);
+                    }
+                  }
+                  
+                  updateData.data.custom_fields[untilKey] = endValue;
                   Logger.log(
-                    `ADDED MISSING TIME RANGE END: ${untilKey} = ${row[k]}`
+                    `ADDED MISSING TIME RANGE END: ${untilKey} = ${endValue}`
                   );
                   break;
                 }
