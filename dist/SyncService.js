@@ -1031,24 +1031,30 @@ function getSyncStatus() {
       // Return default format matching the expected structure in the HTML
       return {
         phase1: {
-          status: scriptProperties.getProperty("SYNC_PHASE_1_STATUS") || "active",
-          detail: scriptProperties.getProperty("SYNC_PHASE_1_DETAIL") ||
+          status:
+            scriptProperties.getProperty("SYNC_PHASE_1_STATUS") || "active",
+          detail:
+            scriptProperties.getProperty("SYNC_PHASE_1_DETAIL") ||
             "Connecting to Pipedrive...",
           progress: parseInt(
             scriptProperties.getProperty("SYNC_PHASE_1_PROGRESS") || "0"
           ),
         },
         phase2: {
-          status: scriptProperties.getProperty("SYNC_PHASE_2_STATUS") || "pending",
-          detail: scriptProperties.getProperty("SYNC_PHASE_2_DETAIL") ||
+          status:
+            scriptProperties.getProperty("SYNC_PHASE_2_STATUS") || "pending",
+          detail:
+            scriptProperties.getProperty("SYNC_PHASE_2_DETAIL") ||
             "Waiting to start...",
           progress: parseInt(
             scriptProperties.getProperty("SYNC_PHASE_2_PROGRESS") || "0"
           ),
         },
         phase3: {
-          status: scriptProperties.getProperty("SYNC_PHASE_3_STATUS") || "pending",
-          detail: scriptProperties.getProperty("SYNC_PHASE_3_DETAIL") ||
+          status:
+            scriptProperties.getProperty("SYNC_PHASE_3_STATUS") || "pending",
+          detail:
+            scriptProperties.getProperty("SYNC_PHASE_3_DETAIL") ||
             "Waiting to start...",
           progress: parseInt(
             scriptProperties.getProperty("SYNC_PHASE_3_PROGRESS") || "0"
@@ -1072,34 +1078,56 @@ function getSyncStatus() {
     // Create the response in the format expected by the HTML
     const response = {
       phase1: {
-        status: activePhase === "1" ?
-          statusValue : activePhase > "1" ?
-          "completed" : "pending",
-        detail: activePhase === "1" ?
-          detailValue : activePhase > "1" ?
-          "Completed" : "Waiting to start...",
-        progress: activePhase === "1" ? progressValue : activePhase > "1" ? 100 : 0,
+        status:
+          activePhase === "1"
+            ? statusValue
+            : activePhase > "1"
+            ? "completed"
+            : "pending",
+        detail:
+          activePhase === "1"
+            ? detailValue
+            : activePhase > "1"
+            ? "Completed"
+            : "Waiting to start...",
+        progress:
+          activePhase === "1" ? progressValue : activePhase > "1" ? 100 : 0,
       },
       phase2: {
-        status: activePhase === "2" ?
-          statusValue : activePhase > "2" ?
-          "completed" : "pending",
-        detail: activePhase === "2" ?
-          detailValue : activePhase > "2" ?
-          "Completed" : "Waiting to start...",
-        progress: activePhase === "2" ? progressValue : activePhase > "2" ? 100 : 0,
+        status:
+          activePhase === "2"
+            ? statusValue
+            : activePhase > "2"
+            ? "completed"
+            : "pending",
+        detail:
+          activePhase === "2"
+            ? detailValue
+            : activePhase > "2"
+            ? "Completed"
+            : "Waiting to start...",
+        progress:
+          activePhase === "2" ? progressValue : activePhase > "2" ? 100 : 0,
       },
       phase3: {
-        status: activePhase === "3" ?
-          statusValue : activePhase > "3" ?
-          "completed" : "pending",
-        detail: activePhase === "3" ?
-          detailValue : activePhase > "3" ?
-          "Completed" : "Waiting to start...",
-        progress: activePhase === "3" ? progressValue : activePhase > "3" ? 100 : 0,
+        status:
+          activePhase === "3"
+            ? statusValue
+            : activePhase > "3"
+            ? "completed"
+            : "pending",
+        detail:
+          activePhase === "3"
+            ? detailValue
+            : activePhase > "3"
+            ? "Completed"
+            : "Waiting to start...",
+        progress:
+          activePhase === "3" ? progressValue : activePhase > "3" ? 100 : 0,
       },
       currentPhase: activePhase,
-      completed: activePhase === "3" && status.status === "completed" ? "true" : "false",
+      completed:
+        activePhase === "3" && status.status === "completed" ? "true" : "false",
       error: status.error || "",
     };
 
@@ -1319,12 +1347,13 @@ function onEdit(e) {
 
     try {
       const cellStateJson = scriptProperties.getProperty(cellStateKey);
-      cellState = cellStateJson ?
-        JSON.parse(cellStateJson) : {
-          status: null,
-          lastChanged: 0,
-          originalValues: {},
-        };
+      cellState = cellStateJson
+        ? JSON.parse(cellStateJson)
+        : {
+            status: null,
+            lastChanged: 0,
+            originalValues: {},
+          };
     } catch (parseError) {
       Logger.log(`Error parsing cell state: ${parseError.message}`);
       cellState = {
@@ -1399,13 +1428,13 @@ function onEdit(e) {
       // If values don't match exactly, try string conversion and trimming
       if (!valuesMatch) {
         const origString =
-          originalValue === null || originalValue === undefined ?
-          "" :
-          String(originalValue).trim();
+          originalValue === null || originalValue === undefined
+            ? ""
+            : String(originalValue).trim();
         const currString =
-          currentValue === null || currentValue === undefined ?
-          "" :
-          String(currentValue).trim();
+          currentValue === null || currentValue === undefined
+            ? ""
+            : String(currentValue).trim();
         valuesMatch = origString === currString;
 
         Logger.log(
@@ -1454,13 +1483,13 @@ function onEdit(e) {
           // If direct comparison fails, try string conversion
           if (!fieldMatch) {
             const origStr =
-              origValue === null || origValue === undefined ?
-              "" :
-              String(origValue).trim();
+              origValue === null || origValue === undefined
+                ? ""
+                : String(origValue).trim();
             const currStr =
-              currValue === null || currValue === undefined ?
-              "" :
-              String(currValue).trim();
+              currValue === null || currValue === undefined
+                ? ""
+                : String(currValue).trim();
             fieldMatch = origStr === currStr;
 
             // Special handling for numbers
@@ -1647,13 +1676,13 @@ function onEdit(e) {
 
         // Improved equality check - try to normalize values for comparison regardless of type
         let originalString =
-          originalValue === null || originalValue === undefined ?
-          "" :
-          String(originalValue).trim();
+          originalValue === null || originalValue === undefined
+            ? ""
+            : String(originalValue).trim();
         let currentString =
-          currentValue === null || currentValue === undefined ?
-          "" :
-          String(currentValue).trim();
+          currentValue === null || currentValue === undefined
+            ? ""
+            : String(currentValue).trim();
 
         // Special handling for email fields - normalize domains for comparison
         if (headerName.toLowerCase().includes("email")) {
@@ -2206,7 +2235,8 @@ function onEdit(e) {
           );
 
           // Use the generalized field value normalization for comparison
-          const normalizedOriginal = getNormalizedFieldValue({
+          const normalizedOriginal = getNormalizedFieldValue(
+            {
               [headerName]: originalValue,
             },
             headerName
@@ -2503,13 +2533,13 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
 
             // Compare the values
             const originalString =
-              originalValue === null || originalValue === undefined ?
-              "" :
-              String(originalValue).trim();
+              originalValue === null || originalValue === undefined
+                ? ""
+                : String(originalValue).trim();
             const currentString =
-              currentValue === null || currentValue === undefined ?
-              "" :
-              String(currentValue).trim();
+              currentValue === null || currentValue === undefined
+                ? ""
+                : String(currentValue).trim();
 
             Logger.log(
               `Comparing values for "${headerName}": Original="${originalString}", Current="${currentString}"`
@@ -2586,7 +2616,8 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
       }
 
       // Use the generalized field value normalization for regular fields
-      const normalizedOriginal = getNormalizedFieldValue({
+      const normalizedOriginal = getNormalizedFieldValue(
+        {
           [headerName]: originalValue,
         },
         headerName
@@ -3136,9 +3167,9 @@ async function pushChangesToPipedrive(
     // Find the ID column index
     let idColumnIndex = headers.findIndex(
       (header) =>
-      header === "Pipedrive ID" ||
-      header.match(/^Pipedrive .* ID$/) ||
-      header === "ID"
+        header === "Pipedrive ID" ||
+        header.match(/^Pipedrive .* ID$/) ||
+        header === "ID"
     );
 
     if (idColumnIndex === -1) {
@@ -3196,9 +3227,9 @@ async function pushChangesToPipedrive(
             continue;
           } else if (fieldKey === "email" || fieldKey.startsWith("email.")) {
             // Handle email fields
-            const label = fieldKey.includes(".") ?
-              fieldKey.split(".")[1] :
-              "work";
+            const label = fieldKey.includes(".")
+              ? fieldKey.split(".")[1]
+              : "work";
             emailData.push({
               label: label,
               value: value,
@@ -3206,9 +3237,9 @@ async function pushChangesToPipedrive(
             });
           } else if (fieldKey === "phone" || fieldKey.startsWith("phone.")) {
             // Handle phone fields
-            const label = fieldKey.includes(".") ?
-              fieldKey.split(".")[1] :
-              "work";
+            const label = fieldKey.includes(".")
+              ? fieldKey.split(".")[1]
+              : "work";
             phoneData.push({
               label: label,
               value: String(value), // Ensure phone is a string
@@ -3230,10 +3261,20 @@ async function pushChangesToPipedrive(
             // Store the component value
             addressComponents[fieldId][component] = String(value || ""); // Ensure it's a string
           }
-          // Handle custom fields
-          else if (fieldKey.match(/^[a-f0-9]{20,}$/i)) {
-            // This is a custom field ID
+          // Handle custom fields (including time range _until fields)
+          else if (fieldKey.match(/^[a-f0-9]{20,}(_until)?$/i)) {
+            // This is a custom field ID (possibly with _until suffix for time ranges)
             updateData.data.custom_fields[fieldKey] = value;
+            
+            // Log field detection with value
+            Logger.log(`CUSTOM FIELD DETECTED: ${header} -> ${fieldKey} = ${value} (type: ${typeof value})`);
+
+            // Log time range field detection
+            if (fieldKey.endsWith("_until")) {
+              Logger.log(
+                `DETECTED TIME RANGE END FIELD: ${header} -> ${fieldKey} = ${value}`
+              );
+            }
           }
           // Handle all other fields
           else {
@@ -3306,6 +3347,33 @@ async function pushChangesToPipedrive(
         updateData.emailData = emailData;
         updateData.phoneData = phoneData;
 
+        // Log the complete updateData to see what fields we have
+        Logger.log(
+          `ROW ${i} UPDATE DATA custom_fields: ${JSON.stringify(
+            updateData.data.custom_fields
+          )}`
+        );
+
+        // Check for time range fields that might be missing their pair
+        for (const fieldKey in updateData.data.custom_fields) {
+          if (!fieldKey.endsWith("_until")) {
+            const untilKey = fieldKey + "_until";
+            // Check if we have a time range start without end
+            if (!updateData.data.custom_fields[untilKey]) {
+              // Look for the end time in headers
+              for (let k = 0; k < headers.length; k++) {
+                if (headerToFieldKeyMap[headers[k]] === untilKey && row[k]) {
+                  updateData.data.custom_fields[untilKey] = row[k];
+                  Logger.log(
+                    `ADDED MISSING TIME RANGE END: ${untilKey} = ${row[k]}`
+                  );
+                  break;
+                }
+              }
+            }
+          }
+        }
+
         modifiedRows.push(updateData);
       }
     }
@@ -3357,14 +3425,77 @@ async function pushChangesToPipedrive(
           }`
         );
 
-        // Apply the same data processing and cleaning logic as before
-        // ... (existing code for field processing)
-
         // Final processed payload ready to send
         let payloadToSend = rowData.data; // This would be the final processed data in your original code
 
         // IMPORTANT: ADD THIS CODE HERE - Process date and time fields in the payload
         const fieldDefinitions = getFieldDefinitionsMap(entityType);
+
+        // Enhanced logging to debug time range fields
+        Logger.log(`=== TIME RANGE DEBUG START for row ${rowIndex + 1} ===`);
+        Logger.log(`Row data keys: ${Object.keys(rowData.data).join(", ")}`);
+        Logger.log(`Full row data: ${JSON.stringify(rowData.data)}`);
+
+        // Check for any fields that might be time range fields
+        const potentialTimeRangeFields = [];
+        for (const key in rowData.data) {
+          const value = rowData.data[key];
+          // Check if this looks like a time value
+          if (
+            typeof value === "string" &&
+            (value.includes(":") || value.includes("1899-12-30"))
+          ) {
+            potentialTimeRangeFields.push({ key, value });
+            Logger.log(`Potential time field found: ${key} = ${value}`);
+          }
+        }
+
+        // Look for _until fields in headers
+        const headers = activeSheet
+          .getRange(1, 1, 1, activeSheet.getLastColumn())
+          .getValues()[0];
+        const untilHeaders = headers.filter(
+          (h) => h && h.toString().toLowerCase().includes("end time")
+        );
+        Logger.log(`Headers with 'end time': ${untilHeaders.join(", ")}`);
+
+        // Check headerToFieldKeyMap for time range pairs
+        const timeRangePairs = {};
+        for (const [header, fieldKey] of Object.entries(headerToFieldKeyMap)) {
+          if (fieldKey && fieldKey.endsWith("_until")) {
+            const baseFieldKey = fieldKey.replace(/_until$/, "");
+            timeRangePairs[baseFieldKey] = fieldKey;
+            Logger.log(
+              `Time range pair from header mapping: ${baseFieldKey} -> ${fieldKey} (header: ${header})`
+            );
+
+            // Check if we have data for this end time field
+            if (rowData.data[header]) {
+              Logger.log(
+                `End time data found for ${header}: ${rowData.data[header]}`
+              );
+              // Ensure this is included in the payload
+              if (!payloadToSend[fieldKey]) {
+                payloadToSend[fieldKey] = rowData.data[header];
+                Logger.log(
+                  `Added missing end time field: ${fieldKey} = ${rowData.data[header]}`
+                );
+              }
+              if (!payloadToSend.custom_fields) {
+                payloadToSend.custom_fields = {};
+              }
+              if (!payloadToSend.custom_fields[fieldKey]) {
+                payloadToSend.custom_fields[fieldKey] = rowData.data[header];
+                Logger.log(
+                  `Added missing end time to custom_fields: ${fieldKey} = ${rowData.data[header]}`
+                );
+              }
+            }
+          }
+        }
+
+        Logger.log(`=== TIME RANGE DEBUG END ===`);
+
         if (fieldDefinitions && Object.keys(fieldDefinitions).length > 0) {
           payloadToSend = processDateTimeFields(
             payloadToSend,
@@ -3375,23 +3506,33 @@ async function pushChangesToPipedrive(
           Logger.log(
             `Date/time fields processed in payload for row ${rowIndex + 1}`
           );
-          
+
           // Now ensure time range fields are properly handled
-          payloadToSend = ensureTimeRangeFieldsForPipedrive(payloadToSend);
-          Logger.log(`Time range fields ensured in payload for row ${rowIndex + 1}`);
-          
+          payloadToSend = ensureTimeRangeFieldsForPipedrive(
+            payloadToSend,
+            rowData.data,
+            headerToFieldKeyMap
+          );
+          Logger.log(
+            `Time range fields ensured in payload for row ${rowIndex + 1}`
+          );
+
           // Add detailed logging of any time range fields in the final payload
-          Object.keys(payloadToSend).forEach(key => {
+          Object.keys(payloadToSend).forEach((key) => {
             if (key.endsWith("_until")) {
               const baseKey = key.replace(/_until$/, "");
-              Logger.log(`TIME RANGE FIELD IN FINAL PAYLOAD: ${baseKey}=${payloadToSend[baseKey]}, ${key}=${payloadToSend[key]}`);
+              Logger.log(
+                `TIME RANGE FIELD IN FINAL PAYLOAD: ${baseKey}=${payloadToSend[baseKey]}, ${key}=${payloadToSend[key]}`
+              );
             }
           });
           if (payloadToSend.custom_fields) {
-            Object.keys(payloadToSend.custom_fields).forEach(key => {
+            Object.keys(payloadToSend.custom_fields).forEach((key) => {
               if (key.endsWith("_until")) {
                 const baseKey = key.replace(/_until$/, "");
-                Logger.log(`TIME RANGE FIELD IN CUSTOM_FIELDS: ${baseKey}=${payloadToSend.custom_fields[baseKey]}, ${key}=${payloadToSend.custom_fields[key]}`);
+                Logger.log(
+                  `TIME RANGE FIELD IN CUSTOM_FIELDS: ${baseKey}=${payloadToSend.custom_fields[baseKey]}, ${key}=${payloadToSend.custom_fields[key]}`
+                );
               }
             });
           }
@@ -3552,8 +3693,9 @@ async function pushChangesToPipedrive(
             id: rowData.id,
             entityType: entityType,
             apiBasePath: apiClient.basePath,
-            accessToken: accessToken ?
-              accessToken.substring(0, 5) + "..." : "undefined",
+            accessToken: accessToken
+              ? accessToken.substring(0, 5) + "..."
+              : "undefined",
           };
           Logger.log(
             `API request parameters: ${JSON.stringify(requestParams)}`
@@ -3622,7 +3764,7 @@ async function pushChangesToPipedrive(
                       // Merge updated components into the original address object
                       const mergedAddress = {
                         ...currentAddress,
-                        ...value
+                        ...value,
                       };
 
                       // Rebuild the full address string from all components
@@ -3652,38 +3794,38 @@ async function pushChangesToPipedrive(
                       if (!finalPayload.custom_fields)
                         finalPayload.custom_fields = {};
                       finalPayload.custom_fields[key] = {
-                        ...mergedAddress
+                        ...mergedAddress,
                       };
 
                       // Add individual components as separate fields if required by Pipedrive
                       if (mergedAddress.street_number)
                         finalPayload[`${key}_street_number`] =
-                        mergedAddress.street_number;
+                          mergedAddress.street_number;
                       if (mergedAddress.route)
                         finalPayload[`${key}_route`] = mergedAddress.route;
                       if (mergedAddress.locality)
                         finalPayload[`${key}_locality`] =
-                        mergedAddress.locality;
+                          mergedAddress.locality;
                       if (mergedAddress.postal_code)
                         finalPayload[`${key}_postal_code`] =
-                        mergedAddress.postal_code;
+                          mergedAddress.postal_code;
                       if (mergedAddress.admin_area_level_1)
                         finalPayload[`${key}_admin_area_level_1`] =
-                        mergedAddress.admin_area_level_1;
+                          mergedAddress.admin_area_level_1;
                       if (mergedAddress.admin_area_level_2)
                         finalPayload[`${key}_admin_area_level_2`] =
-                        mergedAddress.admin_area_level_2;
+                          mergedAddress.admin_area_level_2;
                       if (mergedAddress.country)
                         finalPayload[`${key}_country`] = mergedAddress.country;
                       if (mergedAddress.sublocality)
                         finalPayload[`${key}_sublocality`] =
-                        mergedAddress.sublocality;
+                          mergedAddress.sublocality;
                       if (mergedAddress.subpremise)
                         finalPayload[`${key}_subpremise`] =
-                        mergedAddress.subpremise;
+                          mergedAddress.subpremise;
                       if (mergedAddress.formatted_address)
                         finalPayload[`${key}_formatted_address`] =
-                        mergedAddress.formatted_address;
+                          mergedAddress.formatted_address;
 
                       Logger.log(
                         `Merged and rebuilt address for ${key}: ${JSON.stringify(
@@ -3703,210 +3845,295 @@ async function pushChangesToPipedrive(
                 );
 
                 // Special handling for time range fields
-                if (finalPayload.__hasTimeRangeFields || Object.keys(finalPayload).some(key => key.endsWith('_until'))) {
-  Logger.log(`Found time range fields in finalPayload - ensuring proper formats`);
-  
-  // First, build a map of time range pairs
-  const timeRangePairs = {};
-  
-  // Look for _until fields in custom_fields
-  if (finalPayload.custom_fields) {
-    Object.keys(finalPayload.custom_fields).forEach(key => {
-      if (key.endsWith('_until')) {
-        const baseKey = key.replace(/_until$/, '');
-        timeRangePairs[baseKey] = key;
-        Logger.log(`Found time range pair in custom_fields: ${baseKey} -> ${key}`);
-      }
-    });
-  }
-  
-  // Also look for _until fields at root level
-  Object.keys(finalPayload).forEach(key => {
-    if (key.endsWith('_until')) {
-      const baseKey = key.replace(/_until$/, '');
-      timeRangePairs[baseKey] = key;
-      Logger.log(`Found time range pair at root: ${baseKey} -> ${key}`);
-    }
-  });
-  
-  // Now ensure both parts are present in both root and custom_fields
-  for (const baseKey in timeRangePairs) {
-    const untilKey = timeRangePairs[baseKey];
-    
-    // Get values from wherever they are
-    let startValue = finalPayload[baseKey];
-    let endValue = finalPayload[untilKey];
-    
-    if (!startValue && finalPayload.custom_fields && finalPayload.custom_fields[baseKey]) {
-      startValue = finalPayload.custom_fields[baseKey];
-    }
-    
-    if (!endValue && finalPayload.custom_fields && finalPayload.custom_fields[untilKey]) {
-      endValue = finalPayload.custom_fields[untilKey];
-    }
-    
-    Logger.log(`Time range values: ${baseKey}=${startValue}, ${untilKey}=${endValue}`);
-    
-    // Now make sure both values are in both places
-    if (startValue) {
-      finalPayload[baseKey] = startValue;
-      if (!finalPayload.custom_fields) finalPayload.custom_fields = {};
-      finalPayload.custom_fields[baseKey] = startValue;
-    }
-    
-    if (endValue) {
-      finalPayload[untilKey] = endValue;
-      if (!finalPayload.custom_fields) finalPayload.custom_fields = {};
-      finalPayload.custom_fields[untilKey] = endValue;
-      Logger.log(`CRITICAL: Ensuring end time in ROOT payload: ${untilKey}=${endValue}`);
-    }
-  }
-}
+                if (
+                  finalPayload.__hasTimeRangeFields ||
+                  Object.keys(finalPayload).some((key) =>
+                    key.endsWith("_until")
+                  )
+                ) {
+                  Logger.log(
+                    `Found time range fields in finalPayload - ensuring proper formats`
+                  );
 
-// CRITICAL: Final check for time range fields before API call
-if (finalPayload.__preserveTimeRangePairs && finalPayload.__timeRangePairs) {
-  Logger.log(`CRITICAL: Restoring preserved time range pairs to final payload`);
+                  // First, build a map of time range pairs
+                  const timeRangePairs = {};
 
-  for (const baseKey in finalPayload.__timeRangePairs) {
-    const pair = finalPayload.__timeRangePairs[baseKey];
-    // Ensure both start and end values are in the root payload
-    if (pair.startValue) {
-      finalPayload[pair.startKey] = pair.startValue;
-      Logger.log(`CRITICAL: Restoring start time to root payload: ${pair.startKey}=${pair.startValue}`);
-    }
-    if (pair.endValue) {
-      finalPayload[pair.endKey] = pair.endValue;
-      Logger.log(`CRITICAL: Restoring end time to root payload: ${pair.endKey}=${pair.endValue}`);
-    }
-  }
+                  // Look for _until fields in custom_fields
+                  if (finalPayload.custom_fields) {
+                    Object.keys(finalPayload.custom_fields).forEach((key) => {
+                      if (key.endsWith("_until")) {
+                        const baseKey = key.replace(/_until$/, "");
+                        timeRangePairs[baseKey] = key;
+                        Logger.log(
+                          `Found time range pair in custom_fields: ${baseKey} -> ${key}`
+                        );
+                      }
+                    });
+                  }
 
-  // Clean up our temporary fields
-  delete finalPayload.__preserveTimeRangePairs;
-  delete finalPayload.__timeRangePairs;
-}
+                  // Also look for _until fields at root level
+                  Object.keys(finalPayload).forEach((key) => {
+                    if (key.endsWith("_until")) {
+                      const baseKey = key.replace(/_until$/, "");
+                      timeRangePairs[baseKey] = key;
+                      Logger.log(
+                        `Found time range pair at root: ${baseKey} -> ${key}`
+                      );
+                    }
+                  });
 
-// Enhanced time range field detection
-let timeRangeFieldsDetected = finalPayload.__hasTimeRangeFields === true;
-let timeRangePairs = {};
+                  // Now ensure both parts are present in both root and custom_fields
+                  for (const baseKey in timeRangePairs) {
+                    const untilKey = timeRangePairs[baseKey];
 
-// More aggressive time range detection - check for any fields ending with _until
-// First collect all possible time range fields
-for (const key in finalPayload) {
-  if (key.endsWith("_until")) {
-    const baseKey = key.replace(/_until$/, "");
-    timeRangeFieldsDetected = true;
-    timeRangePairs[baseKey] = {
-      startKey: baseKey, 
-      endKey: key,
-      startValue: finalPayload[baseKey],
-      endValue: finalPayload[key]
-    };
-    Logger.log(`Time range field detected at root level: ${baseKey} -> ${key}`);
-    Logger.log(`Start value: ${finalPayload[baseKey]}, End value: ${finalPayload[key]}`);
-  }
-}
+                    // Get values from wherever they are
+                    let startValue = finalPayload[baseKey];
+                    let endValue = finalPayload[untilKey];
 
-// Also check all custom fields for time range endings
-if (finalPayload.custom_fields) {
-  for (const key in finalPayload.custom_fields) {
-    if (key.endsWith("_until")) {
-      const baseKey = key.replace(/_until$/, "");
-      
-      // If we already detected this pair at root level, update with any values from custom_fields
-      if (timeRangePairs[baseKey]) {
-        if (!timeRangePairs[baseKey].startValue && finalPayload.custom_fields[baseKey]) {
-          timeRangePairs[baseKey].startValue = finalPayload.custom_fields[baseKey];
-          Logger.log(`Updated start value from custom_fields: ${baseKey} = ${finalPayload.custom_fields[baseKey]}`);
-        }
-        if (!timeRangePairs[baseKey].endValue && finalPayload.custom_fields[key]) {
-          timeRangePairs[baseKey].endValue = finalPayload.custom_fields[key];
-          Logger.log(`Updated end value from custom_fields: ${key} = ${finalPayload.custom_fields[key]}`);
-        }
-      } else {
-        // This is a new time range pair
-        timeRangeFieldsDetected = true;
-        timeRangePairs[baseKey] = {
-          startKey: baseKey, 
-          endKey: key,
-          startValue: finalPayload.custom_fields[baseKey],
-          endValue: finalPayload.custom_fields[key]
-        };
-        Logger.log(`Time range field detected in custom_fields: ${baseKey} -> ${key}`);
-        Logger.log(`Start value: ${finalPayload.custom_fields[baseKey]}, End value: ${finalPayload.custom_fields[key]}`);
-      }
-    }
-  }
-}
+                    if (
+                      !startValue &&
+                      finalPayload.custom_fields &&
+                      finalPayload.custom_fields[baseKey]
+                    ) {
+                      startValue = finalPayload.custom_fields[baseKey];
+                    }
 
-// Check any field with time or hour in the name that might be time fields
-if (!timeRangeFieldsDetected) {
-  for (const key in finalPayload) {
-    if ((key.includes("time_") || key.includes("hour")) && 
-        typeof finalPayload[key] === "string" && 
-        finalPayload[key].match(/\d{1,2}:\d{2}/)) {
-      // This looks like a time field but doesn't follow the _until pattern
-      // Check if there's a corresponding end field
-      const possibleEndKeys = [`${key}_until`, `${key}_end`, `${key}_to`];
-      
-      for (const endKey of possibleEndKeys) {
-        if (finalPayload[endKey] || (finalPayload.custom_fields && finalPayload.custom_fields[endKey])) {
-          timeRangeFieldsDetected = true;
-          const endValue = finalPayload[endKey] || (finalPayload.custom_fields && finalPayload.custom_fields[endKey]);
-          Logger.log(`Non-standard time range field detected: ${key} -> ${endKey}, value: ${endValue}`);
-          break;
-        }
-      }
-      
-      if (timeRangeFieldsDetected) {
-        Logger.log(`Potential time field detected: ${key} with value: ${finalPayload[key]}`);
-        break;
-      }
-    }
-  }
-}
+                    if (
+                      !endValue &&
+                      finalPayload.custom_fields &&
+                      finalPayload.custom_fields[untilKey]
+                    ) {
+                      endValue = finalPayload.custom_fields[untilKey];
+                    }
 
-// Ensure all time range pairs have both start and end values
-if (Object.keys(timeRangePairs).length > 0) {
-  // Flag that we have time range fields to handle
-  finalPayload.__hasTimeRangeFields = true;
-  finalPayload.__timeRangePairs = timeRangePairs;
-  
-  // Ensure both parts of each pair are properly formatted and present
-  for (const baseKey in timeRangePairs) {
-    const pair = timeRangePairs[baseKey];
-    
-    // If we have a value for one part but not the other, copy it
-    if (pair.startValue && !pair.endValue) {
-      // If we have start but no end, use start as end
-      pair.endValue = pair.startValue;
-      
-      // Set in both places
-      finalPayload[pair.endKey] = pair.endValue;
-      if (!finalPayload.custom_fields) finalPayload.custom_fields = {};
-      finalPayload.custom_fields[pair.endKey] = pair.endValue;
-      
-      Logger.log(`Added missing end time: ${pair.endKey} = ${pair.endValue}`);
-    }
-    
-    if (!pair.startValue && pair.endValue) {
-      // If we have end but no start, use end as start
-      pair.startValue = pair.endValue;
-      
-      // Set in both places
-      finalPayload[pair.startKey] = pair.startValue;
-      if (!finalPayload.custom_fields) finalPayload.custom_fields = {};
-      finalPayload.custom_fields[pair.startKey] = pair.startValue;
-      
-      Logger.log(`Added missing start time: ${pair.startKey} = ${pair.startValue}`);
-    }
-  }
-  
-  Logger.log(`Time range fields detected (${Object.keys(timeRangePairs).length} pairs) - will use direct API`);
-}
+                    Logger.log(
+                      `Time range values: ${baseKey}=${startValue}, ${untilKey}=${endValue}`
+                    );
+
+                    // Now make sure both values are in both places
+                    if (startValue) {
+                      finalPayload[baseKey] = startValue;
+                      if (!finalPayload.custom_fields)
+                        finalPayload.custom_fields = {};
+                      finalPayload.custom_fields[baseKey] = startValue;
+                    }
+
+                    if (endValue) {
+                      finalPayload[untilKey] = endValue;
+                      if (!finalPayload.custom_fields)
+                        finalPayload.custom_fields = {};
+                      finalPayload.custom_fields[untilKey] = endValue;
+                      Logger.log(
+                        `CRITICAL: Ensuring end time in ROOT payload: ${untilKey}=${endValue}`
+                      );
+                    }
+                  }
+                }
+
+                // CRITICAL: Final check for time range fields before API call
+                if (
+                  finalPayload.__preserveTimeRangePairs &&
+                  finalPayload.__timeRangePairs
+                ) {
+                  Logger.log(
+                    `CRITICAL: Restoring preserved time range pairs to final payload`
+                  );
+
+                  for (const baseKey in finalPayload.__timeRangePairs) {
+                    const pair = finalPayload.__timeRangePairs[baseKey];
+                    // Ensure both start and end values are in the root payload
+                    if (pair.startValue) {
+                      finalPayload[pair.startKey] = pair.startValue;
+                      Logger.log(
+                        `CRITICAL: Restoring start time to root payload: ${pair.startKey}=${pair.startValue}`
+                      );
+                    }
+                    if (pair.endValue) {
+                      finalPayload[pair.endKey] = pair.endValue;
+                      Logger.log(
+                        `CRITICAL: Restoring end time to root payload: ${pair.endKey}=${pair.endValue}`
+                      );
+                    }
+                  }
+
+                  // Clean up our temporary fields
+                  delete finalPayload.__preserveTimeRangePairs;
+                  delete finalPayload.__timeRangePairs;
+                }
+
+                // Enhanced time range field detection
+                let timeRangeFieldsDetected =
+                  finalPayload.__hasTimeRangeFields === true;
+                let timeRangePairs = {};
+
+                // More aggressive time range detection - check for any fields ending with _until
+                // First collect all possible time range fields
+                for (const key in finalPayload) {
+                  if (key.endsWith("_until")) {
+                    const baseKey = key.replace(/_until$/, "");
+                    timeRangeFieldsDetected = true;
+                    timeRangePairs[baseKey] = {
+                      startKey: baseKey,
+                      endKey: key,
+                      startValue: finalPayload[baseKey],
+                      endValue: finalPayload[key],
+                    };
+                    Logger.log(
+                      `Time range field detected at root level: ${baseKey} -> ${key}`
+                    );
+                    Logger.log(
+                      `Start value: ${finalPayload[baseKey]}, End value: ${finalPayload[key]}`
+                    );
+                  }
+                }
+
+                // Also check all custom fields for time range endings
+                if (finalPayload.custom_fields) {
+                  for (const key in finalPayload.custom_fields) {
+                    if (key.endsWith("_until")) {
+                      const baseKey = key.replace(/_until$/, "");
+
+                      // If we already detected this pair at root level, update with any values from custom_fields
+                      if (timeRangePairs[baseKey]) {
+                        if (
+                          !timeRangePairs[baseKey].startValue &&
+                          finalPayload.custom_fields[baseKey]
+                        ) {
+                          timeRangePairs[baseKey].startValue =
+                            finalPayload.custom_fields[baseKey];
+                          Logger.log(
+                            `Updated start value from custom_fields: ${baseKey} = ${finalPayload.custom_fields[baseKey]}`
+                          );
+                        }
+                        if (
+                          !timeRangePairs[baseKey].endValue &&
+                          finalPayload.custom_fields[key]
+                        ) {
+                          timeRangePairs[baseKey].endValue =
+                            finalPayload.custom_fields[key];
+                          Logger.log(
+                            `Updated end value from custom_fields: ${key} = ${finalPayload.custom_fields[key]}`
+                          );
+                        }
+                      } else {
+                        // This is a new time range pair
+                        timeRangeFieldsDetected = true;
+                        timeRangePairs[baseKey] = {
+                          startKey: baseKey,
+                          endKey: key,
+                          startValue: finalPayload.custom_fields[baseKey],
+                          endValue: finalPayload.custom_fields[key],
+                        };
+                        Logger.log(
+                          `Time range field detected in custom_fields: ${baseKey} -> ${key}`
+                        );
+                        Logger.log(
+                          `Start value: ${finalPayload.custom_fields[baseKey]}, End value: ${finalPayload.custom_fields[key]}`
+                        );
+                      }
+                    }
+                  }
+                }
+
+                // Check any field with time or hour in the name that might be time fields
+                if (!timeRangeFieldsDetected) {
+                  for (const key in finalPayload) {
+                    if (
+                      (key.includes("time_") || key.includes("hour")) &&
+                      typeof finalPayload[key] === "string" &&
+                      finalPayload[key].match(/\d{1,2}:\d{2}/)
+                    ) {
+                      // This looks like a time field but doesn't follow the _until pattern
+                      // Check if there's a corresponding end field
+                      const possibleEndKeys = [
+                        `${key}_until`,
+                        `${key}_end`,
+                        `${key}_to`,
+                      ];
+
+                      for (const endKey of possibleEndKeys) {
+                        if (
+                          finalPayload[endKey] ||
+                          (finalPayload.custom_fields &&
+                            finalPayload.custom_fields[endKey])
+                        ) {
+                          timeRangeFieldsDetected = true;
+                          const endValue =
+                            finalPayload[endKey] ||
+                            (finalPayload.custom_fields &&
+                              finalPayload.custom_fields[endKey]);
+                          Logger.log(
+                            `Non-standard time range field detected: ${key} -> ${endKey}, value: ${endValue}`
+                          );
+                          break;
+                        }
+                      }
+
+                      if (timeRangeFieldsDetected) {
+                        Logger.log(
+                          `Potential time field detected: ${key} with value: ${finalPayload[key]}`
+                        );
+                        break;
+                      }
+                    }
+                  }
+                }
+
+                // Ensure all time range pairs have both start and end values
+                if (Object.keys(timeRangePairs).length > 0) {
+                  // Flag that we have time range fields to handle
+                  finalPayload.__hasTimeRangeFields = true;
+                  finalPayload.__timeRangePairs = timeRangePairs;
+
+                  // Ensure both parts of each pair are properly formatted and present
+                  for (const baseKey in timeRangePairs) {
+                    const pair = timeRangePairs[baseKey];
+
+                    // If we have a value for one part but not the other, copy it
+                    if (pair.startValue && !pair.endValue) {
+                      // If we have start but no end, use start as end
+                      pair.endValue = pair.startValue;
+
+                      // Set in both places
+                      finalPayload[pair.endKey] = pair.endValue;
+                      if (!finalPayload.custom_fields)
+                        finalPayload.custom_fields = {};
+                      finalPayload.custom_fields[pair.endKey] = pair.endValue;
+
+                      Logger.log(
+                        `Added missing end time: ${pair.endKey} = ${pair.endValue}`
+                      );
+                    }
+
+                    if (!pair.startValue && pair.endValue) {
+                      // If we have end but no start, use end as start
+                      pair.startValue = pair.endValue;
+
+                      // Set in both places
+                      finalPayload[pair.startKey] = pair.startValue;
+                      if (!finalPayload.custom_fields)
+                        finalPayload.custom_fields = {};
+                      finalPayload.custom_fields[pair.startKey] =
+                        pair.startValue;
+
+                      Logger.log(
+                        `Added missing start time: ${pair.startKey} = ${pair.startValue}`
+                      );
+                    }
+                  }
+
+                  Logger.log(
+                    `Time range fields detected (${
+                      Object.keys(timeRangePairs).length
+                    } pairs) - will use direct API`
+                  );
+                }
 
                 // Use direct API for deals with time range fields
                 if (timeRangeFieldsDetected) {
-                  Logger.log(`Using updateDealDirect for deal with time range fields`);
+                  Logger.log(
+                    `Using updateDealDirect for deal with time range fields`
+                  );
                   try {
                     // Get the field definitions map for deals
                     const fieldDefinitions = getFieldDefinitionsMap(entityType);
@@ -3922,9 +4149,16 @@ if (Object.keys(timeRangePairs).length > 0) {
 
                     // Process the response similar to your existing code
                     responseCode = directResponse.responseCode || 200;
-                    responseText = JSON.stringify(directResponse);
-                    Logger.log(`Direct API call response code from updateDealDirect: ${responseCode}`);
-                    Logger.log(`Direct API response from updateDealDirect: ${responseText.substring(0, 500)}`);
+                    const directResponseText = JSON.stringify(directResponse);
+                    Logger.log(
+                      `Direct API call response code from updateDealDirect: ${responseCode}`
+                    );
+                    Logger.log(
+                      `Direct API response from updateDealDirect: ${directResponseText.substring(
+                        0,
+                        500
+                      )}`
+                    );
 
                     // Parse the response
                     responseBody = directResponse;
@@ -3933,7 +4167,9 @@ if (Object.keys(timeRangePairs).length > 0) {
                     // Skip the regular API call
                     break;
                   } catch (dealError) {
-                    Logger.log(`Deal update with updateDealDirect failed: ${dealError.message}`);
+                    Logger.log(
+                      `Deal update with updateDealDirect failed: ${dealError.message}`
+                    );
                     responseBody = {
                       error: dealError.message,
                     };
@@ -3942,7 +4178,6 @@ if (Object.keys(timeRangePairs).length > 0) {
                   }
                 }
 
-                // Your existing code for the regular API call continues here
                 // Construct URL and options
                 const apiUrl = `https://${subdomain}.pipedrive.com/api/v1/deals/${Number(
                   rowData.id
@@ -3959,13 +4194,8 @@ if (Object.keys(timeRangePairs).length > 0) {
 
                 // Make the request
                 const response = UrlFetchApp.fetch(apiUrl, options);
-                const responseCode = response.getResponseCode();
+                responseCode = response.getResponseCode();
                 const responseText = response.getContentText();
-
-                Logger.log(`Direct API call response code: ${responseCode}`);
-                Logger.log(
-                  `Direct API response: ${responseText.substring(0, 500)}`
-                );
 
                 // Parse the response
                 responseBody = JSON.parse(responseText);
@@ -4038,9 +4268,6 @@ if (Object.keys(timeRangePairs).length > 0) {
               throw new Error(`Unknown entity type: ${entityType}`);
           }
 
-          Logger.log(
-            `API response: ${JSON.stringify(responseBody).substring(0, 500)}...`
-          );
         } catch (apiError) {
           success = false;
           responseCode = apiError.status || 500;
@@ -4431,13 +4658,13 @@ function filterReadOnlyFields(data, entityType) {
     (data.custom_fields ? Object.keys(data.custom_fields).length : 0);
   const filteredFieldCount =
     Object.keys(filteredData).length +
-    (filteredData.custom_fields ?
-      Object.keys(filteredData.custom_fields).length :
-      0);
+    (filteredData.custom_fields
+      ? Object.keys(filteredData.custom_fields).length
+      : 0);
   const topLevelFieldCount = Object.keys(filteredData).length;
-  const customFieldCount = filteredData.custom_fields ?
-    Object.keys(filteredData.custom_fields).length :
-    0;
+  const customFieldCount = filteredData.custom_fields
+    ? Object.keys(filteredData.custom_fields).length
+    : 0;
 
   Logger.log(
     `Filtered data payload from ${originalFieldCount} fields to ${topLevelFieldCount} top-level fields plus ${customFieldCount} custom fields`
@@ -5064,9 +5291,9 @@ function formatCustomFields(customFields) {
           typeof value === "string" &&
           (value.includes("-") || value.includes("to"))
         ) {
-          let dates = value.includes("to") ?
-            value.split("to") :
-            value.split("-");
+          let dates = value.includes("to")
+            ? value.split("to")
+            : value.split("-");
           if (dates.length === 2) {
             start = dates[0].trim();
             end = dates[1].trim();
@@ -5085,9 +5312,9 @@ function formatCustomFields(customFields) {
           };
           Logger.log(
             "Formatted daterange field: " +
-            fieldId +
-            " = " +
-            JSON.stringify(customFields[fieldId])
+              fieldId +
+              " = " +
+              JSON.stringify(customFields[fieldId])
           );
         } else {
           delete customFields[fieldId];
@@ -5124,9 +5351,9 @@ function formatCustomFields(customFields) {
     ) {
       Logger.log(
         "Processing multi-option field: " +
-        fieldId +
-        " with value: " +
-        JSON.stringify(value)
+          fieldId +
+          " with value: " +
+          JSON.stringify(value)
       );
 
       try {
@@ -6161,24 +6388,80 @@ function formatDateTimeForPipedrive(value, fieldDefinition) {
 /**
  * Ensures time range fields (with _until suffix) are properly handled for Pipedrive API
  * @param {Object} payload - The payload to process
- * @param {Object} fieldDefinitions - Optional field definitions from Pipedrive
+ * @param {Object} rowData - The original row data that might contain end time values
+ * @param {Object} headerToFieldKeyMap - Mapping of headers to field keys
  * @return {Object} - The processed payload with properly defined time range fields
  */
-function ensureTimeRangeFieldsForPipedrive(payload) {
+function ensureTimeRangeFieldsForPipedrive(
+  payload,
+  rowData,
+  headerToFieldKeyMap
+) {
   try {
-    Logger.log("Ensuring time range fields are properly formatted for Pipedrive...");
-    
+    Logger.log(
+      "Ensuring time range fields are properly formatted for Pipedrive..."
+    );
+
     // Create a copy of the payload to avoid modification issues
     const updatedPayload = JSON.parse(JSON.stringify(payload));
-    
+
     // Make sure custom_fields exists
     if (!updatedPayload.custom_fields) {
       updatedPayload.custom_fields = {};
     }
-    
+
+    // CRITICAL: First check rowData for any end time fields that might not be in the payload
+    if (rowData && headerToFieldKeyMap) {
+      Logger.log(`Checking rowData for missing time range end fields...`);
+      for (const [header, value] of Object.entries(rowData)) {
+        if (header && value && header.toLowerCase().includes("end time")) {
+          const fieldKey = headerToFieldKeyMap[header];
+          if (fieldKey && fieldKey.endsWith("_until")) {
+            Logger.log(
+              `Found end time in rowData: ${header} (${fieldKey}) = ${value}`
+            );
+
+            // Add to payload if missing
+            if (!updatedPayload[fieldKey]) {
+              updatedPayload[fieldKey] = value;
+              Logger.log(
+                `Added missing end time to payload root: ${fieldKey} = ${value}`
+              );
+            }
+            if (!updatedPayload.custom_fields[fieldKey]) {
+              updatedPayload.custom_fields[fieldKey] = value;
+              Logger.log(
+                `Added missing end time to custom_fields: ${fieldKey} = ${value}`
+              );
+            }
+
+            // Also ensure the base field exists
+            const baseKey = fieldKey.replace(/_until$/, "");
+            const baseHeader = Object.keys(headerToFieldKeyMap).find(
+              (h) => headerToFieldKeyMap[h] === baseKey
+            );
+            if (baseHeader && rowData[baseHeader]) {
+              if (!updatedPayload[baseKey]) {
+                updatedPayload[baseKey] = rowData[baseHeader];
+                Logger.log(
+                  `Added missing start time to payload root: ${baseKey} = ${rowData[baseHeader]}`
+                );
+              }
+              if (!updatedPayload.custom_fields[baseKey]) {
+                updatedPayload.custom_fields[baseKey] = rowData[baseHeader];
+                Logger.log(
+                  `Added missing start time to custom_fields: ${baseKey} = ${rowData[baseHeader]}`
+                );
+              }
+            }
+          }
+        }
+      }
+    }
+
     // 1. First identify all potential time range field pairs (base fields and their _until counterparts)
     const timeRangeFields = {};
-    
+
     // Look for fields with _until suffix at root level
     for (const key of Object.keys(updatedPayload)) {
       if (key.endsWith("_until")) {
@@ -6187,12 +6470,14 @@ function ensureTimeRangeFieldsForPipedrive(payload) {
           baseKey: baseKey,
           untilKey: key,
           startTime: updatedPayload[baseKey],
-          endTime: updatedPayload[key]
+          endTime: updatedPayload[key],
         };
-        Logger.log(`Found time range field at root level: ${baseKey} -> ${key}`);
+        Logger.log(
+          `Found time range field at root level: ${baseKey} -> ${key}`
+        );
       }
     }
-    
+
     // Look for fields with _until suffix in custom_fields
     if (updatedPayload.custom_fields) {
       for (const key of Object.keys(updatedPayload.custom_fields)) {
@@ -6200,62 +6485,97 @@ function ensureTimeRangeFieldsForPipedrive(payload) {
           const baseKey = key.replace(/_until$/, "");
           // If already found at root level, update with custom_fields values if they exist
           if (timeRangeFields[baseKey]) {
-            timeRangeFields[baseKey].startTime = timeRangeFields[baseKey].startTime || updatedPayload.custom_fields[baseKey];
-            timeRangeFields[baseKey].endTime = timeRangeFields[baseKey].endTime || updatedPayload.custom_fields[key];
+            timeRangeFields[baseKey].startTime =
+              timeRangeFields[baseKey].startTime ||
+              updatedPayload.custom_fields[baseKey];
+            timeRangeFields[baseKey].endTime =
+              timeRangeFields[baseKey].endTime ||
+              updatedPayload.custom_fields[key];
           } else {
             timeRangeFields[baseKey] = {
               baseKey: baseKey,
               untilKey: key,
               startTime: updatedPayload.custom_fields[baseKey],
-              endTime: updatedPayload.custom_fields[key]
+              endTime: updatedPayload.custom_fields[key],
             };
           }
-          Logger.log(`Found time range field in custom_fields: ${baseKey} -> ${key}`);
+          Logger.log(
+            `Found time range field in custom_fields: ${baseKey} -> ${key}`
+          );
         }
       }
     }
-    
+
     // 2. Process each time range field pair to ensure both start and end times are set
     for (const baseKey in timeRangeFields) {
       const field = timeRangeFields[baseKey];
       const untilKey = field.untilKey;
-      
+
       // Format values if they exist
-      let startTimeFormatted = field.startTime ? formatTimeValue(field.startTime) : null;
-      let endTimeFormatted = field.endTime ? formatTimeValue(field.endTime) : null;
+      // Check if this is a date range or time range based on the values
+      // Special case: "1899-12-30" is Excel/Sheets' way of storing time-only values, so treat it as time
+      const isExcelTime = (field.startTime && String(field.startTime).includes('1899-12-30')) ||
+                         (field.endTime && String(field.endTime).includes('1899-12-30'));
       
-      Logger.log(`Time range field values: ${baseKey}=${startTimeFormatted}, ${untilKey}=${endTimeFormatted}`);
+      const isDateRange = !isExcelTime && (
+        (field.startTime && (String(field.startTime).includes('T') || String(field.startTime).match(/^\d{4}-\d{2}-\d{2}/))) ||
+        (field.endTime && (String(field.endTime).includes('T') || String(field.endTime).match(/^\d{4}-\d{2}-\d{2}/)))
+      );
       
+      let startTimeFormatted, endTimeFormatted;
+      
+      if (isDateRange) {
+        // Format as dates for date range fields
+        startTimeFormatted = field.startTime ? formatDateField(field.startTime) : null;
+        endTimeFormatted = field.endTime ? formatDateField(field.endTime) : null;
+        Logger.log(`Formatting as DATE RANGE for ${baseKey}: start=${startTimeFormatted}, end=${endTimeFormatted}`);
+      } else {
+        // Format as times for time range fields
+        startTimeFormatted = field.startTime ? formatTimeValue(field.startTime) : null;
+        endTimeFormatted = field.endTime ? formatTimeValue(field.endTime) : null;
+        Logger.log(`Formatting as TIME RANGE for ${baseKey}: start=${startTimeFormatted}, end=${endTimeFormatted}`);
+      }
+
+      Logger.log(
+        `Time range field values: ${baseKey}=${startTimeFormatted}, ${untilKey}=${endTimeFormatted}`
+      );
+
       // If we have a start time but no end time, use the start time for both
       if (startTimeFormatted && !endTimeFormatted) {
         endTimeFormatted = startTimeFormatted;
-        Logger.log(`Auto-setting end time to match start time: ${untilKey}=${endTimeFormatted}`);
+        Logger.log(
+          `Auto-setting end time to match start time: ${untilKey}=${endTimeFormatted}`
+        );
       }
-      
+
       // If we have an end time but no start time, use the end time for both
       if (!startTimeFormatted && endTimeFormatted) {
         startTimeFormatted = endTimeFormatted;
-        Logger.log(`Auto-setting start time to match end time: ${baseKey}=${startTimeFormatted}`);
+        Logger.log(
+          `Auto-setting start time to match end time: ${baseKey}=${startTimeFormatted}`
+        );
       }
-      
+
       // Set values in both root and custom_fields if at least one time value exists
       if (startTimeFormatted || endTimeFormatted) {
         // Use whichever value is not null, prioritizing the formatted values
         const finalStartTime = startTimeFormatted || endTimeFormatted;
         const finalEndTime = endTimeFormatted || startTimeFormatted;
-        
+
         // Set at root level
         updatedPayload[baseKey] = finalStartTime;
         updatedPayload[untilKey] = finalEndTime;
-        
+
         // Set in custom_fields
         updatedPayload.custom_fields[baseKey] = finalStartTime;
         updatedPayload.custom_fields[untilKey] = finalEndTime;
-        
-        Logger.log(`Set time range pair: ${baseKey}=${finalStartTime}, ${untilKey}=${finalEndTime}`);
+
+        Logger.log(
+          `Set time range pair: ${baseKey}=${finalStartTime}, ${untilKey}=${finalEndTime}`
+        );
       }
     }
-    
+
     return updatedPayload;
   } catch (error) {
     Logger.log(`Error in ensureTimeRangeFieldsForPipedrive: ${error.message}`);
@@ -6271,11 +6591,16 @@ function ensureTimeRangeFieldsForPipedrive(payload) {
  * @param {Object} fieldDefinitions - Optional field definitions from Pipedrive
  * @return {Object} - The processed data object
  */
-function processDateTimeFields(payload, rowData, fieldDefinitions, headerToFieldKeyMap) {
+function processDateTimeFields(
+  payload,
+  rowData,
+  fieldDefinitions,
+  headerToFieldKeyMap
+) {
   try {
     Logger.log("Processing date and time fields in payload...");
     const fieldKeys = Object.keys(payload);
-    
+
     // Create reverse mapping for fieldKey to header
     const fieldKeyToHeader = {};
     for (const header in headerToFieldKeyMap) {
@@ -6283,81 +6608,94 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
         fieldKeyToHeader[headerToFieldKeyMap[header]] = header;
       }
     }
-    
+
     // Track which fields were processed as date/time
     const processedDateTimeFields = [];
-    
+
     // First identify date/time range pairs directly from field keys (not headers)
     const timeRangePairs = {};
-    
+
     // Check both root level and custom_fields for time range pairs
     const checkFields = (fields, source) => {
       for (const fieldKey of Object.keys(fields)) {
         if (fieldKey.endsWith("_until")) {
           const baseFieldKey = fieldKey.replace(/_until$/, "");
-          if (fieldDefinitions[baseFieldKey] || payload[baseFieldKey] || 
-              (payload.custom_fields && payload.custom_fields[baseFieldKey])) {
+          if (
+            fieldDefinitions[baseFieldKey] ||
+            payload[baseFieldKey] ||
+            (payload.custom_fields && payload.custom_fields[baseFieldKey])
+          ) {
             timeRangePairs[baseFieldKey] = fieldKey;
-            Logger.log(`Identified time range pair ${source}: ${baseFieldKey} -> ${fieldKey}`);
+            Logger.log(
+              `Identified time range pair ${source}: ${baseFieldKey} -> ${fieldKey}`
+            );
           }
         }
       }
     };
-    
+
     // Check root level fields
     checkFields(payload, "root level");
-    
+
     // Check custom_fields
     if (payload.custom_fields) {
       checkFields(payload.custom_fields, "custom_fields");
     }
-    
+
     // Process time range pairs
-    Object.keys(timeRangePairs).forEach(baseKey => {
+    Object.keys(timeRangePairs).forEach((baseKey) => {
       const untilKey = timeRangePairs[baseKey];
-      
+
       // Find the headers that map to these field keys
       const baseHeader = fieldKeyToHeader[baseKey];
       const untilHeader = fieldKeyToHeader[untilKey];
-      
-      Logger.log(`Processing time range pair: ${baseKey} -> ${untilKey} (headers: ${baseHeader} -> ${untilHeader})`);
-      
+
+      Logger.log(
+        `Processing time range pair: ${baseKey} -> ${untilKey} (headers: ${baseHeader} -> ${untilHeader})`
+      );
+
       // Get values from payload or rowData
       let startValue = payload[baseKey];
       let endValue = payload[untilKey];
-      
+
       // If values not in payload, try to get from rowData
       if (!startValue && baseHeader && rowData[baseHeader]) {
         startValue = rowData[baseHeader];
-        Logger.log(`Found start time in row data: ${baseHeader} = ${startValue}`);
+        Logger.log(
+          `Found start time in row data: ${baseHeader} = ${startValue}`
+        );
       }
-      
+
       if (!endValue && untilHeader && rowData[untilHeader]) {
         endValue = rowData[untilHeader];
         Logger.log(`Found end time in row data: ${untilHeader} = ${endValue}`);
       }
-      
+
       // Update both values in payload and custom_fields
       if (startValue || endValue) {
         if (!payload.custom_fields) payload.custom_fields = {};
-        
+
         if (startValue) {
           payload[baseKey] = formatTimeValue(startValue);
           payload.custom_fields[baseKey] = formatTimeValue(startValue);
-          Logger.log(`Set time range start in payload: ${baseKey} = ${payload[baseKey]}`);
+          Logger.log(
+            `Set time range start in payload: ${baseKey} = ${payload[baseKey]}`
+          );
         }
-        
+
         if (endValue) {
           payload[untilKey] = formatTimeValue(endValue);
           payload.custom_fields[untilKey] = formatTimeValue(endValue);
-          Logger.log(`Set time range end in payload: ${untilKey} = ${payload[untilKey]}`);
+          Logger.log(
+            `Set time range end in payload: ${untilKey} = ${payload[untilKey]}`
+          );
         }
-        
+
         // Flag payload as having time range fields
         payload.__hasTimeRangeFields = true;
       }
     });
-    
+
     return payload;
   } catch (error) {
     Logger.log(`Error processing date/time fields: ${error.message}`);
@@ -6409,7 +6747,9 @@ function ensureTimeRangePairs(payload, rowData, headerFieldMap) {
     const startValue = rowData[pair.baseHeader];
     const endValue = rowData[pair.untilHeader];
 
-    Logger.log(`Processing time range from sheet: ${baseKey} (start=${startValue}, end=${endValue})`);
+    Logger.log(
+      `Processing time range from sheet: ${baseKey} (start=${startValue}, end=${endValue})`
+    );
 
     // At least one value needs to be present for a time range
     if (startValue || endValue) {
@@ -6420,7 +6760,9 @@ function ensureTimeRangePairs(payload, rowData, headerFieldMap) {
       if (startValue) {
         payload[baseKey] = startValue;
         payload.custom_fields[baseKey] = startValue;
-        Logger.log(`Added time range start to payload: ${baseKey} = ${startValue}`);
+        Logger.log(
+          `Added time range start to payload: ${baseKey} = ${startValue}`
+        );
       }
 
       // Add end time to payload if present - ALWAYS include end time if start time is present
@@ -6430,7 +6772,9 @@ function ensureTimeRangePairs(payload, rowData, headerFieldMap) {
         if (effectiveEndValue) {
           payload[pair.untilKey] = effectiveEndValue;
           payload.custom_fields[pair.untilKey] = effectiveEndValue;
-          Logger.log(`Added time range end to payload: ${pair.untilKey} = ${effectiveEndValue}`);
+          Logger.log(
+            `Added time range end to payload: ${pair.untilKey} = ${effectiveEndValue}`
+          );
         }
       }
 
@@ -6489,10 +6833,10 @@ function findSyncStatusColumn(sheet, sheetName) {
         // Check if any cell contains a typical sync status value
         const containsSyncStatus = colValues.some(
           (value) =>
-          value === "Modified" ||
-          value === "Not modified" ||
-          value === "Synced" ||
-          value === "Error"
+            value === "Modified" ||
+            value === "Not modified" ||
+            value === "Synced" ||
+            value === "Error"
         );
 
         if (containsSyncStatus) {
@@ -6677,9 +7021,9 @@ function getFieldValue(item, fieldKey) {
             // Find the item with the matching label
             const foundItem = itemArray.find(
               (item) =>
-              item &&
-              item.label &&
-              item.label.toLowerCase() === part.toLowerCase()
+                item &&
+                item.label &&
+                item.label.toLowerCase() === part.toLowerCase()
             );
 
             // If found, use its value
@@ -7211,9 +7555,9 @@ function logDebugInfo() {
 
             // Log a preview of the value unless it's a string longer than 50 chars
             const preview =
-              type === "string" && value.length > 50 ?
-              value.substring(0, 50) + "..." :
-              value;
+              type === "string" && value.length > 50
+                ? value.substring(0, 50) + "..."
+                : value;
 
             Logger.log(`${newPath}: ${type} = ${preview}`);
           }
@@ -7243,9 +7587,9 @@ function logDebugInfo() {
           }
         } else {
           const preview =
-            fieldType === "string" && field.length > 50 ?
-            field.substring(0, 50) + "..." :
-            field;
+            fieldType === "string" && field.length > 50
+              ? field.substring(0, 50) + "..."
+              : field;
           Logger.log(`${key}: ${fieldType} = ${preview}`);
         }
       }

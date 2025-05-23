@@ -56,6 +56,23 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
             // Track the base field key too
             const baseFieldKey = fieldKey.replace(/_until$/, "");
             Logger.log(`Base field for ${fieldKey} would be ${baseFieldKey}`);
+            
+            // CRITICAL: Add the _until field to the payload immediately
+            if (!payload[fieldKey] && rowData[headerKey]) {
+              payload[fieldKey] = rowData[headerKey];
+              Logger.log(`ADDED _UNTIL FIELD TO PAYLOAD: ${fieldKey} = ${rowData[headerKey]}`);
+            }
+          }
+        }
+        
+        // Also check if the header itself indicates an end time field
+        if (headerKey.toLowerCase().includes('end time') && rowData[headerKey]) {
+          Logger.log(`Found end time header: ${headerKey} = ${rowData[headerKey]}`);
+          // Try to find the corresponding field key
+          const correspondingFieldKey = headerToFieldKeyMap ? headerToFieldKeyMap[headerKey] : null;
+          if (correspondingFieldKey && !payload[correspondingFieldKey]) {
+            payload[correspondingFieldKey] = rowData[headerKey];
+            Logger.log(`Added end time field to payload: ${correspondingFieldKey} = ${rowData[headerKey]}`);
           }
         }
       }
@@ -181,8 +198,29 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
         }
         
         // Format the values if they exist
-        let formattedStartValue = startValue ? formatTimeValue(startValue) : null;
-        let formattedEndValue = endValue ? formatTimeValue(endValue) : null;
+        // Special case: "1899-12-30" is Excel/Sheets' way of storing time-only values, so treat it as time
+        const isExcelTime = (startValue && String(startValue).includes('1899-12-30')) ||
+                           (endValue && String(endValue).includes('1899-12-30'));
+        
+        // Check if this is a date range or time range based on the values
+        const isDateRange = !isExcelTime && (
+          (startValue && (String(startValue).includes('T') || String(startValue).match(/^\d{4}-\d{2}-\d{2}/))) ||
+          (endValue && (String(endValue).includes('T') || String(endValue).match(/^\d{4}-\d{2}-\d{2}/)))
+        );
+        
+        let formattedStartValue, formattedEndValue;
+        
+        if (isDateRange) {
+          // Format as dates for date range fields
+          formattedStartValue = startValue ? formatDateValue(startValue) : null;
+          formattedEndValue = endValue ? formatDateValue(endValue) : null;
+          Logger.log(`Processing as DATE RANGE for ${baseKey}: start=${formattedStartValue}, end=${formattedEndValue}`);
+        } else {
+          // Format as times for time range fields  
+          formattedStartValue = startValue ? formatTimeValue(startValue) : null;
+          formattedEndValue = endValue ? formatTimeValue(endValue) : null;
+          Logger.log(`Processing as TIME RANGE for ${baseKey}: start=${formattedStartValue}, end=${formattedEndValue}`);
+        }
         
         Logger.log(`FORMATTED TIME VALUES: Start=${formattedStartValue}, End=${formattedEndValue}`);
         
@@ -456,8 +494,29 @@ function updateDealDirect(dealId, payload, accessToken, basePath, fieldDefinitio
       const pair = timeRangePairs[baseKey];
       
       // Format both values consistently
-      const formattedStartValue = pair.startValue !== undefined ? formatTimeValue(pair.startValue) : null;
-      const formattedEndValue = pair.endValue !== undefined ? formatTimeValue(pair.endValue) : null;
+      // Special case: "1899-12-30" is Excel/Sheets' way of storing time-only values, so treat it as time
+      const isExcelTime = (pair.startValue && String(pair.startValue).includes('1899-12-30')) ||
+                         (pair.endValue && String(pair.endValue).includes('1899-12-30'));
+      
+      // Check if this is a date range or time range based on the field ID pattern or value
+      const isDateRange = !isExcelTime && (
+        (pair.startValue && (String(pair.startValue).includes('T') || String(pair.startValue).match(/^\d{4}-\d{2}-\d{2}/))) ||
+        (pair.endValue && (String(pair.endValue).includes('T') || String(pair.endValue).match(/^\d{4}-\d{2}-\d{2}/)))
+      );
+      
+      let formattedStartValue, formattedEndValue;
+      
+      if (isDateRange) {
+        // Format as dates for date range fields
+        formattedStartValue = pair.startValue !== undefined ? formatDateValue(pair.startValue) : null;
+        formattedEndValue = pair.endValue !== undefined ? formatDateValue(pair.endValue) : null;
+        Logger.log(`Formatting as DATE RANGE: start=${formattedStartValue}, end=${formattedEndValue}`);
+      } else {
+        // Format as times for time range fields
+        formattedStartValue = pair.startValue !== undefined ? formatTimeValue(pair.startValue) : null;
+        formattedEndValue = pair.endValue !== undefined ? formatTimeValue(pair.endValue) : null;
+        Logger.log(`Formatting as TIME RANGE: start=${formattedStartValue}, end=${formattedEndValue}`);
+      }
       
       Logger.log(`FORMATTED TIME VALUES: Start=${formattedStartValue}, End=${formattedEndValue}`);
       
@@ -722,6 +781,8 @@ function formatTimeValue(value) {
 function formatDateValue(value) {
   try {
     if (!value) return null;
+    
+    Logger.log(`Formatting date value: ${value} (type: ${typeof value})`);
 
     let dateObj;
     if (value instanceof Date) {
@@ -729,7 +790,25 @@ function formatDateValue(value) {
     } else if (typeof value === 'string') {
       // Check if already in YYYY-MM-DD format
       if (value.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        Logger.log(`Date already in correct format: ${value}`);
         return value;
+      }
+      
+      // Handle ISO date strings with time component
+      if (value.includes('T')) {
+        // Extract just the date part
+        const datePart = value.split('T')[0];
+        if (datePart.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          Logger.log(`Extracted date from ISO string: ${datePart}`);
+          return datePart;
+        }
+      }
+      
+      // Handle time-only values that might be mistaken for dates
+      if (value.match(/^\d{1,2}:\d{2}:\d{2}$/)) {
+        Logger.log(`WARNING: Time value passed to date formatter: ${value}`);
+        // Return null or today's date, depending on requirements
+        return null;
       }
 
       // Try parsing as a date
@@ -739,11 +818,14 @@ function formatDateValue(value) {
     }
 
     if (isNaN(dateObj.getTime())) {
+      Logger.log(`Failed to parse date value: ${value}`);
       return String(value);
     }
 
     // Format as YYYY-MM-DD
-    return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+    const formatted = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+    Logger.log(`Formatted date: ${formatted}`);
+    return formatted;
   } catch (error) {
     Logger.log(`Error formatting date value: ${error.message}`);
     return String(value);
