@@ -4345,14 +4345,50 @@ async function pushChangesToPipedrive(
               break;
 
             case "products":
-              // Use products API
-              const productResponse = await apiClient.updateProduct({
-                id: Number(rowData.id), // Ensure ID is a number
-                body: payloadToSend,
-              });
-              responseBody = productResponse;
-              // Check if the response indicates success
-              success = productResponse && productResponse.success === true;
+              try {
+                // Get the Pipedrive OAuth token from script properties
+                const scriptProperties = PropertiesService.getScriptProperties();
+                const pipedriveToken = scriptProperties.getProperty("PIPEDRIVE_ACCESS_TOKEN");
+                
+                if (!pipedriveToken) {
+                  throw new Error("Pipedrive API token not found in script properties");
+                }
+                
+                // Get subdomain from properties
+                const subdomain = scriptProperties.getProperty("PIPEDRIVE_SUBDOMAIN") || "api";
+                
+                // Get field definitions for products
+                let fieldDefinitions = {};
+                try {
+                  fieldDefinitions = getEntityFields('products');
+                } catch (fieldErr) {
+                  Logger.log(`Could not get field definitions for products: ${fieldErr.message}`);
+                }
+                
+                // Use direct API call to avoid URL constructor issue
+                Logger.log("Using direct API call for products update to avoid URL constructor issue");
+                
+                const directResponse = updateProductDirect(
+                  rowData.id,
+                  payloadToSend,
+                  pipedriveToken,
+                  `https://${subdomain}.pipedrive.com/v1`,
+                  fieldDefinitions
+                );
+                
+                // Process the response
+                responseCode = directResponse.responseCode || 200;
+                responseBody = directResponse;
+                success = responseBody && responseBody.success === true;
+                
+                Logger.log(`Direct API call response for product: ${JSON.stringify(responseBody)}`);
+              } catch (prodError) {
+                Logger.log(`Product update failed: ${prodError.message}`);
+                responseBody = {
+                  error: prodError.message,
+                };
+                success = false;
+              }
               break;
 
             default:
@@ -4407,6 +4443,7 @@ async function pushChangesToPipedrive(
           ); // +1 for 1-based sheet indexes
           statusCell.setValue("Synced");
           statusCell.setBackground("#E6F4EA").setFontColor("#137333");
+          statusCell.clearNote();
         } else {
           // Update failed
           failureCount++;

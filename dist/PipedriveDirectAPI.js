@@ -1130,4 +1130,154 @@ function updateOrganizationDirect(organizationId, payload, accessToken, basePath
   }
 }
 
+/**
+ * Updates a Pipedrive product using direct UrlFetchApp.fetch
+ * @param {number|string} productId - Product ID to update
+ * @param {Object} payload - Data to update in the product
+ * @param {string} accessToken - OAuth access token
+ * @param {string} basePath - API base path (e.g., https://mycompany.pipedrive.com/v1)
+ * @param {Object} fieldDefinitions - Field definitions from Pipedrive
+ * @returns {Object} API response
+ */
+function updateProductDirect(productId, payload, accessToken, basePath, fieldDefinitions) {
+  try {
+    // Ensure product ID is a number
+    productId = Number(productId);
+    
+    // Enhanced logging for debugging
+    Logger.log(`updateProductDirect called for product ${productId}`);
+    Logger.log(`Initial payload keys: ${Object.keys(payload).join(', ')}`);
+    if (payload.custom_fields) {
+      Logger.log(`Custom fields keys: ${Object.keys(payload.custom_fields).join(', ')}`);
+    }
+    
+    // For products, we need to handle the payload differently
+    // Products in v1 API expect custom fields at root level
+    const finalPayload = {};
+    
+    // First, copy any standard fields (non-custom fields)
+    for (const key in payload) {
+      if (key !== 'custom_fields' && !key.startsWith('__')) {
+        finalPayload[key] = payload[key];
+      }
+    }
+    
+    // If there are custom fields, add them at root level
+    if (payload.custom_fields) {
+      Logger.log(`Processing custom fields for product update`);
+      
+      // Process time range fields first
+      const timeRangePairs = {};
+      
+      // Identify time range pairs
+      for (const key in payload.custom_fields) {
+        if (key.endsWith('_until')) {
+          const baseKey = key.replace(/_until$/, '');
+          timeRangePairs[baseKey] = key;
+          Logger.log(`Identified time range pair: ${baseKey} -> ${key}`);
+        }
+      }
+      
+      // Add all custom fields to root level
+      for (const key in payload.custom_fields) {
+        const value = payload.custom_fields[key];
+        
+        // Check if this is part of a time range
+        const isTimeRangeEnd = key.endsWith('_until');
+        const isTimeRangeStart = timeRangePairs[key] !== undefined;
+        
+        if (isTimeRangeStart || isTimeRangeEnd) {
+          // Format time/date values
+          if (value) {
+            // Check if it's a date or time based on the value
+            if (String(value).match(/^\d{4}-\d{2}-\d{2}$/) || 
+                (String(value).includes('T') && !String(value).includes('1899-12-30'))) {
+              // It's a date
+              finalPayload[key] = formatDateValue(value);
+              Logger.log(`Formatted date field ${key}: ${value} -> ${finalPayload[key]}`);
+            } else {
+              // It's a time
+              finalPayload[key] = formatTimeValue(value);
+              Logger.log(`Formatted time field ${key}: ${value} -> ${finalPayload[key]}`);
+            }
+          } else {
+            finalPayload[key] = value;
+          }
+        } else {
+          // Regular custom field
+          finalPayload[key] = value;
+          Logger.log(`Added custom field ${key}: ${value}`);
+        }
+      }
+      
+      // Ensure time range pairs are complete
+      for (const baseKey in timeRangePairs) {
+        const untilKey = timeRangePairs[baseKey];
+        
+        // If we have one but not the other, copy the value
+        if (finalPayload[baseKey] && !finalPayload[untilKey]) {
+          finalPayload[untilKey] = finalPayload[baseKey];
+          Logger.log(`Added missing end time for ${untilKey} using start time value: ${finalPayload[untilKey]}`);
+        } else if (!finalPayload[baseKey] && finalPayload[untilKey]) {
+          finalPayload[baseKey] = finalPayload[untilKey];
+          Logger.log(`Added missing start time for ${baseKey} using end time value: ${finalPayload[baseKey]}`);
+        }
+      }
+    }
+    
+    // Remove any internal flags that processDateTimeFields might have added
+    delete finalPayload.__hasTimeRangeFields;
+    delete finalPayload.__preserveTimeRangePairs;
+    delete finalPayload.__timeRangePairs;
+    
+    let processedPayload = finalPayload;
+    
+    // Create URL for the request
+    const productUrl = `${basePath}/products/${productId}`;
+    Logger.log(`Direct API: Using URL: ${productUrl}`);
+    
+    // Log the complete final payload
+    Logger.log(`FINAL API PAYLOAD: ${JSON.stringify(processedPayload)}`);
+
+    // Create fetch options
+    const options = {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      muteHttpExceptions: true,
+      payload: JSON.stringify(processedPayload)
+    };
+    
+    // Make the API request
+    Logger.log(`API request parameters: ${JSON.stringify({
+      id: productId,
+      entityType: 'products',
+      apiBasePath: basePath,
+      accessToken: accessToken.substring(0, 5) + '...'
+    })}`);
+    
+    // Fetch data from Pipedrive API
+    const response = UrlFetchApp.fetch(productUrl, options);
+    const responseCode = response.getResponseCode();
+    Logger.log(`Direct API call response code: ${responseCode}`);
+    
+    // Parse the response
+    const responseData = JSON.parse(response.getContentText());
+    Logger.log(`Direct API response: ${JSON.stringify(responseData)}`);
+    
+    return responseData;
+  } catch (error) {
+    Logger.log(`Error in updateProductDirect: ${error.message}`);
+    Logger.log(`Error stack: ${error.stack}`);
+    return {
+      success: false,
+      error: error.message,
+      error_info: 'Exception in updateProductDirect method'
+    };
+  }
+}
+
 // Add other direct API methods as needed for different entity types
