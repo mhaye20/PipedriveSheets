@@ -486,6 +486,12 @@ function updateDealDirect(dealId, payload, accessToken, basePath, fieldDefinitio
     payload.__preserveTimeRangePairs = true;
     payload.__timeRangePairs = timeRangePairs;
     
+    // Remove empty custom_fields to avoid API errors
+    if (payload.custom_fields && Object.keys(payload.custom_fields).length === 0) {
+      delete payload.custom_fields;
+      Logger.log('Removed empty custom_fields object');
+    }
+    
     // Create final payload with explicit time range handling
     const processedPayload = JSON.parse(JSON.stringify(payload));
     
@@ -890,16 +896,49 @@ function formatDateValue(value) {
  * @param {Object} payload - Data to update in the person
  * @param {string} accessToken - OAuth access token
  * @param {string} basePath - API base path (e.g., https://mycompany.pipedrive.com/v1)
+ * @param {Object} fieldDefinitions - Field definitions from Pipedrive
  * @returns {Object} API response
  */
-function updatePersonDirect(personId, payload, accessToken, basePath) {
+function updatePersonDirect(personId, payload, accessToken, basePath, fieldDefinitions) {
   try {
     // Ensure person ID is a number
     personId = Number(personId);
 
+    // Enhanced logging for debugging
+    Logger.log(`updatePersonDirect called for person ${personId}`);
+    Logger.log(`Initial payload keys: ${Object.keys(payload).join(', ')}`);
+    if (payload.custom_fields) {
+      Logger.log(`Custom fields keys: ${Object.keys(payload.custom_fields).join(', ')}`);
+    }
+    
+    // Process date/time fields similar to other entities
+    let processedPayload = processDateTimeFields(payload, null, fieldDefinitions, null);
+    
+    // IMPORTANT: For persons in API v1, custom fields must be at root level
+    // If we have custom_fields object, we need to flatten it to root level
+    if (processedPayload.custom_fields) {
+      Logger.log(`Flattening custom_fields to root level for person update`);
+      const customFields = processedPayload.custom_fields;
+      
+      // Create new payload with custom fields at root level
+      const flattenedPayload = {...processedPayload};
+      delete flattenedPayload.custom_fields; // Remove the custom_fields object
+      
+      // Add each custom field to root level
+      for (const key in customFields) {
+        flattenedPayload[key] = customFields[key];
+        Logger.log(`Moved custom field to root: ${key} = ${customFields[key]}`);
+      }
+      
+      processedPayload = flattenedPayload;
+    }
+
     // Create URL for the request
     const personUrl = `${basePath}/persons/${personId}`;
     Logger.log(`Direct API: Using URL: ${personUrl}`);
+    
+    // Log the complete final payload
+    Logger.log(`FINAL API PAYLOAD: ${JSON.stringify(processedPayload)}`);
 
     // Create fetch options
     const options = {
@@ -910,7 +949,7 @@ function updatePersonDirect(personId, payload, accessToken, basePath) {
         'Accept': 'application/json'
       },
       muteHttpExceptions: true,
-      payload: JSON.stringify(payload)
+      payload: JSON.stringify(processedPayload)
     };
 
     // Make the request directly with UrlFetchApp
@@ -937,6 +976,156 @@ function updatePersonDirect(personId, payload, accessToken, basePath) {
       success: false,
       error: error.message,
       error_info: 'Exception in updatePersonDirect method'
+    };
+  }
+}
+
+/**
+ * Updates a Pipedrive organization using direct UrlFetchApp.fetch
+ * @param {number|string} organizationId - Organization ID to update
+ * @param {Object} payload - Data to update in the organization
+ * @param {string} accessToken - OAuth access token
+ * @param {string} basePath - API base path (e.g., https://mycompany.pipedrive.com/v1)
+ * @param {Object} fieldDefinitions - Field definitions from Pipedrive
+ * @returns {Object} API response
+ */
+function updateOrganizationDirect(organizationId, payload, accessToken, basePath, fieldDefinitions) {
+  try {
+    // Ensure organization ID is a number
+    organizationId = Number(organizationId);
+    
+    // Enhanced logging for debugging
+    Logger.log(`updateOrganizationDirect called for organization ${organizationId}`);
+    Logger.log(`Initial payload keys: ${Object.keys(payload).join(', ')}`);
+    if (payload.custom_fields) {
+      Logger.log(`Custom fields keys: ${Object.keys(payload.custom_fields).join(', ')}`);
+    }
+    
+    // For organizations, we need to handle the payload differently
+    // Organizations in v1 API expect custom fields at root level
+    const finalPayload = {};
+    
+    // First, copy any standard fields (non-custom fields)
+    for (const key in payload) {
+      if (key !== 'custom_fields' && !key.startsWith('__')) {
+        finalPayload[key] = payload[key];
+      }
+    }
+    
+    // If there are custom fields, add them at root level
+    if (payload.custom_fields) {
+      Logger.log(`Processing custom fields for organization update`);
+      
+      // Process time range fields first
+      const timeRangePairs = {};
+      
+      // Identify time range pairs
+      for (const key in payload.custom_fields) {
+        if (key.endsWith('_until')) {
+          const baseKey = key.replace(/_until$/, '');
+          timeRangePairs[baseKey] = key;
+          Logger.log(`Identified time range pair: ${baseKey} -> ${key}`);
+        }
+      }
+      
+      // Add all custom fields to root level
+      for (const key in payload.custom_fields) {
+        const value = payload.custom_fields[key];
+        
+        // Check if this is part of a time range
+        const isTimeRangeEnd = key.endsWith('_until');
+        const isTimeRangeStart = timeRangePairs[key] !== undefined;
+        
+        if (isTimeRangeStart || isTimeRangeEnd) {
+          // Format time/date values
+          if (value) {
+            // Check if it's a date or time based on the value
+            if (String(value).match(/^\d{4}-\d{2}-\d{2}$/) || 
+                (String(value).includes('T') && !String(value).includes('1899-12-30'))) {
+              // It's a date
+              finalPayload[key] = formatDateValue(value);
+              Logger.log(`Formatted date field ${key}: ${value} -> ${finalPayload[key]}`);
+            } else {
+              // It's a time
+              finalPayload[key] = formatTimeValue(value);
+              Logger.log(`Formatted time field ${key}: ${value} -> ${finalPayload[key]}`);
+            }
+          } else {
+            finalPayload[key] = value;
+          }
+        } else {
+          // Regular custom field
+          finalPayload[key] = value;
+          Logger.log(`Added custom field ${key}: ${value}`);
+        }
+      }
+      
+      // Ensure time range pairs are complete
+      for (const baseKey in timeRangePairs) {
+        const untilKey = timeRangePairs[baseKey];
+        
+        // If we have one but not the other, copy the value
+        if (finalPayload[baseKey] && !finalPayload[untilKey]) {
+          finalPayload[untilKey] = finalPayload[baseKey];
+          Logger.log(`Added missing end time for ${untilKey} using start time value: ${finalPayload[untilKey]}`);
+        } else if (!finalPayload[baseKey] && finalPayload[untilKey]) {
+          finalPayload[baseKey] = finalPayload[untilKey];
+          Logger.log(`Added missing start time for ${baseKey} using end time value: ${finalPayload[baseKey]}`);
+        }
+      }
+    }
+    
+    // Remove any internal flags that processDateTimeFields might have added
+    delete finalPayload.__hasTimeRangeFields;
+    delete finalPayload.__preserveTimeRangePairs;
+    delete finalPayload.__timeRangePairs;
+    
+    let processedPayload = finalPayload;
+    
+    // Create URL for the request
+    const organizationUrl = `${basePath}/organizations/${organizationId}`;
+    Logger.log(`Direct API: Using URL: ${organizationUrl}`);
+    
+    // Log the complete final payload
+    Logger.log(`FINAL API PAYLOAD: ${JSON.stringify(processedPayload)}`);
+
+    // Create fetch options
+    const options = {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      muteHttpExceptions: true,
+      payload: JSON.stringify(processedPayload)
+    };
+    
+    // Make the API request
+    Logger.log(`API request parameters: ${JSON.stringify({
+      id: organizationId,
+      entityType: 'organizations',
+      apiBasePath: basePath,
+      accessToken: accessToken.substring(0, 5) + '...'
+    })}`);
+    
+    // Fetch data from Pipedrive API
+    const response = UrlFetchApp.fetch(organizationUrl, options);
+    const responseCode = response.getResponseCode();
+    Logger.log(`Direct API call response code: ${responseCode}`);
+    
+    // Parse the response
+    const responseData = JSON.parse(response.getContentText());
+    Logger.log(`Direct API response: ${JSON.stringify(responseData)}`);
+    
+    return responseData;
+  } catch (error) {
+    Logger.log(`Error in updateOrganizationDirect: ${error.message}`);
+    Logger.log(`Error stack: ${error.stack}`);
+    return {
+      success: false,
+      error: error.message,
+      error_info: 'Exception in updateOrganizationDirect method'
     };
   }
 }

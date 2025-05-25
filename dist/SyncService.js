@@ -3669,6 +3669,7 @@ async function pushChangesToPipedrive(
             // Try a simpler approach - only include standard fields and a couple of custom fields
             const simplifiedPayload = {
               title: payloadToSend.title,
+              name: payloadToSend.name, // Organizations use 'name' not 'title'
             };
 
             // Only include a few simple custom fields first to test
@@ -4275,14 +4276,50 @@ async function pushChangesToPipedrive(
               break;
 
             case "organizations":
-              // Use organizations API
-              const orgResponse = await apiClient.updateOrganization({
-                id: Number(rowData.id), // Ensure ID is a number
-                body: payloadToSend,
-              });
-              responseBody = orgResponse;
-              // Check if the response indicates success
-              success = orgResponse && orgResponse.success === true;
+              try {
+                // Get the Pipedrive OAuth token from script properties
+                const scriptProperties = PropertiesService.getScriptProperties();
+                const pipedriveToken = scriptProperties.getProperty("PIPEDRIVE_ACCESS_TOKEN");
+                
+                if (!pipedriveToken) {
+                  throw new Error("Pipedrive API token not found in script properties");
+                }
+                
+                // Get subdomain from properties
+                const subdomain = scriptProperties.getProperty("PIPEDRIVE_SUBDOMAIN") || "api";
+                
+                // Get field definitions for organizations
+                let fieldDefinitions = {};
+                try {
+                  fieldDefinitions = getEntityFields('organizations');
+                } catch (fieldErr) {
+                  Logger.log(`Could not get field definitions for organizations: ${fieldErr.message}`);
+                }
+                
+                // Use direct API call to avoid URL constructor issue
+                Logger.log("Using direct API call for organizations update to avoid URL constructor issue");
+                
+                const directResponse = updateOrganizationDirect(
+                  rowData.id,
+                  payloadToSend,
+                  pipedriveToken,
+                  `https://${subdomain}.pipedrive.com/v1`,
+                  fieldDefinitions
+                );
+                
+                // Process the response
+                responseCode = directResponse.responseCode || 200;
+                responseBody = directResponse;
+                success = responseBody && responseBody.success === true;
+                
+                Logger.log(`Direct API call response for organization: ${JSON.stringify(responseBody)}`);
+              } catch (orgError) {
+                Logger.log(`Organization update failed: ${orgError.message}`);
+                responseBody = {
+                  error: orgError.message,
+                };
+                success = false;
+              }
               break;
 
             case "activities":
