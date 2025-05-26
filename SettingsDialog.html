@@ -1850,7 +1850,63 @@
           
           // Show success message
           showStatus('success', 'Settings saved successfully!');
-          setTimeout(() => google.script.host.close(), 1500);
+          
+          // Update the window variables with the new settings
+          window.entityType = entityType;
+          window.sheetName = sheetName;
+          
+          // Update the Column Selection tab info to reflect the new entity type
+          const entityTypeNames = {
+            'deals': 'Deals',
+            'persons': 'Persons',
+            'organizations': 'Organizations',
+            'activities': 'Activities',
+            'leads': 'Leads',
+            'products': 'Products'
+          };
+          
+          // Update the sheet info in Column Selection tab
+          const columnTabSheetInfo = document.querySelector('#columns-tab .sheet-info div');
+          if (columnTabSheetInfo) {
+            columnTabSheetInfo.innerHTML = `Configuring columns for <strong>${entityTypeNames[entityType] || entityType}</strong> in sheet <strong>"${sheetName}"</strong>`;
+          }
+          
+          // Update the entity type tooltip if it exists
+          const entityTooltipTitle = document.querySelector('.entity-tooltip .entity-tooltip-title');
+          if (entityTooltipTitle) {
+            entityTooltipTitle.innerHTML = `Current entity type: <strong>${entityTypeNames[entityType] || entityType}</strong>`;
+          }
+          
+          // Update the entity tooltip description
+          const entityTooltip = document.querySelector('.entity-tooltip');
+          if (entityTooltip) {
+            const entityName = entityTypeNames[entityType] || entityType;
+            entityTooltip.innerHTML = `
+              <div class="entity-tooltip-title">Current entity type: <strong>${entityName}</strong></div>
+              <div>
+                You can only edit fields that belong directly to <strong>${entityName}</strong>.
+                Any fields from related entities (like Organization fields when viewing ${entityName}) will appear as read-only.
+                To edit those fields, you must use a filter for the corresponding entity type.
+              </div>
+            `;
+          }
+          
+          // Clear the cached columns data to force reload when switching to Column Selection tab
+          window.availableColumns = null;
+          window.selectedColumns = null;
+          window.originalAvailableColumns = null;
+          
+          // Clear the filters cache for this entity type to ensure fresh data
+          if (filtersForEntity[entityType]) {
+            delete filtersForEntity[entityType];
+          }
+          
+          // If the Column Selection tab is currently active, reload the columns
+          const activeTab = document.querySelector('.tab.active');
+          if (activeTab && activeTab.getAttribute('data-tab') === 'columns') {
+            console.log("Column Selection tab is active, fetching new column data");
+            fetchColumnsData();
+          }
         })
         .withFailureHandler(function (error) {
           // Remove loading state

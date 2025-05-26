@@ -579,6 +579,10 @@ function formatValue(value, columnPath, optionMappings = {}) {
       if (value.value !== undefined && value.formatted_address !== undefined) {
         return value.formatted_address;
       }
+      // For other objects, return a more readable format
+      if (value.value !== undefined) {
+        return String(value.value);
+      }
       return JSON.stringify(value);
     }
 
@@ -613,6 +617,26 @@ function formatValue(value, columnPath, optionMappings = {}) {
       });
       return labels.join(', ');
     }
+  }
+
+  // Handle prices field specifically
+  if (columnPath === 'prices' && Array.isArray(value)) {
+    if (value.length === 0) {
+      return '';
+    }
+    // Format prices array to show price and currency
+    const priceStrings = value.map(priceObj => {
+      if (priceObj && priceObj.price !== undefined && priceObj.currency) {
+        // Show cost if it's different from price
+        if (priceObj.cost && priceObj.cost !== 0 && priceObj.cost !== priceObj.price) {
+          return `${priceObj.price} (cost: ${priceObj.cost})`;
+        }
+        return `${priceObj.price}`;
+      }
+      return JSON.stringify(priceObj);
+    });
+    // Join multiple prices with semicolons
+    return priceStrings.join('; ');
   }
 
   // Regular object handling

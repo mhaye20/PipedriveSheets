@@ -4486,9 +4486,6 @@ async function pushChangesToPipedrive(
           );
           statusCell.setValue("Error");
           statusCell.setBackground("#FCE8E6").setFontColor("#D93025");
-
-          // Add note with error message
-          statusCell.setNote(`Error: ${errorMessage}`);
         }
       } catch (error) {
         // Handle exceptions
@@ -4508,7 +4505,6 @@ async function pushChangesToPipedrive(
         const statusCell = activeSheet.getRange(row, syncStatusColumnIndex + 1);
         statusCell.setValue("Error");
         statusCell.setBackground("#FCE8E6").setFontColor("#D93025");
-        statusCell.setNote(`Error: ${error.message}`);
       }
     }
 
