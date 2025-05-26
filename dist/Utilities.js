@@ -455,9 +455,10 @@ function getValueByPath(obj, path) {
  * @param {*} value - The value to format
  * @param {Object|string} column - The column object or path
  * @param {Object} optionMappings - Option mappings for enum/select fields
+ * @param {Object} entityMappings - Entity ID to name mappings
  * @return {string} Formatted value
  */
-function formatValue(value, columnPath, optionMappings = {}) {
+function formatValue(value, columnPath, optionMappings = {}, entityMappings = {}) {
   if (value === null || value === undefined) {
     return '';
   }
@@ -683,6 +684,46 @@ function formatValue(value, columnPath, optionMappings = {}) {
     
     // For other types, convert to string
     return String(value);
+  }
+  
+  // Handle system-linked ID fields - convert IDs to names when available
+  if (entityMappings && typeof value === 'number') {
+    // Person ID fields
+    if ((columnPath === 'person_id' || columnPath.endsWith('_person_id')) && entityMappings.personIdToName) {
+      const personName = entityMappings.personIdToName[value];
+      return personName || `Person ${value}`;
+    }
+    
+    // Organization ID fields
+    if ((columnPath === 'org_id' || columnPath === 'organization_id' || columnPath.endsWith('_org_id')) && entityMappings.orgIdToName) {
+      const orgName = entityMappings.orgIdToName[value];
+      return orgName || `Organization ${value}`;
+    }
+    
+    // Deal ID fields
+    if ((columnPath === 'deal_id' || columnPath.endsWith('_deal_id')) && entityMappings.dealIdToTitle) {
+      const dealTitle = entityMappings.dealIdToTitle[value];
+      return dealTitle || `Deal ${value}`;
+    }
+    
+    // User ID fields (owner, creator, etc.)
+    if ((columnPath === 'owner_id' || columnPath === 'creator_user_id' || columnPath === 'user_id' || 
+         columnPath === 'assigned_to_user_id' || columnPath.endsWith('_user_id')) && entityMappings.userIdToName) {
+      const userName = entityMappings.userIdToName[value];
+      return userName || `User ${value}`;
+    }
+    
+    // Stage ID fields
+    if ((columnPath === 'stage_id' || columnPath.endsWith('_stage_id')) && entityMappings.stageIdToName) {
+      const stageName = entityMappings.stageIdToName[value];
+      return stageName || `Stage ${value}`;
+    }
+    
+    // Pipeline ID fields
+    if ((columnPath === 'pipeline_id' || columnPath.endsWith('_pipeline_id')) && entityMappings.pipelineIdToName) {
+      const pipelineName = entityMappings.pipelineIdToName[value];
+      return pipelineName || `Pipeline ${value}`;
+    }
   }
 
   // Regular object handling

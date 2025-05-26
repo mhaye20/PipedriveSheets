@@ -6,7 +6,8 @@
       "Bash(cp:*)",
       "Bash(awk:*)",
       "Bash(npm run deploy:*)",
-      "Bash(clasp push:*)"
+      "Bash(clasp push:*)",
+      "Bash(rg:*)"
     ],
     "deny": []
   }

@@ -225,6 +225,224 @@ function searchPersonsByName(names) {
 }
 
 /**
+ * Builds comprehensive entity mappings for ID to name conversions
+ * @param {Array} items - Array of items from Pipedrive
+ * @param {string} entityType - The entity type being processed
+ * @return {Object} Object containing all entity mappings
+ */
+function buildEntityMappings(items, entityType) {
+  try {
+    Logger.log(`Building entity mappings for ${entityType}...`);
+    
+    const mappings = {
+      personIdToName: {},
+      orgIdToName: {},
+      dealIdToTitle: {},
+      userIdToName: {},
+      stageIdToName: {},
+      pipelineIdToName: {}
+    };
+    
+    // Collect IDs and names from the current data
+    const personIds = new Set();
+    const orgIds = new Set();
+    const dealIds = new Set();
+    const userIds = new Set();
+    const stageIds = new Set();
+    const pipelineIds = new Set();
+    
+    for (const item of items) {
+      // Person mappings
+      if (item.person_id && item.person_name) {
+        mappings.personIdToName[item.person_id] = item.person_name;
+      }
+      if (item.person_id) personIds.add(item.person_id);
+      
+      // Organization mappings
+      if (item.org_id && item.org_name) {
+        mappings.orgIdToName[item.org_id] = item.org_name;
+      }
+      if (item.org_id) orgIds.add(item.org_id);
+      
+      // Deal mappings
+      if (item.deal_id && item.deal_title) {
+        mappings.dealIdToTitle[item.deal_id] = item.deal_title;
+      }
+      if (item.deal_id) dealIds.add(item.deal_id);
+      
+      // User mappings (owner, creator, etc.)
+      if (item.owner_id && item.owner_name) {
+        mappings.userIdToName[item.owner_id] = item.owner_name;
+      }
+      if (item.creator_user_id && item.creator_name) {
+        mappings.userIdToName[item.creator_user_id] = item.creator_name;
+      }
+      if (item.user_id && item.user_name) {
+        mappings.userIdToName[item.user_id] = item.user_name;
+      }
+      
+      // Collect user IDs
+      if (item.owner_id) userIds.add(item.owner_id);
+      if (item.creator_user_id) userIds.add(item.creator_user_id);
+      if (item.user_id) userIds.add(item.user_id);
+      
+      // Stage and pipeline mappings
+      if (item.stage_id && item.stage_name) {
+        mappings.stageIdToName[item.stage_id] = item.stage_name;
+      }
+      if (item.pipeline_id && item.pipeline_name) {
+        mappings.pipelineIdToName[item.pipeline_id] = item.pipeline_name;
+      }
+      if (item.stage_id) stageIds.add(item.stage_id);
+      if (item.pipeline_id) pipelineIds.add(item.pipeline_id);
+      
+      // Handle participants for activities
+      if (entityType === 'activities' && item.participants && Array.isArray(item.participants)) {
+        for (const participant of item.participants) {
+          if (participant.person_id) {
+            personIds.add(participant.person_id);
+          }
+        }
+      }
+    }
+    
+    Logger.log(`Pre-mapped: ${Object.keys(mappings.personIdToName).length} persons, ${Object.keys(mappings.orgIdToName).length} orgs, ${Object.keys(mappings.dealIdToTitle).length} deals, ${Object.keys(mappings.userIdToName).length} users`);
+    
+    // Fetch missing entity names in batches
+    const batchFetchPromises = [];
+    
+    // Fetch missing person names
+    const missingPersonIds = Array.from(personIds).filter(id => !mappings.personIdToName[id]);
+    if (missingPersonIds.length > 0) {
+      batchFetchPromises.push(batchFetchEntities('persons', missingPersonIds, mappings.personIdToName, 'name'));
+    }
+    
+    // Fetch missing organization names
+    const missingOrgIds = Array.from(orgIds).filter(id => !mappings.orgIdToName[id]);
+    if (missingOrgIds.length > 0) {
+      batchFetchPromises.push(batchFetchEntities('organizations', missingOrgIds, mappings.orgIdToName, 'name'));
+    }
+    
+    // Fetch missing deal titles
+    const missingDealIds = Array.from(dealIds).filter(id => !mappings.dealIdToTitle[id]);
+    if (missingDealIds.length > 0) {
+      batchFetchPromises.push(batchFetchEntities('deals', missingDealIds, mappings.dealIdToTitle, 'title'));
+    }
+    
+    // Fetch missing user names
+    const missingUserIds = Array.from(userIds).filter(id => !mappings.userIdToName[id]);
+    if (missingUserIds.length > 0) {
+      batchFetchPromises.push(batchFetchEntities('users', missingUserIds, mappings.userIdToName, 'name'));
+    }
+    
+    Logger.log(`Final mappings: ${Object.keys(mappings.personIdToName).length} persons, ${Object.keys(mappings.orgIdToName).length} orgs, ${Object.keys(mappings.dealIdToTitle).length} deals, ${Object.keys(mappings.userIdToName).length} users`);
+    
+    return mappings;
+  } catch (error) {
+    Logger.log(`Error building entity mappings: ${error.message}`);
+    return {
+      personIdToName: {},
+      orgIdToName: {},
+      dealIdToTitle: {},
+      userIdToName: {},
+      stageIdToName: {},
+      pipelineIdToName: {}
+    };
+  }
+}
+
+/**
+ * Batch fetch entities to build ID to name mappings
+ * @param {string} entityType - Type of entity (persons, organizations, deals, users)
+ * @param {Array} ids - Array of IDs to fetch
+ * @param {Object} mapping - Mapping object to populate
+ * @param {string} nameField - Field name containing the display name
+ */
+function batchFetchEntities(entityType, ids, mapping, nameField) {
+  try {
+    Logger.log(`Fetching ${ids.length} ${entityType} names...`);
+    
+    const batchSize = 100;
+    for (let i = 0; i < ids.length; i += batchSize) {
+      const batch = ids.slice(i, i + batchSize);
+      try {
+        const url = `${getPipedriveApiUrl()}/${entityType}?ids=${batch.join(',')}&limit=${batchSize}`;
+        const response = makeAuthenticatedRequest(url);
+        
+        if (response.success && response.data) {
+          for (const entity of response.data) {
+            if (entity.id && entity[nameField]) {
+              mapping[entity.id] = entity[nameField];
+            }
+          }
+        }
+      } catch (e) {
+        Logger.log(`Error fetching ${entityType} names for batch: ${e.message}`);
+      }
+    }
+  } catch (error) {
+    Logger.log(`Error in batchFetchEntities: ${error.message}`);
+  }
+}
+
+/**
+ * Searches for entities by name and returns a mapping of names to IDs
+ * @param {string} entityType - Type of entity (persons, organizations, deals)
+ * @param {Array<string>} names - Array of entity names to search for
+ * @return {Object} Mapping of entity names to IDs
+ */
+function searchEntitiesByName(entityType, names) {
+  try {
+    const nameToIdMap = {};
+    
+    // Process each name
+    for (const name of names) {
+      if (!name || typeof name !== 'string') continue;
+      
+      const searchTerm = name.trim();
+      if (!searchTerm) continue;
+      
+      // Search for the entity using Pipedrive search API
+      const searchUrl = `${getPipedriveApiUrl()}/${entityType}/search?term=${encodeURIComponent(searchTerm)}&limit=10`;
+      
+      try {
+        const response = makeAuthenticatedRequest(searchUrl);
+        
+        if (response.success && response.data && response.data.items) {
+          // Look for exact match first
+          let found = false;
+          for (const item of response.data.items) {
+            const itemName = item.item.name || item.item.title;
+            if (item.item && itemName && itemName.toLowerCase() === searchTerm.toLowerCase()) {
+              nameToIdMap[name] = item.item.id;
+              found = true;
+              Logger.log(`Found exact match for "${name}": ${entityType} ID ${item.item.id}`);
+              break;
+            }
+          }
+          
+          // If no exact match, use the first result
+          if (!found && response.data.items.length > 0 && response.data.items[0].item) {
+            nameToIdMap[name] = response.data.items[0].item.id;
+            const itemName = response.data.items[0].item.name || response.data.items[0].item.title;
+            Logger.log(`Using first match for "${name}": ${entityType} ID ${response.data.items[0].item.id} (${itemName})`);
+          } else if (!found) {
+            Logger.log(`No ${entityType} found for name: ${name}`);
+          }
+        }
+      } catch (searchError) {
+        Logger.log(`Error searching for ${entityType} "${name}": ${searchError.message}`);
+      }
+    }
+    
+    return nameToIdMap;
+  } catch (error) {
+    Logger.log(`Error in searchEntitiesByName: ${error.message}`);
+    return {};
+  }
+}
+
+/**
  * Gets data from Pipedrive using a specific filter based on entity type
  */
 function getFilteredDataFromPipedrive(entityType, filterId, limit = 100) {

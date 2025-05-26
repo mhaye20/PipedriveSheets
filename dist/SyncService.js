@@ -328,66 +328,14 @@ function syncPipedriveDataToSheet(
       }
     }
 
-    // Special handling for activities - build person ID to name mapping
-    let personIdToNameMap = {};
-    if (entityType === ENTITY_TYPES.ACTIVITIES) {
-      Logger.log("Building person ID to name mapping for activities...");
-      
-      // Collect all unique person IDs from activities
-      const personIds = new Set();
-      for (const item of items) {
-        // Check person_id field
-        if (item.person_id) {
-          personIds.add(item.person_id);
-        }
-        // Check participants array
-        if (item.participants && Array.isArray(item.participants)) {
-          for (const participant of item.participants) {
-            if (participant.person_id) {
-              personIds.add(participant.person_id);
-            }
-          }
-        }
-      }
-      
-      // Also use person_name if available in activities
-      for (const item of items) {
-        if (item.person_id && item.person_name) {
-          personIdToNameMap[item.person_id] = item.person_name;
-        }
-      }
-      
-      Logger.log(`Found ${personIds.size} unique person IDs in activities`);
-      Logger.log(`Pre-mapped ${Object.keys(personIdToNameMap).length} person names from activity data`);
-      
-      // Fetch missing person names
-      const missingPersonIds = Array.from(personIds).filter(id => !personIdToNameMap[id]);
-      if (missingPersonIds.length > 0) {
-        Logger.log(`Need to fetch names for ${missingPersonIds.length} person IDs`);
-        
-        // Batch fetch persons (Pipedrive allows up to 500 IDs per request)
-        const batchSize = 100;
-        for (let i = 0; i < missingPersonIds.length; i += batchSize) {
-          const batch = missingPersonIds.slice(i, i + batchSize);
-          try {
-            const personsUrl = `${getPipedriveApiUrl()}/persons?ids=${batch.join(',')}&limit=${batchSize}`;
-            const response = makeAuthenticatedRequest(personsUrl);
-            
-            if (response.success && response.data) {
-              for (const person of response.data) {
-                if (person.id && person.name) {
-                  personIdToNameMap[person.id] = person.name;
-                }
-              }
-            }
-          } catch (e) {
-            Logger.log(`Error fetching person names for batch: ${e.message}`);
-          }
-        }
-      }
-      
-      Logger.log(`Total person ID to name mappings: ${Object.keys(personIdToNameMap).length}`);
-    }
+    // Build comprehensive entity mappings for all linked fields
+    Logger.log("Building comprehensive entity mappings for linked fields...");
+    const entityMappings = buildEntityMappings(items, entityType);
+    
+    Logger.log(`Built mappings: ${Object.keys(entityMappings.personIdToName).length} persons, ${Object.keys(entityMappings.orgIdToName).length} orgs, ${Object.keys(entityMappings.dealIdToTitle).length} deals, ${Object.keys(entityMappings.userIdToName).length} users`);
+    
+    // Backwards compatibility - keep personIdToNameMap for existing code
+    const personIdToNameMap = entityMappings.personIdToName;
     
     // Special handling for address fields in organizations
     if (entityType === ENTITY_TYPES.ORGANIZATIONS) {
@@ -575,7 +523,8 @@ function syncPipedriveDataToSheet(
       entityType: entityType,
       optionMappings: optionMappings,
       twoWaySyncEnabled: twoWaySyncEnabled,
-      personIdToNameMap: personIdToNameMap, // Pass person ID to name mapping for activities
+      personIdToNameMap: personIdToNameMap, // Backwards compatibility
+      entityMappings: entityMappings, // Comprehensive entity mappings
     };
 
     // Store original data for undo detection when two-way sync is enabled
@@ -784,7 +733,7 @@ function writeDataToSheet(items, options) {
             for (const participant of value) {
               if (participant && participant.person_id) {
                 // Try to get name from mapping
-                const personName = options.personIdToNameMap && options.personIdToNameMap[participant.person_id];
+                const personName = options.entityMappings && options.entityMappings.personIdToName && options.entityMappings.personIdToName[participant.person_id];
                 if (personName) {
                   participantNames.push(personName);
                 } else {
@@ -797,11 +746,12 @@ function writeDataToSheet(items, options) {
             // Join names with comma
             rowData.push(participantNames.join(', '));
           } else {
-            // Format the value if needed
+            // Format the value if needed - pass entity mappings
             const formattedValue = formatValue(
               value,
               key,
-              options.optionMappings
+              options.optionMappings,
+              options.entityMappings
             );
             rowData.push(formattedValue);
           }
@@ -4301,6 +4251,72 @@ async function pushChangesToPipedrive(
                   Logger.log(`Processed ${Object.keys(processedCustomFields).length} custom fields with type conversions`);
                 }
 
+                // Handle linked field name-to-ID conversions for deals
+                // Handle person_id field - convert person name to ID if provided as string
+                if (finalPayload.person_id && typeof finalPayload.person_id === 'string' && isNaN(finalPayload.person_id)) {
+                  Logger.log(`Converting person name "${finalPayload.person_id}" to person ID`);
+                  const nameToIdMap = searchEntitiesByName('persons', [finalPayload.person_id]);
+                  if (nameToIdMap[finalPayload.person_id]) {
+                    finalPayload.person_id = nameToIdMap[finalPayload.person_id];
+                    Logger.log(`Converted person name to ID: ${finalPayload.person_id}`);
+                  } else {
+                    Logger.log(`Warning: Could not find person ID for name "${finalPayload.person_id}"`);
+                    delete finalPayload.person_id;
+                  }
+                }
+                
+                // Handle org_id field - convert organization name to ID if provided as string
+                if (finalPayload.org_id && typeof finalPayload.org_id === 'string' && isNaN(finalPayload.org_id)) {
+                  Logger.log(`Converting organization name "${finalPayload.org_id}" to organization ID`);
+                  const nameToIdMap = searchEntitiesByName('organizations', [finalPayload.org_id]);
+                  if (nameToIdMap[finalPayload.org_id]) {
+                    finalPayload.org_id = nameToIdMap[finalPayload.org_id];
+                    Logger.log(`Converted organization name to ID: ${finalPayload.org_id}`);
+                  } else {
+                    Logger.log(`Warning: Could not find organization ID for name "${finalPayload.org_id}"`);
+                    delete finalPayload.org_id;
+                  }
+                }
+                
+                // Handle owner_id field - convert user name to ID if provided as string  
+                if (finalPayload.owner_id && typeof finalPayload.owner_id === 'string' && isNaN(finalPayload.owner_id)) {
+                  Logger.log(`Converting user name "${finalPayload.owner_id}" to user ID`);
+                  const nameToIdMap = searchEntitiesByName('users', [finalPayload.owner_id]);
+                  if (nameToIdMap[finalPayload.owner_id]) {
+                    finalPayload.owner_id = nameToIdMap[finalPayload.owner_id];
+                    Logger.log(`Converted user name to ID: ${finalPayload.owner_id}`);
+                  } else {
+                    Logger.log(`Warning: Could not find user ID for name "${finalPayload.owner_id}"`);
+                    delete finalPayload.owner_id;
+                  }
+                }
+                
+                // Handle stage_id field - convert stage name to ID if provided as string
+                if (finalPayload.stage_id && typeof finalPayload.stage_id === 'string' && isNaN(finalPayload.stage_id)) {
+                  Logger.log(`Converting stage name "${finalPayload.stage_id}" to stage ID`);
+                  const nameToIdMap = searchEntitiesByName('stages', [finalPayload.stage_id]);
+                  if (nameToIdMap[finalPayload.stage_id]) {
+                    finalPayload.stage_id = nameToIdMap[finalPayload.stage_id];
+                    Logger.log(`Converted stage name to ID: ${finalPayload.stage_id}`);
+                  } else {
+                    Logger.log(`Warning: Could not find stage ID for name "${finalPayload.stage_id}"`);
+                    delete finalPayload.stage_id;
+                  }
+                }
+                
+                // Handle pipeline_id field - convert pipeline name to ID if provided as string
+                if (finalPayload.pipeline_id && typeof finalPayload.pipeline_id === 'string' && isNaN(finalPayload.pipeline_id)) {
+                  Logger.log(`Converting pipeline name "${finalPayload.pipeline_id}" to pipeline ID`);
+                  const nameToIdMap = searchEntitiesByName('pipelines', [finalPayload.pipeline_id]);
+                  if (nameToIdMap[finalPayload.pipeline_id]) {
+                    finalPayload.pipeline_id = nameToIdMap[finalPayload.pipeline_id];
+                    Logger.log(`Converted pipeline name to ID: ${finalPayload.pipeline_id}`);
+                  } else {
+                    Logger.log(`Warning: Could not find pipeline ID for name "${finalPayload.pipeline_id}"`);
+                    delete finalPayload.pipeline_id;
+                  }
+                }
+
                 // Log the final payload
                 Logger.log(
                   `Final payload for API call: ${JSON.stringify(finalPayload)}`
@@ -4718,6 +4734,33 @@ async function pushChangesToPipedrive(
                   Logger.log(`Moved ${Object.keys(processedCustomFields).length} custom fields to top level`);
                 }
                 
+                // Handle linked field name-to-ID conversions for persons
+                // Handle org_id field - convert organization name to ID if provided as string
+                if (finalPayload.org_id && typeof finalPayload.org_id === 'string' && isNaN(finalPayload.org_id)) {
+                  Logger.log(`Converting organization name "${finalPayload.org_id}" to organization ID`);
+                  const nameToIdMap = searchEntitiesByName('organizations', [finalPayload.org_id]);
+                  if (nameToIdMap[finalPayload.org_id]) {
+                    finalPayload.org_id = nameToIdMap[finalPayload.org_id];
+                    Logger.log(`Converted organization name to ID: ${finalPayload.org_id}`);
+                  } else {
+                    Logger.log(`Warning: Could not find organization ID for name "${finalPayload.org_id}"`);
+                    delete finalPayload.org_id;
+                  }
+                }
+                
+                // Handle owner_id field - convert user name to ID if provided as string
+                if (finalPayload.owner_id && typeof finalPayload.owner_id === 'string' && isNaN(finalPayload.owner_id)) {
+                  Logger.log(`Converting user name "${finalPayload.owner_id}" to user ID`);
+                  const nameToIdMap = searchEntitiesByName('users', [finalPayload.owner_id]);
+                  if (nameToIdMap[finalPayload.owner_id]) {
+                    finalPayload.owner_id = nameToIdMap[finalPayload.owner_id];
+                    Logger.log(`Converted user name to ID: ${finalPayload.owner_id}`);
+                  } else {
+                    Logger.log(`Warning: Could not find user ID for name "${finalPayload.owner_id}"`);
+                    delete finalPayload.owner_id;
+                  }
+                }
+                
                 // Log the final payload
                 Logger.log(`Final payload for persons API call: ${JSON.stringify(finalPayload)}`);
                 
@@ -4800,6 +4843,20 @@ async function pushChangesToPipedrive(
                   });
                   
                   Logger.log(`Moved ${Object.keys(processedCustomFields).length} custom fields to top level`);
+                }
+                
+                // Handle linked field name-to-ID conversions for organizations
+                // Handle owner_id field - convert user name to ID if provided as string
+                if (finalPayload.owner_id && typeof finalPayload.owner_id === 'string' && isNaN(finalPayload.owner_id)) {
+                  Logger.log(`Converting user name "${finalPayload.owner_id}" to user ID`);
+                  const nameToIdMap = searchEntitiesByName('users', [finalPayload.owner_id]);
+                  if (nameToIdMap[finalPayload.owner_id]) {
+                    finalPayload.owner_id = nameToIdMap[finalPayload.owner_id];
+                    Logger.log(`Converted user name to ID: ${finalPayload.owner_id}`);
+                  } else {
+                    Logger.log(`Warning: Could not find user ID for name "${finalPayload.owner_id}"`);
+                    delete finalPayload.owner_id;
+                  }
                 }
                 
                 // Log the final payload
@@ -4933,6 +4990,48 @@ async function pushChangesToPipedrive(
                       Logger.log(`Invalid participants value: ${finalPayload.participants}`);
                       delete finalPayload.participants;
                     }
+                  }
+                }
+                
+                // Handle other linked fields for activities
+                Logger.log(`Processing linked fields for activities...`);
+                
+                // Handle person_id field
+                if (finalPayload.person_id && typeof finalPayload.person_id === 'string' && isNaN(finalPayload.person_id)) {
+                  Logger.log(`Converting person name "${finalPayload.person_id}" to person ID`);
+                  const nameToIdMap = searchEntitiesByName('persons', [finalPayload.person_id]);
+                  if (nameToIdMap[finalPayload.person_id]) {
+                    finalPayload.person_id = nameToIdMap[finalPayload.person_id];
+                    Logger.log(`Converted person name to ID: ${finalPayload.person_id}`);
+                  } else {
+                    Logger.log(`Warning: Could not find person ID for name "${finalPayload.person_id}"`);
+                    delete finalPayload.person_id;
+                  }
+                }
+                
+                // Handle org_id field
+                if (finalPayload.org_id && typeof finalPayload.org_id === 'string' && isNaN(finalPayload.org_id)) {
+                  Logger.log(`Converting organization name "${finalPayload.org_id}" to org ID`);
+                  const nameToIdMap = searchEntitiesByName('organizations', [finalPayload.org_id]);
+                  if (nameToIdMap[finalPayload.org_id]) {
+                    finalPayload.org_id = nameToIdMap[finalPayload.org_id];
+                    Logger.log(`Converted organization name to ID: ${finalPayload.org_id}`);
+                  } else {
+                    Logger.log(`Warning: Could not find organization ID for name "${finalPayload.org_id}"`);
+                    delete finalPayload.org_id;
+                  }
+                }
+                
+                // Handle deal_id field
+                if (finalPayload.deal_id && typeof finalPayload.deal_id === 'string' && isNaN(finalPayload.deal_id)) {
+                  Logger.log(`Converting deal title "${finalPayload.deal_id}" to deal ID`);
+                  const nameToIdMap = searchEntitiesByName('deals', [finalPayload.deal_id]);
+                  if (nameToIdMap[finalPayload.deal_id]) {
+                    finalPayload.deal_id = nameToIdMap[finalPayload.deal_id];
+                    Logger.log(`Converted deal title to ID: ${finalPayload.deal_id}`);
+                  } else {
+                    Logger.log(`Warning: Could not find deal ID for title "${finalPayload.deal_id}"`);
+                    delete finalPayload.deal_id;
                   }
                 }
                 
