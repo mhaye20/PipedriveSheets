@@ -11,6 +11,91 @@
 var SyncService = SyncService || {};
 
 /**
+ * Process and format field values based on their field type definitions
+ * @param {Object} fields - Object containing field key-value pairs
+ * @param {Object} fieldDefinitions - Field definitions from Pipedrive
+ * @param {string} entityType - The entity type (for specific handling)
+ * @return {Object} Processed fields with proper formatting
+ */
+function processFieldTypes(fields, fieldDefinitions, entityType) {
+  const processedFields = {};
+  
+  Object.keys(fields).forEach((key) => {
+    let value = fields[key];
+    const fieldDef = fieldDefinitions[key];
+    
+    // Skip if value is null or undefined
+    if (value === null || value === undefined) {
+      processedFields[key] = value;
+      return;
+    }
+    
+    // Check field type and apply appropriate formatting
+    if (fieldDef) {
+      // Date fields - convert to YYYY-MM-DD format
+      if (fieldDef.field_type === 'date' && value) {
+        if (typeof value === 'string' && value.includes('T')) {
+          value = value.split('T')[0];
+          Logger.log(`Formatted date field ${key}: ${fields[key]} -> ${value}`);
+        }
+      }
+      
+      // Phone fields - ensure they are strings
+      else if (fieldDef.field_type === 'phone') {
+        value = String(value);
+        Logger.log(`Converted phone field ${key} to string: ${value}`);
+      }
+      
+      // Time fields - ensure proper HH:MM:SS format
+      else if (fieldDef.field_type === 'time') {
+        if (typeof value === 'string' && value.includes('T')) {
+          // Extract time from datetime
+          const timePart = value.split('T')[1];
+          if (timePart) {
+            value = timePart.split('.')[0]; // Remove milliseconds
+            Logger.log(`Formatted time field ${key}: ${fields[key]} -> ${value}`);
+          }
+        }
+      }
+      
+      // Monetary fields - ensure they are numbers
+      else if (fieldDef.field_type === 'monetary' && typeof value === 'string') {
+        value = parseFloat(value) || 0;
+        Logger.log(`Converted monetary field ${key} to number: ${value}`);
+      }
+    }
+    
+    // Handle boolean conversions for specific fields
+    if ((key === 'is_archived' || key === 'was_seen' || key === 'active_flag' || key === 'done') && 
+        typeof value === 'string') {
+      value = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
+      Logger.log(`Converted boolean field ${key}: ${fields[key]} -> ${value}`);
+    }
+    
+    // Handle visibility field conversion
+    if (key === 'visible_to' && typeof value === 'string') {
+      const visibilityMap = {
+        'owner only': '1',
+        'owner & followers': '1',
+        "owner's visibility group": '3',
+        "owner's visibility group and sub-groups": '5',
+        'entire company': '7',
+        'all users': '3' // For Essential/Advanced plans
+      };
+      const mappedValue = visibilityMap[value.toLowerCase()];
+      if (mappedValue) {
+        value = mappedValue;
+        Logger.log(`Converted visibility field: ${fields[key]} -> ${value}`);
+      }
+    }
+    
+    processedFields[key] = value;
+  });
+  
+  return processedFields;
+}
+
+/**
  * Checks if a sync operation is currently running
  * @return {boolean} True if a sync is running, false otherwise
  */
@@ -629,13 +714,29 @@ function writeDataToSheet(items, options) {
           // Get the value using our helper function
           value = getValueByPath(item, key);
 
-          // Format the value if needed
-          const formattedValue = formatValue(
-            value,
-            key,
-            options.optionMappings
-          );
-          rowData.push(formattedValue);
+          // Special handling for participants field in activities
+          if (key === 'participants' && options.entityType === 'activities' && Array.isArray(value)) {
+            // If we have person_name in the activity item, use it
+            if (item.person_name && value.length === 1 && value[0].person_id === item.person_id) {
+              rowData.push(item.person_name);
+            } else {
+              // Otherwise use the standard formatting
+              const formattedValue = formatValue(
+                value,
+                key,
+                options.optionMappings
+              );
+              rowData.push(formattedValue);
+            }
+          } else {
+            // Format the value if needed
+            const formattedValue = formatValue(
+              value,
+              key,
+              options.optionMappings
+            );
+            rowData.push(formattedValue);
+          }
         }
 
         // Add Sync Status cell for two-way sync
@@ -3246,6 +3347,10 @@ async function pushChangesToPipedrive(
               value: String(value), // Ensure phone is a string
               primary: label === "work" || label === "primary",
             });
+          } else if (fieldKey === "participants") {
+            // Handle participants field for activities
+            // Store as is - will be parsed in the activities case
+            updateData.data[fieldKey] = value;
           }
           // Handle address components (which are working correctly)
           else if (fieldKey.match(/^[a-f0-9]{20,}_[a-z_]+$/i)) {
@@ -3996,45 +4101,32 @@ async function pushChangesToPipedrive(
                 const subdomain =
                   scriptProperties.getProperty("PIPEDRIVE_SUBDOMAIN") || "api";
 
+                // Get field definitions for processing
+                const fieldDefinitions = getFieldDefinitionsMap(entityType);
+                
                 // Prepare payload
                 const finalPayload = {};
 
-                // Copy all non-custom fields with type conversions
+                // Process standard fields with type conversions
+                const standardFields = {};
                 Object.keys(payloadToSend).forEach((key) => {
                   if (key !== "custom_fields") {
-                    let value = payloadToSend[key];
-                    
-                    // Convert boolean strings to actual booleans for leads
-                    if (entityType === 'leads' && (key === 'is_archived' || key === 'was_seen')) {
-                      if (typeof value === 'string') {
-                        value = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
-                      }
-                    }
-                    
-                    // Convert visible_to text to number for leads
-                    if (entityType === 'leads' && key === 'visible_to' && typeof value === 'string') {
-                      const visibilityMap = {
-                        'owner only': '1',
-                        'owner & followers': '1',
-                        "owner's visibility group": '3',
-                        "owner's visibility group and sub-groups": '5',
-                        'entire company': '7',
-                        'all users': '3' // For Essential/Advanced plans
-                      };
-                      const mappedValue = visibilityMap[value.toLowerCase()];
-                      if (mappedValue) {
-                        value = mappedValue;
-                      }
-                    }
-                    
-                    finalPayload[key] = value;
+                    standardFields[key] = payloadToSend[key];
                   }
                 });
+                
+                // Apply field type processing to standard fields
+                const processedStandardFields = processFieldTypes(standardFields, fieldDefinitions, entityType);
+                Object.assign(finalPayload, processedStandardFields);
 
-                // Process custom fields with special handling for address fields
+                // Process and move custom fields to top level
                 if (payloadToSend.custom_fields) {
-                  Object.keys(payloadToSend.custom_fields).forEach((key) => {
-                    const value = payloadToSend.custom_fields[key];
+                  // Apply field type processing to custom fields
+                  const processedCustomFields = processFieldTypes(payloadToSend.custom_fields, fieldDefinitions, entityType);
+                  
+                  // Special handling for address fields in deals
+                  Object.keys(processedCustomFields).forEach((key) => {
+                    const value = processedCustomFields[key];
 
                     // Special handling for address objects
                     if (
@@ -4137,6 +4229,8 @@ async function pushChangesToPipedrive(
                       finalPayload[key] = value;
                     }
                   });
+                  
+                  Logger.log(`Processed ${Object.keys(processedCustomFields).length} custom fields with type conversions`);
                 }
 
                 // Log the final payload
@@ -4522,59 +4616,38 @@ async function pushChangesToPipedrive(
                 // Get subdomain from properties
                 const subdomain = scriptProperties.getProperty("PIPEDRIVE_SUBDOMAIN") || "api";
                 
-                // Get field definitions for persons
-                let fieldDefinitions = {};
-                try {
-                  fieldDefinitions = getEntityFields('persons');
-                } catch (fieldErr) {
-                  Logger.log(`Could not get field definitions for persons: ${fieldErr.message}`);
-                }
-                
                 // Use direct API call to avoid URL constructor issue
                 Logger.log("Using direct API call for persons update to avoid URL constructor issue");
+                
+                // Get field definitions for processing
+                const fieldDefinitions = getFieldDefinitionsMap(entityType);
                 
                 // Prepare final payload - move custom fields to top level for API v1
                 const finalPayload = {};
                 
-                // Copy all non-custom fields with type conversions
+                // Process standard fields with type conversions
+                const standardFields = {};
                 Object.keys(payloadToSend).forEach((key) => {
                   if (key !== "custom_fields") {
-                    let value = payloadToSend[key];
-                    
-                    // Convert boolean strings to actual booleans for leads
-                    if (entityType === 'leads' && (key === 'is_archived' || key === 'was_seen')) {
-                      if (typeof value === 'string') {
-                        value = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
-                      }
-                    }
-                    
-                    // Convert visible_to text to number for leads
-                    if (entityType === 'leads' && key === 'visible_to' && typeof value === 'string') {
-                      const visibilityMap = {
-                        'owner only': '1',
-                        'owner & followers': '1',
-                        "owner's visibility group": '3',
-                        "owner's visibility group and sub-groups": '5',
-                        'entire company': '7',
-                        'all users': '3' // For Essential/Advanced plans
-                      };
-                      const mappedValue = visibilityMap[value.toLowerCase()];
-                      if (mappedValue) {
-                        value = mappedValue;
-                      }
-                    }
-                    
-                    finalPayload[key] = value;
+                    standardFields[key] = payloadToSend[key];
                   }
                 });
                 
-                // Move custom fields to top level
+                // Apply field type processing to standard fields
+                const processedStandardFields = processFieldTypes(standardFields, fieldDefinitions, entityType);
+                Object.assign(finalPayload, processedStandardFields);
+                
+                // Process and move custom fields to top level
                 if (payloadToSend.custom_fields) {
-                  Object.keys(payloadToSend.custom_fields).forEach((key) => {
-                    // For Pipedrive API v1, custom fields should be at top level
-                    finalPayload[key] = payloadToSend.custom_fields[key];
+                  // Apply field type processing to custom fields
+                  const processedCustomFields = processFieldTypes(payloadToSend.custom_fields, fieldDefinitions, entityType);
+                  
+                  // Move to top level for API v1
+                  Object.keys(processedCustomFields).forEach((key) => {
+                    finalPayload[key] = processedCustomFields[key];
                   });
-                  Logger.log(`Moved ${Object.keys(payloadToSend.custom_fields).length} custom fields to top level`);
+                  
+                  Logger.log(`Moved ${Object.keys(processedCustomFields).length} custom fields to top level`);
                 }
                 
                 // Log the final payload
@@ -4627,28 +4700,65 @@ async function pushChangesToPipedrive(
                 // Get subdomain from properties
                 const subdomain = scriptProperties.getProperty("PIPEDRIVE_SUBDOMAIN") || "api";
                 
-                // Get field definitions for organizations
-                let fieldDefinitions = {};
-                try {
-                  fieldDefinitions = getEntityFields('organizations');
-                } catch (fieldErr) {
-                  Logger.log(`Could not get field definitions for organizations: ${fieldErr.message}`);
-                }
+                // Get field definitions for processing
+                const fieldDefinitions = getFieldDefinitionsMap(entityType);
                 
                 // Use direct API call to avoid URL constructor issue
                 Logger.log("Using direct API call for organizations update to avoid URL constructor issue");
                 
-                const directResponse = updateOrganizationDirect(
-                  rowData.id,
-                  payloadToSend,
-                  pipedriveToken,
-                  `https://${subdomain}.pipedrive.com/v1`,
-                  fieldDefinitions
-                );
+                // Prepare final payload - move custom fields to top level for API v1
+                const finalPayload = {};
                 
-                // Process the response
-                responseCode = directResponse.responseCode || 200;
-                responseBody = directResponse;
+                // Process standard fields with type conversions
+                const standardFields = {};
+                Object.keys(payloadToSend).forEach((key) => {
+                  if (key !== "custom_fields") {
+                    standardFields[key] = payloadToSend[key];
+                  }
+                });
+                
+                // Apply field type processing to standard fields
+                const processedStandardFields = processFieldTypes(standardFields, fieldDefinitions, entityType);
+                Object.assign(finalPayload, processedStandardFields);
+                
+                // Process and move custom fields to top level
+                if (payloadToSend.custom_fields) {
+                  // Apply field type processing to custom fields
+                  const processedCustomFields = processFieldTypes(payloadToSend.custom_fields, fieldDefinitions, entityType);
+                  
+                  // Move to top level for API v1
+                  Object.keys(processedCustomFields).forEach((key) => {
+                    finalPayload[key] = processedCustomFields[key];
+                  });
+                  
+                  Logger.log(`Moved ${Object.keys(processedCustomFields).length} custom fields to top level`);
+                }
+                
+                // Log the final payload
+                Logger.log(`Final payload for organizations API call: ${JSON.stringify(finalPayload)}`);
+                
+                // Construct URL and options
+                const apiUrl = `https://${subdomain}.pipedrive.com/v1/organizations/${Number(rowData.id)}`;
+                const options = {
+                  method: "PUT",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${pipedriveToken}`,
+                  },
+                  payload: JSON.stringify(finalPayload),
+                  muteHttpExceptions: true,
+                };
+                
+                Logger.log(`Direct API URL: ${apiUrl}`);
+                Logger.log(`Direct API payload: ${JSON.stringify(finalPayload)}`);
+                
+                // Make the request
+                const response = UrlFetchApp.fetch(apiUrl, options);
+                responseCode = response.getResponseCode();
+                const responseText = response.getContentText();
+                
+                // Parse the response
+                responseBody = JSON.parse(responseText);
                 success = responseBody && responseBody.success === true;
                 
                 Logger.log(`Direct API call response for organization: ${JSON.stringify(responseBody)}`);
@@ -4662,14 +4772,114 @@ async function pushChangesToPipedrive(
               break;
 
             case "activities":
-              // Use activities API
-              const activityResponse = await apiClient.updateActivity({
-                id: Number(rowData.id), // Ensure ID is a number
-                body: payloadToSend,
-              });
-              responseBody = activityResponse;
-              // Check if the response indicates success
-              success = activityResponse && activityResponse.success === true;
+              try {
+                // Get the Pipedrive OAuth token from script properties
+                const scriptProperties = PropertiesService.getScriptProperties();
+                const pipedriveToken = scriptProperties.getProperty("PIPEDRIVE_ACCESS_TOKEN");
+                
+                if (!pipedriveToken) {
+                  throw new Error("Pipedrive API token not found in script properties");
+                }
+                
+                // Get subdomain from properties
+                const subdomain = scriptProperties.getProperty("PIPEDRIVE_SUBDOMAIN") || "api";
+                
+                // Use direct API call to avoid URL constructor issue
+                Logger.log("Using direct API call for activities update to avoid URL constructor issue");
+                
+                // Get field definitions for processing
+                const fieldDefinitions = getFieldDefinitionsMap(entityType);
+                
+                // Prepare final payload - move custom fields to top level for API v1
+                const finalPayload = {};
+                
+                // Process standard fields with type conversions
+                const standardFields = {};
+                Object.keys(payloadToSend).forEach((key) => {
+                  if (key !== "custom_fields") {
+                    standardFields[key] = payloadToSend[key];
+                  }
+                });
+                
+                // Apply field type processing to standard fields
+                const processedStandardFields = processFieldTypes(standardFields, fieldDefinitions, entityType);
+                Object.assign(finalPayload, processedStandardFields);
+                
+                // Special handling for participants field
+                if (finalPayload.participants && typeof finalPayload.participants === 'string') {
+                  try {
+                    // First try to parse as JSON array string
+                    const parsed = JSON.parse(finalPayload.participants);
+                    if (Array.isArray(parsed)) {
+                      finalPayload.participants = parsed;
+                      Logger.log(`Parsed participants field from JSON string to array: ${JSON.stringify(parsed)}`);
+                    }
+                  } catch (e) {
+                    // If not JSON, check if it's comma-separated person IDs
+                    if (finalPayload.participants.includes(',') || /^\d+$/.test(finalPayload.participants)) {
+                      const personIds = finalPayload.participants.split(',').map(id => id.trim()).filter(id => id);
+                      // Convert to Pipedrive format
+                      finalPayload.participants = personIds.map(id => ({
+                        person_id: parseInt(id),
+                        primary_flag: personIds.length === 1 // Set primary if only one participant
+                      }));
+                      Logger.log(`Converted comma-separated participants to array: ${JSON.stringify(finalPayload.participants)}`);
+                    } else {
+                      Logger.log(`Could not parse participants field: ${e.message}`);
+                      // Remove the field if we can't parse it
+                      delete finalPayload.participants;
+                    }
+                  }
+                }
+                
+                // Process and move custom fields to top level
+                if (payloadToSend.custom_fields) {
+                  // Apply field type processing to custom fields
+                  const processedCustomFields = processFieldTypes(payloadToSend.custom_fields, fieldDefinitions, entityType);
+                  
+                  // Move to top level for API v1
+                  Object.keys(processedCustomFields).forEach((key) => {
+                    finalPayload[key] = processedCustomFields[key];
+                  });
+                  
+                  Logger.log(`Moved ${Object.keys(processedCustomFields).length} custom fields to top level`);
+                }
+                
+                // Log the final payload
+                Logger.log(`Final payload for activities API call: ${JSON.stringify(finalPayload)}`);
+                
+                // Construct URL and options
+                const apiUrl = `https://${subdomain}.pipedrive.com/v1/activities/${Number(rowData.id)}`;
+                const options = {
+                  method: "PUT",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${pipedriveToken}`,
+                  },
+                  payload: JSON.stringify(finalPayload),
+                  muteHttpExceptions: true,
+                };
+                
+                Logger.log(`Direct API URL: ${apiUrl}`);
+                Logger.log(`Direct API payload: ${JSON.stringify(finalPayload)}`);
+                
+                // Make the request
+                const response = UrlFetchApp.fetch(apiUrl, options);
+                responseCode = response.getResponseCode();
+                const responseText = response.getContentText();
+                
+                // Parse the response
+                responseBody = JSON.parse(responseText);
+                success = responseBody && responseBody.success === true;
+                
+                Logger.log(`Direct API call response for activity: ${JSON.stringify(responseBody)}`);
+              } catch (activityError) {
+                Logger.log(`Activity update failed: ${activityError.message}`);
+                responseBody = {
+                  error: activityError.message,
+                };
+                success = false;
+              }
               break;
 
             case "leads":

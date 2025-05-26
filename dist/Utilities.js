@@ -656,6 +656,35 @@ function formatValue(value, columnPath, optionMappings = {}) {
     return priceStrings.join('; ');
   }
 
+  // Handle participants field specifically (for activities)
+  if (columnPath === 'participants') {
+    // If it's a string (from sheet), return as is
+    if (typeof value === 'string') {
+      return value;
+    }
+    
+    // If it's an array (from Pipedrive)
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        return '';
+      }
+      
+      // Just show person IDs for now - we'll map them to names in a separate process
+      const participantIds = value.map(participant => {
+        if (participant && participant.person_id) {
+          return participant.person_id;
+        }
+        return '';
+      }).filter(id => id); // Remove empty values
+      
+      // Return as comma-separated IDs
+      return participantIds.join(',');
+    }
+    
+    // For other types, convert to string
+    return String(value);
+  }
+
   // Regular object handling
   if (typeof value === 'object') {
     // Check if it's an array of email/phone objects

@@ -3,7 +3,10 @@
     "allow": [
       "Bash(grep:*)",
       "Bash(npm run build:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(awk:*)",
+      "Bash(npm run deploy:*)",
+      "Bash(clasp push:*)"
     ],
     "deny": []
   }
