@@ -1512,7 +1512,7 @@
             
             <div class="entity-info-tip">
               <span class="tip-icon">💡</span>
-              <span>For linked fields, simply type the name and it will be converted to the appropriate ID when saving.</span>
+              <span>To edit fields from other entities, create a filter for that specific entity type.</span>
             </div>
           </div>
         </div>
@@ -2185,7 +2185,37 @@
         console.log("Using existing local availableColumns variable");
       }
       
-      // Now that we have the data, create a copy for the original columns
+      // Filter out redundant fields before creating the copy
+      if (availableColumns) {
+        // Filter out redundant read-only name fields that we don't need
+        availableColumns = availableColumns.filter(col => {
+          // Filter out org_name, person_name, owner_name since we have editable ID fields
+          if (col.key === 'org_name' || col.key === 'org_id.name' ||
+              col.key === 'person_name' || col.key === 'person_id.name' ||
+              col.key === 'owner_name' || col.key === 'owner_id.name' ||
+              col.key === 'deal_name' || col.key === 'deal_id.name' || col.key === 'deal_id.title') {
+            console.log(`CLIENT: Filtering out redundant name field: ${col.key}`);
+            return false;
+          }
+          
+          // Update field names to be clearer about accepting names
+          if (col.key === 'org_id') {
+            col.name = 'Organization (Name/ID)';
+          } else if (col.key === 'person_id') {
+            col.name = 'Person (Name/ID)';
+          } else if (col.key === 'owner_id') {
+            col.name = 'Owner (Name/ID)';
+          } else if (col.key === 'deal_id') {
+            col.name = 'Deal (Title/ID)';
+          } else if (col.key === 'stage_id' && col.name === 'Pipeline Stage') {
+            col.name = 'Pipeline Stage (Name/ID)';
+          }
+          
+          return true;
+        });
+      }
+      
+      // Now that we have the filtered data, create a copy for the original columns
       window.originalAvailableColumns = availableColumns ? JSON.parse(JSON.stringify(availableColumns)) : [];
       console.log("Original available columns copy created with length:", window.originalAvailableColumns.length);
     }
@@ -2915,21 +2945,27 @@
         // For example, org_* fields should be read-only in a Deals sheet
 
         // Organization fields are only editable when in Organization entity type
+        // Exception: org_id is editable in other entity types since we support name-to-ID conversion
         if ((key.startsWith('org.') || key.startsWith('org_') ||
           key.startsWith('organization.') || key.startsWith('organization_')) &&
-          entityType !== 'organizations') {
+          entityType !== 'organizations' &&
+          key !== 'org_id') {
           return true;
         }
 
         // Person fields are only editable when in Person entity type
+        // Exception: person_id is editable in other entity types since we support name-to-ID conversion
         if ((key.startsWith('person.') || key.startsWith('person_')) &&
-          entityType !== 'persons') {
+          entityType !== 'persons' &&
+          key !== 'person_id') {
           return true;
         }
 
         // Deal fields are only editable when in Deal entity type
+        // Exception: deal_id is editable in other entity types since we support name-to-ID conversion
         if ((key.startsWith('deal.') || key.startsWith('deal_')) &&
-          entityType !== 'deals') {
+          entityType !== 'deals' &&
+          key !== 'deal_id') {
           return true;
         }
 
@@ -2966,7 +3002,8 @@
         }
         
         // Explicit user/creator fields that should be read-only
-        if (key === 'user_id' || key === 'creator_id' || key === 'owner_id' ||
+        // Note: owner_id is now editable since we support user name-to-ID conversion
+        if (key === 'user_id' || key === 'creator_id' ||
             key.includes('.user_id') || key.includes('.creator_id') || key.includes('.owner_id')) {
           return true;
         }

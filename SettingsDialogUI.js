@@ -873,20 +873,27 @@ function showColumnSelectorUI() {
         return false;
       }
 
-      // NEW: Filter out redundant read-only organization name fields
-      if (col.key === 'org_name' && availableColumns.some(c => 
-          (c.key === 'org_id' || c.key === 'organization_id' || c.key === 'organization'))) {
+      // Filter out redundant read-only organization name fields
+      // Since org_id now accepts organization names, we don't need the separate org_name field
+      if (col.key === 'org_name' || col.key === 'org_id.name') {
         return false;
       }
       
-      // NEW: Filter out redundant read-only person name fields
-      if (col.key === 'person_name' && availableColumns.some(c => 
-          (c.key === 'person_id' || c.key === 'person'))) {
+      // Filter out redundant read-only person name fields
+      // Since person_id now accepts person names, we don't need the separate person_name field
+      if (col.key === 'person_name' || col.key === 'person_id.name') {
         return false;
       }
       
-      // NEW: Filter out redundant owner name in favor of owner_id
-      if (col.key === 'owner_name' && availableColumns.some(c => c.key === 'owner_id')) {
+      // Filter out redundant owner name in favor of owner_id
+      // Since owner_id now accepts user names, we don't need the separate owner_name field
+      if (col.key === 'owner_name' || col.key === 'owner_id.name') {
+        return false;
+      }
+      
+      // Filter out redundant deal name/title fields
+      // Since deal_id now accepts deal titles, we don't need separate name fields
+      if (col.key === 'deal_name' || col.key === 'deal_id.name' || col.key === 'deal_id.title') {
         return false;
       }
       
@@ -1309,7 +1316,7 @@ function showColumnSelectorUI() {
       
       // Handle owner_id specially
       if (col.key === 'owner_id') {
-        col.name = 'Owner';
+        col.name = 'Owner (Name/ID)';
       } else if (col.key === 'owner_id.name') {
         col.name = 'Owner Name';
       } else if (col.key.startsWith('owner_id.')) {
@@ -1319,7 +1326,7 @@ function showColumnSelectorUI() {
       
       // Handle organization fields
       if (col.key === 'org_id') {
-        col.name = 'Organization';
+        col.name = 'Organization (Name/ID)';
       } else if (col.key === 'org_id.name') {
         col.name = 'Organization Name';
       } else if (col.key.startsWith('org_id.')) {
@@ -1329,7 +1336,7 @@ function showColumnSelectorUI() {
       
       // Handle person fields
       if (col.key === 'person_id') {
-        col.name = 'Person';
+        col.name = 'Person (Name/ID)';
       } else if (col.key === 'person_id.name') {
         col.name = 'Person Name';
       } else if (col.key.startsWith('person_id.')) {
@@ -1339,7 +1346,7 @@ function showColumnSelectorUI() {
       
       // Handle deal fields
       if (col.key === 'deal_id') {
-        col.name = 'Deal';
+        col.name = 'Deal (Title/ID)';
       } else if (col.key === 'deal_id.name' || col.key === 'deal_id.title') {
         col.name = 'Deal Title';
       } else if (col.key.startsWith('deal_id.')) {
@@ -2935,7 +2942,7 @@ function getFallbackColumns(entityType) {
         { key: 'title', name: 'Deal Title', isNested: false, category: mainCategory },
         { key: 'value', name: 'Deal Value', isNested: false, category: mainCategory },
         { key: 'status', name: 'Status', isNested: false, category: mainCategory },
-        { key: 'stage_id', name: 'Pipeline Stage', isNested: false, category: mainCategory }
+        { key: 'stage_id', name: 'Pipeline Stage (Name/ID)', isNested: false, category: mainCategory }
       );
       break;
     case ENTITY_TYPES.PERSONS:
@@ -2988,21 +2995,27 @@ function isReadOnlyField(key, entityType) {
   // Entity-specific read-only checks
   if (key) {
     // Organization fields are only editable when in Organization entity type
+    // Exception: org_id is editable in other entity types since we support name-to-ID conversion
     if ((key.startsWith('org.') || key.startsWith('org_') ||
          key.startsWith('organization.') || key.startsWith('organization_')) &&
-        entityType !== ENTITY_TYPES.ORGANIZATIONS) {
+        entityType !== ENTITY_TYPES.ORGANIZATIONS &&
+        key !== 'org_id') {
       return true;
     }
     
     // Person fields are only editable when in Person entity type
+    // Exception: person_id is editable in other entity types since we support name-to-ID conversion
     if ((key.startsWith('person.') || key.startsWith('person_')) &&
-        entityType !== ENTITY_TYPES.PERSONS) {
+        entityType !== ENTITY_TYPES.PERSONS &&
+        key !== 'person_id') {
       return true;
     }
     
     // Deal fields are only editable when in Deal entity type
+    // Exception: deal_id is editable in other entity types since we support name-to-ID conversion
     if ((key.startsWith('deal.') || key.startsWith('deal_')) &&
-        entityType !== ENTITY_TYPES.DEALS) {
+        entityType !== ENTITY_TYPES.DEALS &&
+        key !== 'deal_id') {
       return true;
     }
     
