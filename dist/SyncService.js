@@ -3747,8 +3747,80 @@ async function pushChangesToPipedrive(
             Logger.log('Removed org_id field as it contains name instead of ID');
           }
           
-          // Convert label_ids from string to array if needed
-          if (payloadToSend.label_ids && typeof payloadToSend.label_ids === 'string') {
+          // Convert label names to IDs for leads
+          if (entityType === 'leads' && payloadToSend.label_ids) {
+            try {
+              // Get lead labels
+              const leadLabels = getLeadLabels();
+              
+              // Create a mapping of label names to IDs
+              const labelNameToId = {};
+              leadLabels.forEach(label => {
+                if (label.name && label.id) {
+                  labelNameToId[label.name.toLowerCase()] = label.id;
+                }
+              });
+              
+              // Process label_ids - could be string, array, or already formatted
+              let processedLabels = [];
+              
+              if (typeof payloadToSend.label_ids === 'string') {
+                // Could be comma-separated names or IDs, or a stringified array
+                const labelString = payloadToSend.label_ids.replace(/[\[\]"']/g, '');
+                const labelParts = labelString.split(',').map(s => s.trim()).filter(s => s);
+                
+                labelParts.forEach(part => {
+                  // Check if it's a UUID (label ID)
+                  if (part.match(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i)) {
+                    processedLabels.push(part);
+                  } else {
+                    // It's a name, try to find the ID
+                    const labelId = labelNameToId[part.toLowerCase()];
+                    if (labelId) {
+                      processedLabels.push(labelId);
+                      Logger.log(`Converted label name "${part}" to ID: ${labelId}`);
+                    } else {
+                      Logger.log(`Warning: Could not find label ID for name "${part}"`);
+                    }
+                  }
+                });
+              } else if (Array.isArray(payloadToSend.label_ids)) {
+                // Already an array, process each element
+                payloadToSend.label_ids.forEach(item => {
+                  if (typeof item === 'string') {
+                    // Check if it's a UUID (label ID)
+                    if (item.match(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i)) {
+                      processedLabels.push(item);
+                    } else {
+                      // It's a name, try to find the ID
+                      const labelId = labelNameToId[item.toLowerCase()];
+                      if (labelId) {
+                        processedLabels.push(labelId);
+                        Logger.log(`Converted label name "${item}" to ID: ${labelId}`);
+                      } else {
+                        Logger.log(`Warning: Could not find label ID for name "${item}"`);
+                      }
+                    }
+                  } else {
+                    processedLabels.push(item);
+                  }
+                });
+              }
+              
+              if (processedLabels.length > 0) {
+                payloadToSend.label_ids = processedLabels;
+                Logger.log(`Final label_ids for push: ${JSON.stringify(payloadToSend.label_ids)}`);
+              } else {
+                delete payloadToSend.label_ids;
+              }
+            } catch (e) {
+              Logger.log(`Error processing lead labels: ${e.message}`);
+              // Keep original value if conversion fails
+            }
+          }
+          
+          // Convert label_ids from string to array if needed (for other entity types)
+          else if (payloadToSend.label_ids && typeof payloadToSend.label_ids === 'string') {
             try {
               // Remove brackets and parse
               const labelString = payloadToSend.label_ids.replace(/[\[\]]/g, '');
