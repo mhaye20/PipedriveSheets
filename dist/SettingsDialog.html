@@ -3248,15 +3248,30 @@
             
             // Filter out entries with problematic names
             result.availableColumns = result.availableColumns.filter(col => {
-              // Filter by name pattern for Email - 0, Phone - 0, Im - 0
-              if (col.name && col.name.match(/^(Email|Phone|Im) - \d+/)) {
+              // Only filter entries that have NUMERIC indices like "Email - 0", "Phone - 0"
+              // But keep legitimate entries like "Email - Work", "Phone - Mobile", etc.
+              if (col.name && col.name.match(/^(Email|Phone|Im) - \d+$/)) {
                 console.log(`CLIENT: Filtering out array-indexed entry: name="${col.name}", key="${col.key || 'NO KEY'}"`);
                 return false;
               }
               
-              // Also filter if parentKey contains array indices
-              if (col.parentKey && col.parentKey.match(/^(email|phone|im)\.\d+/)) {
-                console.log(`CLIENT: Filtering out by parentKey: name="${col.name}", parentKey="${col.parentKey}"`);
+              // Also filter entries with numeric indices in the name like "Email - 0 - Email Label #1"
+              if (col.name && col.name.match(/^(Email|Phone|Im) - \d+ - /)) {
+                console.log(`CLIENT: Filtering out sub-array entry: name="${col.name}", key="${col.key || 'NO KEY'}"`);
+                return false;
+              }
+              
+              // Filter if parentKey contains array indices like email.0, phone.0
+              // BUT don't filter if the key itself is like phone.work or email.home
+              if (col.parentKey && col.parentKey.match(/^(email|phone|im)\.\d+$/)) {
+                console.log(`CLIENT: Filtering out by numeric parentKey: name="${col.name}", parentKey="${col.parentKey}"`);
+                return false;
+              }
+              
+              // Also filter if the key contains numeric indices
+              // BUT keep entries like phone.work, email.home, etc.
+              if (col.key && col.key.match(/^(email|phone|im)\.\d+/)) {
+                console.log(`CLIENT: Filtering out by numeric key: name="${col.name}", key="${col.key}"`);
                 return false;
               }
               
@@ -3265,6 +3280,16 @@
             
             const afterCount = result.availableColumns.length;
             console.log(`CLIENT: Filtered ${beforeCount - afterCount} entries. Final count: ${afterCount}`);
+            
+            // Log available email/phone fields for debugging
+            const emailPhoneFields = result.availableColumns.filter(col => 
+              col.name && (col.name.toLowerCase().includes('email') || col.name.toLowerCase().includes('phone'))
+            );
+            console.log(`CLIENT: Available Email/Phone fields after filtering:`, emailPhoneFields.map(f => ({
+              name: f.name,
+              key: f.key,
+              parentKey: f.parentKey
+            })));
           }
           
           // Set the data on window for global access

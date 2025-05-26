@@ -920,8 +920,9 @@ function showColumnSelectorUI() {
 
       // NEW: Filter out redundant email/phone composite fields
       // Keep the specific type fields (like email.work, phone.mobile) instead of the generic composite
+      // BUT make sure we're not removing them if all the sub-fields are numeric indices
       if ((col.key === 'email' || col.key === 'phone') && 
-          availableColumns.some(c => c.key.startsWith(col.key + '.'))) {
+          availableColumns.some(c => c.key.startsWith(col.key + '.') && !c.key.match(/\.\d+/))) {
         return false;
       }
       
@@ -2723,8 +2724,37 @@ function extractColumnsFromData(data, entityType) {
         }
         // Standard nested object processing for other field types
         else {
-            // Recursively process properties within the object
-            processNestedObject(value, key, category, relatedEntityType, addColumn, 1);
+            // Skip phone/email/im arrays - they'll be handled below
+            if (!Array.isArray(value) || (key !== 'email' && key !== 'phone' && key !== 'im')) {
+                // Recursively process properties within the object
+                processNestedObject(value, key, category, relatedEntityType, addColumn, 1);
+            }
+        }
+      }
+      // Special handling for email/phone/im arrays at the top level
+      else if (Array.isArray(value) && (key === 'email' || key === 'phone' || key === 'im')) {
+        Logger.log(`Processing ${key} array field with ${value.length} items`);
+        
+        // Determine category
+        let category = mainCategoryName;
+        
+        // First add the primary field that contains the main value
+        const primaryFieldName = key === 'email' ? 'Primary Email' : 
+                                key === 'phone' ? 'Primary Phone' : 'Primary IM';
+        addColumn(`primary_${key}`, primaryFieldName, false, null, category, true);
+        
+        // Define the common labels we expect to see
+        const commonLabels = key === 'phone' ? 
+            ['work', 'home', 'mobile', 'other'] : 
+            ['work', 'home', 'other'];
+        
+        // Add columns for each common label type
+        for (const label of commonLabels) {
+            const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
+            const fieldKey = `${key}.${label}`;
+            const fieldName = `${formatColumnName(key)} - ${capitalizedLabel}`;
+            addColumn(fieldKey, fieldName, false, null, category, false);
+            Logger.log(`Added ${key} field: ${fieldName} with key: ${fieldKey}`);
         }
       }
     }
@@ -2815,25 +2845,27 @@ function processNestedObject(obj, parentKey, parentCategory, relatedEntityType, 
      } else if (!Array.isArray(value)) { // Add simple properties
        addColumnFn(currentPath, name, isNested, parentKey, currentCategory, isReadOnly);
      } 
-     // DISABLED: Array processing for email/phone/im fields creates confusing "Email - 0" entries
-     // Users should use the main email/phone fields instead
-     /*
+     // Special handling for email/phone/im fields to create type-specific columns
      else if (Array.isArray(value) && (parentKey === 'email' || parentKey === 'phone' || parentKey === 'im')) {
-         // Add entries for different labels (work, home, etc.) - logic handled by formatColumnName
-         // Add the base array field first
-         addColumnFn(parentKey, formatColumnName(parentKey), false, null, currentCategory, isReadOnly); 
-         value.forEach((item, index) => {
-             if(item && typeof item === 'object'){
-                 for(const prop in item){
-                     const itemPath = `${parentKey}.${index}.${prop}`;
-                     const itemName = formatColumnName(itemPath);
-                     addColumnFn(itemPath, itemName, true, parentKey, currentCategory, isReadOnly);
-                 }
-             }
-         });
+         // First add the primary field that contains the main value
+         const primaryFieldName = parentKey === 'email' ? 'Primary Email' : 
+                                 parentKey === 'phone' ? 'Primary Phone' : 'Primary IM';
+         addColumnFn(`primary_${parentKey}`, primaryFieldName, false, null, currentCategory, true);
+         
+         // Define the common labels we expect to see
+         const commonLabels = parentKey === 'phone' ? 
+             ['work', 'home', 'mobile', 'other'] : 
+             ['work', 'home', 'other'];
+         
+         // Add columns for each common label type
+         for (const label of commonLabels) {
+             const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
+             const fieldKey = `${parentKey}.${label}`;
+             const fieldName = `${formatColumnName(parentKey)} - ${capitalizedLabel}`;
+             addColumnFn(fieldKey, fieldName, false, null, currentCategory, false);
+         }
      }
-     */
-   }
+   } // Close the for loop
 }
 
 /**
@@ -2850,7 +2882,7 @@ function getStandardFieldKeys(entityType) {
             return [...common, 'title', 'person_id', 'org_id', 'pipeline_id', 'stage_id', 'value', 'currency', 'stage_change_time', 'status', 'probability', 'lost_reason', 'close_time', 'won_time', 'lost_time', 'expected_close_date'];
         case ENTITY_TYPES.PERSONS:
             // V2 PATCH /persons/{id}
-            return [...common, 'name', 'org_id', 'emails', 'phones']; // emails/phones are arrays
+            return [...common, 'name', 'org_id', 'email', 'phone']; // email/phone are arrays
         case ENTITY_TYPES.ORGANIZATIONS:
             // V2 PATCH /organizations/{id}
             return [...common, 'name', 'address']; // 'address' might be complex object, handled in extraction
