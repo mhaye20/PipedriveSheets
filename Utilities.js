@@ -619,6 +619,23 @@ function formatValue(value, columnPath, optionMappings = {}) {
     }
   }
 
+  // Handle label_ids field specifically (for leads)
+  if (columnPath === 'label_ids' && Array.isArray(value)) {
+    if (value.length === 0) {
+      return '';
+    }
+    // Check if we have label mappings
+    if (optionMappings['label_ids']) {
+      const labels = value.map(id => {
+        // Return the label name if we have it, otherwise just return the ID
+        return optionMappings['label_ids'][id] || id;
+      });
+      return labels.join(', ');
+    }
+    // If no mappings, just join the IDs
+    return value.join(', ');
+  }
+
   // Handle prices field specifically
   if (columnPath === 'prices' && Array.isArray(value)) {
     if (value.length === 0) {

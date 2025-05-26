@@ -292,6 +292,48 @@ function getLeadFields(forceRefresh = false) {
 }
 
 /**
+ * Gets all lead labels
+ * @param {boolean} forceRefresh - Whether to force a refresh from the API
+ * @return {Array} Array of lead label objects
+ */
+function getLeadLabels(forceRefresh = false) {
+  const cacheKey = 'LEAD_LABELS_CACHE';
+  const cache = CacheService.getScriptCache();
+  
+  // Try to get from cache first
+  if (!forceRefresh) {
+    const cachedData = cache.get(cacheKey);
+    if (cachedData) {
+      try {
+        const labels = JSON.parse(cachedData);
+        Logger.log(`Retrieved ${labels.length} lead labels from cache`);
+        return labels;
+      } catch (e) {
+        Logger.log('Failed to parse cached lead labels');
+      }
+    }
+  }
+  
+  try {
+    Logger.log('Fetching lead labels from Pipedrive API');
+    const response = makePipedriveRequest('leadLabels');
+    
+    if (response && response.data) {
+      // Cache for 1 hour
+      cache.put(cacheKey, JSON.stringify(response.data), 3600);
+      Logger.log(`Retrieved ${response.data.length} lead labels from API`);
+      return response.data;
+    } else {
+      Logger.log('No lead labels data in response');
+      return [];
+    }
+  } catch (e) {
+    Logger.log(`Error fetching lead labels: ${e.message}`);
+    return [];
+  }
+}
+
+/**
  * Gets field definitions for products
  * @param {boolean} forceRefresh - Whether to force a refresh from the API
  * @return {Array} Array of field definition objects
@@ -874,6 +916,24 @@ function getFieldOptionMappingsForEntity(entityType) {
         });
       }
     });
+    
+    // Special handling for leads - add label_ids mapping
+    if (entityType === ENTITY_TYPES.LEADS) {
+      try {
+        const leadLabels = getLeadLabels();
+        if (leadLabels && leadLabels.length > 0) {
+          mappings['label_ids'] = {};
+          leadLabels.forEach(label => {
+            if (label.id && label.name) {
+              mappings['label_ids'][label.id] = label.name;
+            }
+          });
+          Logger.log(`Added ${leadLabels.length} lead label mappings`);
+        }
+      } catch (e) {
+        Logger.log(`Error getting lead labels for mapping: ${e.message}`);
+      }
+    }
     
     return mappings;
   } catch (e) {
