@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html style="background-color: #f2f6f796; border: 2px groove #ffffff8c;">
 
 <head>
   <base target="_top">
@@ -36,7 +36,6 @@
       margin: 0;
       padding: 20px;
       font-size: 14px;
-      background-color: #fff;
     }
 
     h3 {
@@ -3014,6 +3013,30 @@
     // Initial render
     renderAvailableList();
     renderSelectedList();
+
+    // Function to toggle API details visibility
+    function toggleApiDetails() {
+      const apiDetails = document.getElementById('apiDetails');
+      const toggleBtn = document.getElementById('apiDetailsToggle');
+      
+      if (apiDetails && toggleBtn) {
+        // Toggle the expanded class on the details div
+        apiDetails.classList.toggle('expanded');
+        
+        // Toggle the expanded class on the button for arrow rotation
+        toggleBtn.classList.toggle('expanded');
+        
+        // Update the button text
+        if (apiDetails.classList.contains('expanded')) {
+          toggleBtn.textContent = 'Hide';
+        } else {
+          toggleBtn.textContent = 'Details';
+        }
+      }
+    }
+    
+    // Make the function globally available
+    window.toggleApiDetails = toggleApiDetails;
 
     // Add the saveColumns and showHelp functions
     function saveColumns() {
