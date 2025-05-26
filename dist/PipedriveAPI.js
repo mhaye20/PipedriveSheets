@@ -171,6 +171,60 @@ function getProductsWithFilter(filterId, limit = 100) {
 }
 
 /**
+ * Searches for persons by name and returns a mapping of names to person IDs
+ * @param {Array<string>} names - Array of person names to search for
+ * @return {Object} Mapping of person names to person IDs
+ */
+function searchPersonsByName(names) {
+  try {
+    const nameToIdMap = {};
+    
+    // Process each name
+    for (const name of names) {
+      if (!name || typeof name !== 'string') continue;
+      
+      const searchTerm = name.trim();
+      if (!searchTerm) continue;
+      
+      // Search for the person using Pipedrive search API
+      const searchUrl = `${getPipedriveApiUrl()}/persons/search?term=${encodeURIComponent(searchTerm)}&limit=10`;
+      
+      try {
+        const response = makeAuthenticatedRequest(searchUrl);
+        
+        if (response.success && response.data && response.data.items) {
+          // Look for exact match first
+          let found = false;
+          for (const item of response.data.items) {
+            if (item.item && item.item.name && item.item.name.toLowerCase() === searchTerm.toLowerCase()) {
+              nameToIdMap[name] = item.item.id;
+              found = true;
+              Logger.log(`Found exact match for "${name}": Person ID ${item.item.id}`);
+              break;
+            }
+          }
+          
+          // If no exact match, use the first result
+          if (!found && response.data.items.length > 0 && response.data.items[0].item) {
+            nameToIdMap[name] = response.data.items[0].item.id;
+            Logger.log(`Using first match for "${name}": Person ID ${response.data.items[0].item.id} (${response.data.items[0].item.name})`);
+          } else if (!found) {
+            Logger.log(`No person found for name: ${name}`);
+          }
+        }
+      } catch (searchError) {
+        Logger.log(`Error searching for person "${name}": ${searchError.message}`);
+      }
+    }
+    
+    return nameToIdMap;
+  } catch (error) {
+    Logger.log(`Error in searchPersonsByName: ${error.message}`);
+    return {};
+  }
+}
+
+/**
  * Gets data from Pipedrive using a specific filter based on entity type
  */
 function getFilteredDataFromPipedrive(entityType, filterId, limit = 100) {

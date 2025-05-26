@@ -328,6 +328,67 @@ function syncPipedriveDataToSheet(
       }
     }
 
+    // Special handling for activities - build person ID to name mapping
+    let personIdToNameMap = {};
+    if (entityType === ENTITY_TYPES.ACTIVITIES) {
+      Logger.log("Building person ID to name mapping for activities...");
+      
+      // Collect all unique person IDs from activities
+      const personIds = new Set();
+      for (const item of items) {
+        // Check person_id field
+        if (item.person_id) {
+          personIds.add(item.person_id);
+        }
+        // Check participants array
+        if (item.participants && Array.isArray(item.participants)) {
+          for (const participant of item.participants) {
+            if (participant.person_id) {
+              personIds.add(participant.person_id);
+            }
+          }
+        }
+      }
+      
+      // Also use person_name if available in activities
+      for (const item of items) {
+        if (item.person_id && item.person_name) {
+          personIdToNameMap[item.person_id] = item.person_name;
+        }
+      }
+      
+      Logger.log(`Found ${personIds.size} unique person IDs in activities`);
+      Logger.log(`Pre-mapped ${Object.keys(personIdToNameMap).length} person names from activity data`);
+      
+      // Fetch missing person names
+      const missingPersonIds = Array.from(personIds).filter(id => !personIdToNameMap[id]);
+      if (missingPersonIds.length > 0) {
+        Logger.log(`Need to fetch names for ${missingPersonIds.length} person IDs`);
+        
+        // Batch fetch persons (Pipedrive allows up to 500 IDs per request)
+        const batchSize = 100;
+        for (let i = 0; i < missingPersonIds.length; i += batchSize) {
+          const batch = missingPersonIds.slice(i, i + batchSize);
+          try {
+            const personsUrl = `${getPipedriveApiUrl()}/persons?ids=${batch.join(',')}&limit=${batchSize}`;
+            const response = makeAuthenticatedRequest(personsUrl);
+            
+            if (response.success && response.data) {
+              for (const person of response.data) {
+                if (person.id && person.name) {
+                  personIdToNameMap[person.id] = person.name;
+                }
+              }
+            }
+          } catch (e) {
+            Logger.log(`Error fetching person names for batch: ${e.message}`);
+          }
+        }
+      }
+      
+      Logger.log(`Total person ID to name mappings: ${Object.keys(personIdToNameMap).length}`);
+    }
+    
     // Special handling for address fields in organizations
     if (entityType === ENTITY_TYPES.ORGANIZATIONS) {
       Logger.log("Processing organization address fields...");
@@ -514,6 +575,7 @@ function syncPipedriveDataToSheet(
       entityType: entityType,
       optionMappings: optionMappings,
       twoWaySyncEnabled: twoWaySyncEnabled,
+      personIdToNameMap: personIdToNameMap, // Pass person ID to name mapping for activities
     };
 
     // Store original data for undo detection when two-way sync is enabled
@@ -716,18 +778,24 @@ function writeDataToSheet(items, options) {
 
           // Special handling for participants field in activities
           if (key === 'participants' && options.entityType === 'activities' && Array.isArray(value)) {
-            // If we have person_name in the activity item, use it
-            if (item.person_name && value.length === 1 && value[0].person_id === item.person_id) {
-              rowData.push(item.person_name);
-            } else {
-              // Otherwise use the standard formatting
-              const formattedValue = formatValue(
-                value,
-                key,
-                options.optionMappings
-              );
-              rowData.push(formattedValue);
+            // Build list of participant names
+            const participantNames = [];
+            
+            for (const participant of value) {
+              if (participant && participant.person_id) {
+                // Try to get name from mapping
+                const personName = options.personIdToNameMap && options.personIdToNameMap[participant.person_id];
+                if (personName) {
+                  participantNames.push(personName);
+                } else {
+                  // Fallback to showing ID if name not found
+                  participantNames.push(`Person ${participant.person_id}`);
+                }
+              }
             }
+            
+            // Join names with comma
+            rowData.push(participantNames.join(', '));
           } else {
             // Format the value if needed
             const formattedValue = formatValue(
@@ -4815,18 +4883,54 @@ async function pushChangesToPipedrive(
                       Logger.log(`Parsed participants field from JSON string to array: ${JSON.stringify(parsed)}`);
                     }
                   } catch (e) {
-                    // If not JSON, check if it's comma-separated person IDs
-                    if (finalPayload.participants.includes(',') || /^\d+$/.test(finalPayload.participants)) {
-                      const personIds = finalPayload.participants.split(',').map(id => id.trim()).filter(id => id);
-                      // Convert to Pipedrive format
-                      finalPayload.participants = personIds.map(id => ({
-                        person_id: parseInt(id),
-                        primary_flag: personIds.length === 1 // Set primary if only one participant
-                      }));
-                      Logger.log(`Converted comma-separated participants to array: ${JSON.stringify(finalPayload.participants)}`);
+                    // If not JSON, check if it's comma-separated values
+                    const participantValues = finalPayload.participants.split(',').map(v => v.trim()).filter(v => v);
+                    
+                    if (participantValues.length > 0) {
+                      // Check if all values are numeric (person IDs)
+                      const allNumeric = participantValues.every(v => /^\d+$/.test(v));
+                      
+                      if (allNumeric) {
+                        // Convert numeric IDs to Pipedrive format
+                        finalPayload.participants = participantValues.map((id, index) => ({
+                          person_id: parseInt(id),
+                          primary_flag: index === 0 // First one is primary
+                        }));
+                        Logger.log(`Converted comma-separated person IDs to array: ${JSON.stringify(finalPayload.participants)}`);
+                      } else {
+                        // Values contain names - need to look up person IDs
+                        Logger.log(`Participants contain names, looking up person IDs for: ${participantValues.join(', ')}`);
+                        
+                        // Search for person IDs by name
+                        const nameToIdMap = searchPersonsByName(participantValues);
+                        
+                        // Convert found persons to participants array
+                        const participants = [];
+                        for (let i = 0; i < participantValues.length; i++) {
+                          const name = participantValues[i];
+                          const personId = nameToIdMap[name];
+                          
+                          if (personId) {
+                            participants.push({
+                              person_id: personId,
+                              primary_flag: i === 0 // First one is primary
+                            });
+                            Logger.log(`Found person ID ${personId} for name "${name}"`);
+                          } else {
+                            Logger.log(`Warning: Could not find person ID for name "${name}"`);
+                          }
+                        }
+                        
+                        if (participants.length > 0) {
+                          finalPayload.participants = participants;
+                          Logger.log(`Converted participant names to array: ${JSON.stringify(finalPayload.participants)}`);
+                        } else {
+                          Logger.log(`No valid participants found, removing field`);
+                          delete finalPayload.participants;
+                        }
+                      }
                     } else {
-                      Logger.log(`Could not parse participants field: ${e.message}`);
-                      // Remove the field if we can't parse it
+                      Logger.log(`Invalid participants value: ${finalPayload.participants}`);
                       delete finalPayload.participants;
                     }
                   }
