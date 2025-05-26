@@ -1490,20 +1490,29 @@
         <div class="info-tooltip-details" id="apiDetails">
           <div class="entity-info-detail">
             <h4>About <span class="entity-type-inline"><?= entityTypeName ?></span> fields</h4>
-            <p>You can only edit fields that belong directly to <strong><?= entityTypeName ?></strong>. 
-            Fields from related entities (like Organization fields when viewing Deals) are read-only.</p>
+            <p>Most fields that belong directly to <strong><?= entityTypeName ?></strong> are editable. 
+            Some linked fields (like Organization, Person, and Owner) now accept names that are automatically converted to IDs.</p>
+            
+            <h4>Editable linked fields:</h4>
+            <ul class="field-list">
+              <li><strong>Owner:</strong> Enter user names (converts to user ID)</li>
+              <li><strong>Organization:</strong> Enter organization names (for Persons & Deals)</li>
+              <li><strong>Person:</strong> Enter person names (for Deals & Activities)</li>
+              <li><strong>Deal:</strong> Enter deal titles (for Activities)</li>
+              <li><strong>Stage/Pipeline:</strong> Enter stage or pipeline names (for Deals)</li>
+            </ul>
             
             <h4>Read-only fields include:</h4>
             <ul class="field-list">
               <li><strong>System fields:</strong> Created date, updated date, ID, creator info</li>
               <li><strong>Calculated values:</strong> Weighted values, formatted addresses, totals</li>
-              <li><strong>Related data:</strong> Fields from linked organizations, persons, or deals</li>
+              <li><strong>Nested data:</strong> Fields from related entities (e.g., org.address when viewing Persons)</li>
               <li><strong>Aggregated data:</strong> Activity counts, email counts, file counts</li>
             </ul>
             
             <div class="entity-info-tip">
               <span class="tip-icon">💡</span>
-              <span>To edit fields from other entities, create a filter for that specific entity type.</span>
+              <span>For linked fields, simply type the name and it will be converted to the appropriate ID when saving.</span>
             </div>
           </div>
         </div>
@@ -1961,6 +1970,41 @@
             'products': 'Products'
           };
           
+          // Helper function to get editable linked fields for each entity type
+          function getEditableLinkedFieldsForEntity(entityType) {
+            const linkedFieldsByEntity = {
+              'persons': `
+                <li><strong>Owner:</strong> Enter user names (converts to user ID)</li>
+                <li><strong>Organization:</strong> Enter organization names (converts to organization ID)</li>
+              `,
+              'organizations': `
+                <li><strong>Owner:</strong> Enter user names (converts to user ID)</li>
+              `,
+              'deals': `
+                <li><strong>Owner:</strong> Enter user names (converts to user ID)</li>
+                <li><strong>Person:</strong> Enter person names (converts to person ID)</li>
+                <li><strong>Organization:</strong> Enter organization names (converts to organization ID)</li>
+                <li><strong>Stage:</strong> Enter stage names (converts to stage ID)</li>
+                <li><strong>Pipeline:</strong> Enter pipeline names (converts to pipeline ID)</li>
+              `,
+              'activities': `
+                <li><strong>Owner:</strong> Enter user names (converts to user ID)</li>
+                <li><strong>Person:</strong> Enter person names (converts to person ID)</li>
+                <li><strong>Organization:</strong> Enter organization names (converts to organization ID)</li>
+                <li><strong>Deal:</strong> Enter deal titles (converts to deal ID)</li>
+                <li><strong>Participants:</strong> Enter comma-separated person names</li>
+              `,
+              'leads': `
+                <li><strong>Owner:</strong> Enter user names (converts to user ID)</li>
+              `,
+              'products': `
+                <li><strong>Owner:</strong> Enter user names (converts to user ID)</li>
+              `
+            };
+            
+            return linkedFieldsByEntity[entityType] || '<li>No linked fields available for this entity type</li>';
+          }
+          
           // Update the sheet info in Column Selection tab
           const columnTabSheetInfo = document.querySelector('#columns-tab .sheet-info div');
           if (columnTabSheetInfo) {
@@ -1991,20 +2035,25 @@
             const entityName = entityTypeNames[entityType] || entityType;
             entityInfoDetail.innerHTML = `
               <h4>About <span class="entity-type-inline">${entityName}</span> fields</h4>
-              <p>You can only edit fields that belong directly to <strong>${entityName}</strong>. 
-              Fields from related entities (like Organization fields when viewing ${entityName}) are read-only.</p>
+              <p>Most fields that belong directly to <strong>${entityName}</strong> are editable. 
+              Some linked fields (like Organization, Person, and Owner) now accept names that are automatically converted to IDs.</p>
+              
+              <h4>Editable linked fields:</h4>
+              <ul class="field-list">
+                ${getEditableLinkedFieldsForEntity(entityType)}
+              </ul>
               
               <h4>Read-only fields include:</h4>
               <ul class="field-list">
                 <li><strong>System fields:</strong> Created date, updated date, ID, creator info</li>
                 <li><strong>Calculated values:</strong> Weighted values, formatted addresses, totals</li>
-                <li><strong>Related data:</strong> Fields from linked organizations, persons, or deals</li>
+                <li><strong>Nested data:</strong> Fields from related entities (e.g., org.address when viewing ${entityName})</li>
                 <li><strong>Aggregated data:</strong> Activity counts, email counts, file counts</li>
               </ul>
               
               <div class="entity-info-tip">
                 <span class="tip-icon">💡</span>
-                <span>To edit fields from other entities, create a filter for that specific entity type.</span>
+                <span>For linked fields, simply type the name and it will be converted to the appropriate ID when saving.</span>
               </div>
             `;
           }

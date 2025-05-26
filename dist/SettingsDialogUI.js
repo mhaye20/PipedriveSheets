@@ -1016,21 +1016,27 @@ function showColumnSelectorUI() {
       // Fields from related entities should be read-only
       if (col.key) {
         // Organization fields should be read-only when not in Organization view
+        // Exception: org_id is editable in PERSONS and DEALS since we support name-to-ID conversion
         if ((col.key.startsWith('org.') || col.key.startsWith('org_') || 
              col.key.startsWith('organization.') || col.key.startsWith('organization_')) && 
-            entityType !== ENTITY_TYPES.ORGANIZATIONS) {
+            entityType !== ENTITY_TYPES.ORGANIZATIONS &&
+            col.key !== 'org_id') {
           col.readOnly = true;
         }
         
         // Person fields should be read-only when not in Person view
+        // Exception: person_id is editable in DEALS and ACTIVITIES since we support name-to-ID conversion
         if ((col.key.startsWith('person.') || col.key.startsWith('person_')) && 
-            entityType !== ENTITY_TYPES.PERSONS) {
+            entityType !== ENTITY_TYPES.PERSONS &&
+            col.key !== 'person_id') {
           col.readOnly = true;
         }
         
         // Deal fields should be read-only when not in Deal view
+        // Exception: deal_id is editable in ACTIVITIES since we support name-to-ID conversion
         if ((col.key.startsWith('deal.') || col.key.startsWith('deal_')) && 
-            entityType !== ENTITY_TYPES.DEALS) {
+            entityType !== ENTITY_TYPES.DEALS &&
+            col.key !== 'deal_id') {
           col.readOnly = true;
         }
         
@@ -3033,7 +3039,8 @@ function isReadOnlyField(key, entityType) {
     }
     
     // Explicit user/creator fields that should be read-only
-    if (key === 'user_id' || key === 'creator_id' || key === 'owner_id' ||
+    // Note: owner_id is now editable since we support user name-to-ID conversion
+    if (key === 'user_id' || key === 'creator_id' ||
         key.includes('.user_id') || key.includes('.creator_id') || key.includes('.owner_id')) {
       return true;
     }
@@ -3111,6 +3118,7 @@ function isReadOnlyField(key, entityType) {
     // Entity-specific read-only fields
     
     // Deal-specific read-only fields
+    // Note: person_id, org_id, stage_id, pipeline_id are now editable since we support name-to-ID conversion
     if (entityType === ENTITY_TYPES.DEALS && 
         (key === 'stage_order_nr' ||
          key === 'person_name' ||
@@ -3127,6 +3135,7 @@ function isReadOnlyField(key, entityType) {
     }
     
     // Person-specific read-only fields
+    // Note: org_id is now editable since we support organization name-to-ID conversion
     if (entityType === ENTITY_TYPES.PERSONS && 
         (key === 'org_name' ||
          key === 'owner_name' ||
