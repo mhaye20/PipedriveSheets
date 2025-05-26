@@ -4330,6 +4330,28 @@ async function pushChangesToPipedrive(
                 // Use direct API call to avoid URL constructor issue
                 Logger.log("Using direct API call for persons update to avoid URL constructor issue");
                 
+                // Prepare final payload - move custom fields to top level for API v1
+                const finalPayload = {};
+                
+                // Copy all non-custom fields
+                Object.keys(payloadToSend).forEach((key) => {
+                  if (key !== "custom_fields") {
+                    finalPayload[key] = payloadToSend[key];
+                  }
+                });
+                
+                // Move custom fields to top level
+                if (payloadToSend.custom_fields) {
+                  Object.keys(payloadToSend.custom_fields).forEach((key) => {
+                    // For Pipedrive API v1, custom fields should be at top level
+                    finalPayload[key] = payloadToSend.custom_fields[key];
+                  });
+                  Logger.log(`Moved ${Object.keys(payloadToSend.custom_fields).length} custom fields to top level`);
+                }
+                
+                // Log the final payload
+                Logger.log(`Final payload for persons API call: ${JSON.stringify(finalPayload)}`);
+                
                 // Construct URL and options
                 const apiUrl = `https://${subdomain}.pipedrive.com/v1/persons/${Number(rowData.id)}`;
                 const options = {
@@ -4338,12 +4360,12 @@ async function pushChangesToPipedrive(
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${pipedriveToken}`,
                   },
-                  payload: JSON.stringify(payloadToSend),
+                  payload: JSON.stringify(finalPayload),
                   muteHttpExceptions: true,
                 };
                 
                 Logger.log(`Direct API URL: ${apiUrl}`);
-                Logger.log(`Direct API payload: ${JSON.stringify(payloadToSend)}`);
+                Logger.log(`Direct API payload: ${JSON.stringify(finalPayload)}`);
                 
                 // Make the request
                 const response = UrlFetchApp.fetch(apiUrl, options);
