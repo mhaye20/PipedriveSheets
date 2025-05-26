@@ -521,61 +521,6 @@
       opacity: 0.7;
     }
 
-    /* Info tooltip */
-    .info-tooltip {
-      padding: 10px 14px;
-      background-color: #fff8e1;
-      border-radius: 8px;
-      border-left: none;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
-      margin-bottom: 12px;
-      font-size: 12px;
-      color: #5d4901;
-      display: flex;
-      align-items: flex-start;
-      position: relative;
-      overflow: hidden;
-      transition: all 0.2s ease;
-    }
-
-    .info-tooltip:hover {
-      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
-    }
-
-    .info-tooltip::before {
-      content: '';
-      position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      width: 4px;
-      background-color: var(--warning-color);
-    }
-
-    .info-tooltip-icon {
-      margin-right: 10px;
-      flex-shrink: 0;
-      opacity: 0.9;
-      font-size: 14px;
-    }
-
-    .info-tooltip-content {
-      margin: 0;
-      flex: 1;
-    }
-
-    .info-tooltip-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 2px;
-    }
-
-    .info-tooltip-title {
-      font-weight: 500;
-      font-size: 13px;
-      color: #33280b;
-    }
 
     .info-tooltip-toggle {
       color: var(--primary-color);
@@ -661,6 +606,7 @@
       display: inline-flex;
       align-items: center;
       gap: 4px;
+      width: 139px;
       padding: 3px 8px;
       border-radius: 20px;
       background-color: rgba(255, 255, 255, 0.7);
@@ -762,19 +708,110 @@
       color: #666;
     }
 
-    .entity-tooltip {
-      background-color: #fff3e0;
-      border-left: 4px solid #ff9800;
-      padding: 12px 16px;
-      margin-bottom: 16px;
-      border-radius: 8px;
-      font-size: 13px;
-      color: #5d4037;
+    /* New combined entity info card design */
+    .entity-info-card {
+      background-color: #f8f9fa;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 20px;
+      border: 1px solid var(--border-color);
+      transition: all 0.2s ease;
     }
 
-    .entity-tooltip-title {
+    .entity-info-card:hover {
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    .entity-info-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .entity-info-title {
+      align-items: center;
+      font-size: 15px;
+      color: var(--text-dark);
+    }
+
+    .entity-info-icon {
+      font-size: 18px;
+      margin-right: 8px;
+    }
+
+    .entity-info-summary {
+      display: flex;
+      gap: 24px;
+      margin-bottom: 0;
+    }
+
+    .field-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    .info-icon-text {
+      color: var(--text-light);
+    }
+
+    .entity-info-detail {
+      padding-top: 16px;
+    }
+
+    .entity-info-detail h4 {
+      font-size: 13px;
       font-weight: 500;
       margin-bottom: 8px;
+      color: var(--text-dark);
+    }
+
+    .entity-info-detail p {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-light);
+      margin-bottom: 16px;
+    }
+
+    .field-list {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 13px;
+      line-height: 1.8;
+      color: var(--text-light);
+    }
+
+    .field-list li {
+      margin-bottom: 6px;
+    }
+
+    .field-list strong {
+      color: var(--text-dark);
+      font-weight: 500;
+    }
+
+    .entity-info-tip {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-top: 16px;
+      padding: 12px;
+      background-color: rgba(26, 115, 232, 0.08);
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--primary-color);
+    }
+
+    .tip-icon {
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .entity-type-inline {
+      color: var(--primary-color);
+      font-weight: 500;
     }
 
     .tabs {
@@ -1430,43 +1467,45 @@
         <strong>Note: The ID column (★) is required</strong> for proper Pipedrive integration and cannot be removed.
       </p>
 
-      <div class="info-tooltip">
-        <div class="info-tooltip-icon">⚠️</div>
-        <div class="info-tooltip-content">
-          <div class="info-tooltip-header">
-            <div class="info-tooltip-title">Field Editability in Pipedrive</div>
-            <span class="info-tooltip-toggle" id="apiDetailsToggle">Details</span>
+      <div class="entity-info-card">
+        <div class="entity-info-header">
+          <div class="entity-info-title">
+            <span class="entity-info-icon">📊</span>
+            Working with <strong id="entityTypeDisplay"><?= entityTypeName ?></strong> data
           </div>
-          <div class="info-tooltip-description">Fields marked with 🔒 are read-only and cannot be pushed back to
-            Pipedrive.</div>
-
-          <div class="info-tooltip-details" id="apiDetails">
-            <div class="info-tooltip-icons">
-              <span class="info-icon-item">🔒 Read-only fields</span>
-              <span class="info-icon-item">✏️ Editable fields</span>
-            </div>
-
-            Read-only fields include:
-            <ul>
-              <li>System fields (timestamps, counts, creator info)</li>
-              <li>Calculated values (formatted values, weighted values)</li>
-              <li>Fields from related entities (you can only edit fields of the current entity type)</li>
-              <li>Most ID fields except certain linkable references</li>
-            </ul>
+          <span class="info-tooltip-toggle" id="apiDetailsToggle">Show field guide</span>
+        </div>
+        
+        <div class="entity-info-summary">
+          <div class="field-indicator">
+            <span class="info-icon-item">✏️ Editable</span>
+            <span class="info-icon-text">Fields you can modify and push back to Pipedrive</span>
+          </div>
+          <div class="field-indicator">
+            <span class="info-icon-item">🔒 Read-only</span>
+            <span class="info-icon-text">System fields and related entity data (view only)</span>
           </div>
         </div>
-      </div>
 
-      <div class="entity-tooltip">
-        <div class="entity-tooltip-title">Current entity type: <strong>
-            <?= entityTypeName ?>
-          </strong></div>
-        <div>
-          You can only edit fields that belong directly to <strong>
-            <?= entityTypeName ?>
-          </strong>.
-          Any fields from related entities (like Organization fields when viewing Deals) will appear as read-only.
-          To edit those fields, you must use a filter for the corresponding entity type.
+        <div class="info-tooltip-details" id="apiDetails">
+          <div class="entity-info-detail">
+            <h4>About <span class="entity-type-inline"><?= entityTypeName ?></span> fields</h4>
+            <p>You can only edit fields that belong directly to <strong><?= entityTypeName ?></strong>. 
+            Fields from related entities (like Organization fields when viewing Deals) are read-only.</p>
+            
+            <h4>Read-only fields include:</h4>
+            <ul class="field-list">
+              <li><strong>System fields:</strong> Created date, updated date, ID, creator info</li>
+              <li><strong>Calculated values:</strong> Weighted values, formatted addresses, totals</li>
+              <li><strong>Related data:</strong> Fields from linked organizations, persons, or deals</li>
+              <li><strong>Aggregated data:</strong> Activity counts, email counts, file counts</li>
+            </ul>
+            
+            <div class="entity-info-tip">
+              <span class="tip-icon">💡</span>
+              <span>To edit fields from other entities, create a filter for that specific entity type.</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1545,9 +1584,9 @@
           
           // Update the button text
           if (isNowExpanded) {
-            toggleBtn.textContent = 'Hide';
+            toggleBtn.textContent = 'Hide field guide';
           } else {
-            toggleBtn.textContent = 'Details';
+            toggleBtn.textContent = 'Show field guide';
           }
         }
       } else {
@@ -1934,16 +1973,38 @@
             entityTooltipTitle.innerHTML = `Current entity type: <strong>${entityTypeNames[entityType] || entityType}</strong>`;
           }
           
-          // Update the entity tooltip description
-          const entityTooltip = document.querySelector('.entity-tooltip');
-          if (entityTooltip) {
+          // Update the entity type display in the new combined card
+          const entityTypeDisplay = document.getElementById('entityTypeDisplay');
+          if (entityTypeDisplay) {
+            entityTypeDisplay.textContent = entityTypeNames[entityType] || entityType;
+          }
+          
+          // Update all entity type references in the details section
+          const entityTypeInlineElements = document.querySelectorAll('.entity-type-inline');
+          entityTypeInlineElements.forEach(el => {
+            el.textContent = entityTypeNames[entityType] || entityType;
+          });
+          
+          // Update the entity info card with the new entity type
+          const entityInfoDetail = document.querySelector('.entity-info-detail');
+          if (entityInfoDetail) {
             const entityName = entityTypeNames[entityType] || entityType;
-            entityTooltip.innerHTML = `
-              <div class="entity-tooltip-title">Current entity type: <strong>${entityName}</strong></div>
-              <div>
-                You can only edit fields that belong directly to <strong>${entityName}</strong>.
-                Any fields from related entities (like Organization fields when viewing ${entityName}) will appear as read-only.
-                To edit those fields, you must use a filter for the corresponding entity type.
+            entityInfoDetail.innerHTML = `
+              <h4>About <span class="entity-type-inline">${entityName}</span> fields</h4>
+              <p>You can only edit fields that belong directly to <strong>${entityName}</strong>. 
+              Fields from related entities (like Organization fields when viewing ${entityName}) are read-only.</p>
+              
+              <h4>Read-only fields include:</h4>
+              <ul class="field-list">
+                <li><strong>System fields:</strong> Created date, updated date, ID, creator info</li>
+                <li><strong>Calculated values:</strong> Weighted values, formatted addresses, totals</li>
+                <li><strong>Related data:</strong> Fields from linked organizations, persons, or deals</li>
+                <li><strong>Aggregated data:</strong> Activity counts, email counts, file counts</li>
+              </ul>
+              
+              <div class="entity-info-tip">
+                <span class="tip-icon">💡</span>
+                <span>To edit fields from other entities, create a filter for that specific entity type.</span>
               </div>
             `;
           }
@@ -2231,7 +2292,6 @@
           if (isReadOnlyField(col.key, col)) {
             const lockIcon = document.createElement('span');
             lockIcon.className = 'lock-icon';
-            lockIcon.textContent = '🔒';
             lockIcon.title = 'This field is read-only and cannot be modified in Pipedrive';
             columnText.appendChild(lockIcon);
           }
@@ -2367,7 +2427,6 @@
             if (isReadOnlyField(col.key, col)) {
               const lockIcon = document.createElement('span');
               lockIcon.className = 'lock-icon';
-              lockIcon.textContent = '🔒';
               lockIcon.title = 'This field is read-only and cannot be modified in Pipedrive';
               columnText.appendChild(lockIcon);
             }
