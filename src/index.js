@@ -65,6 +65,22 @@ class URLPolyfill {
   }
 }
 
+// Set URL polyfill on global object for Google Apps Script
+if (typeof URL === 'undefined') {
+  // Try multiple global object references
+  if (typeof globalThis !== 'undefined') {
+    globalThis.URL = URLPolyfill;
+  } else if (typeof global !== 'undefined') {
+    global.URL = URLPolyfill;
+  } else if (typeof window !== 'undefined') {
+    window.URL = URLPolyfill;
+  } else if (typeof this !== 'undefined') {
+    this.URL = URLPolyfill;
+  }
+  // Also set it directly on the global scope
+  URL = URLPolyfill;
+}
+
 // Create a global URLSearchParams polyfill
 class URLSearchParamsPolyfill {
   constructor(init) {
@@ -95,6 +111,70 @@ class URLSearchParamsPolyfill {
     }
     return null;
   }
+  
+  has(name) {
+    for (let i = 0; i < this.params.length; i++) {
+      if (this.params[i][0] === name) {
+        return true;
+      }
+    }
+    return false;
+  }
+  
+  set(name, value) {
+    // Remove existing entries with same name
+    this.params = this.params.filter(param => param[0] !== name);
+    // Add new entry
+    this.params.push([name, value]);
+  }
+  
+  append(name, value) {
+    this.params.push([name, value]);
+  }
+  
+  delete(name) {
+    this.params = this.params.filter(param => param[0] !== name);
+  }
+  
+  toString() {
+    return this.params
+      .map(param => encodeURIComponent(param[0]) + '=' + encodeURIComponent(param[1]))
+      .join('&');
+  }
+  
+  forEach(callback, thisArg) {
+    this.params.forEach((param) => {
+      callback.call(thisArg, param[1], param[0], this);
+    });
+  }
+  
+  keys() {
+    return this.params.map(param => param[0]);
+  }
+  
+  values() {
+    return this.params.map(param => param[1]);
+  }
+  
+  entries() {
+    return this.params.slice();
+  }
+}
+
+// Set URLSearchParams polyfill on global object for Google Apps Script
+if (typeof URLSearchParams === 'undefined') {
+  // Try multiple global object references
+  if (typeof globalThis !== 'undefined') {
+    globalThis.URLSearchParams = URLSearchParamsPolyfill;
+  } else if (typeof global !== 'undefined') {
+    global.URLSearchParams = URLSearchParamsPolyfill;
+  } else if (typeof window !== 'undefined') {
+    window.URLSearchParams = URLSearchParamsPolyfill;
+  } else if (typeof this !== 'undefined') {
+    this.URLSearchParams = URLSearchParamsPolyfill;
+  }
+  // Also set it directly on the global scope
+  URLSearchParams = URLSearchParamsPolyfill;
 }
 
 // Axios adapter for Google Apps Script
@@ -312,6 +392,59 @@ function createGASAxiosAdapter() {
 // Import npm packages you want to use
 import * as pipedrive from 'pipedrive';
 
+// Monkey-patch the Pipedrive SDK to use our polyfills
+// This is necessary because the SDK uses 'new URL()' and 'new URLSearchParams()' directly
+try {
+  // Patch the URL constructor in the global scope to use our polyfill
+  if (typeof URL === 'undefined' || URL === URLPolyfill) {
+    // Already using polyfill
+  } else {
+    // Save original if it exists
+    const OriginalURL = URL;
+    // Replace with a wrapper that checks for our polyfill
+    URL = function(url, base) {
+      try {
+        return new OriginalURL(url, base);
+      } catch (e) {
+        return new URLPolyfill(url, base);
+      }
+    };
+  }
+  
+  // Patch URLSearchParams constructor
+  if (typeof URLSearchParams === 'undefined' || URLSearchParams === URLSearchParamsPolyfill) {
+    // Already using polyfill
+  } else {
+    // Save original if it exists
+    const OriginalURLSearchParams = URLSearchParams;
+    // Replace with a wrapper that ensures our methods exist
+    URLSearchParams = function(init) {
+      const instance = new (OriginalURLSearchParams || URLSearchParamsPolyfill)(init);
+      
+      // Ensure all required methods exist
+      if (!instance.has) {
+        // Copy our polyfill methods
+        const polyfillInstance = new URLSearchParamsPolyfill(init);
+        instance.has = polyfillInstance.has.bind(polyfillInstance);
+        instance.set = polyfillInstance.set.bind(polyfillInstance);
+        instance.append = polyfillInstance.append.bind(polyfillInstance);
+        instance.delete = polyfillInstance.delete.bind(polyfillInstance);
+        instance.toString = polyfillInstance.toString.bind(polyfillInstance);
+        instance.forEach = polyfillInstance.forEach.bind(polyfillInstance);
+        instance.keys = polyfillInstance.keys.bind(polyfillInstance);
+        instance.values = polyfillInstance.values.bind(polyfillInstance);
+        instance.entries = polyfillInstance.entries.bind(polyfillInstance);
+      }
+      
+      return instance;
+    };
+  }
+  
+  Logger.log('Patched URL and URLSearchParams constructors for Pipedrive SDK compatibility');
+} catch (patchError) {
+  Logger.log('Error patching constructors: ' + patchError.message);
+}
+
 /**
  * Get URL polyfill for Google Apps Script
  * @returns {Class} URL polyfill class
@@ -527,6 +660,81 @@ function getUpdatedDealsApi(apiToken, basePath = null) {
   }
 }
 
+/**
+ * Set up polyfills for Google Apps Script environment
+ * Call this before using any npm packages that depend on URL/URLSearchParams
+ */
+function setupPolyfills() {
+  // Set URL polyfill
+  if (typeof URL === 'undefined' || !URL) {
+    if (typeof globalThis !== 'undefined') {
+      globalThis.URL = URLPolyfill;
+    }
+    if (typeof global !== 'undefined') {
+      global.URL = URLPolyfill;
+    }
+    if (typeof window !== 'undefined') {
+      window.URL = URLPolyfill;
+    }
+    // Force set on global scope
+    try {
+      URL = URLPolyfill;
+    } catch (e) {
+      // Ignore if we can't set it directly
+    }
+  }
+  
+  // Set URLSearchParams polyfill  
+  if (typeof URLSearchParams === 'undefined' || !URLSearchParams) {
+    if (typeof globalThis !== 'undefined') {
+      globalThis.URLSearchParams = URLSearchParamsPolyfill;
+    }
+    if (typeof global !== 'undefined') {
+      global.URLSearchParams = URLSearchParamsPolyfill;
+    }
+    if (typeof window !== 'undefined') {
+      window.URLSearchParams = URLSearchParamsPolyfill;
+    }
+    // Force set on global scope
+    try {
+      URLSearchParams = URLSearchParamsPolyfill;
+    } catch (e) {
+      // Ignore if we can't set it directly
+    }
+  } else {
+    // Even if URLSearchParams exists, it might not have all methods
+    // Wrap it to ensure our polyfill methods are available
+    const OriginalURLSearchParams = URLSearchParams;
+    try {
+      // Test if it has the methods we need
+      const test = new OriginalURLSearchParams();
+      if (!test.has || !test.set || !test.append) {
+        // Replace with our polyfill
+        URLSearchParams = URLSearchParamsPolyfill;
+        if (typeof globalThis !== 'undefined') {
+          globalThis.URLSearchParams = URLSearchParamsPolyfill;
+        }
+        if (typeof global !== 'undefined') {
+          global.URLSearchParams = URLSearchParamsPolyfill;
+        }
+        if (typeof window !== 'undefined') {
+          window.URLSearchParams = URLSearchParamsPolyfill;
+        }
+        Logger.log('Replaced incomplete URLSearchParams with polyfill');
+      }
+    } catch (e) {
+      // If we can't instantiate it, use our polyfill
+      URLSearchParams = URLSearchParamsPolyfill;
+      Logger.log('URLSearchParams test failed, using polyfill: ' + e.message);
+    }
+  }
+  
+  Logger.log('Polyfills set up - URL: ' + (typeof URL !== 'undefined') + ', URLSearchParams: ' + (typeof URLSearchParams !== 'undefined'));
+}
+
+// Call setupPolyfills immediately
+setupPolyfills();
+
 // Export all functions that need to be available in Google Apps Script
 export {
   getPipedriveLib,
@@ -536,5 +744,6 @@ export {
   getURLSearchParamsPolyfill,
   getGASAxiosAdapter,
   applyGASAdapterToAxios,
-  getUpdatedDealsApi
+  getUpdatedDealsApi,
+  setupPolyfills
 }; 

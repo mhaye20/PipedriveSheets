@@ -3671,6 +3671,16 @@ async function pushChangesToPipedrive(
               title: payloadToSend.title,
               name: payloadToSend.name, // Organizations use 'name' not 'title'
             };
+            
+            // Include email and phone fields for persons
+            if (entityType === 'persons') {
+              if (payloadToSend.email) {
+                simplifiedPayload.email = payloadToSend.email;
+              }
+              if (payloadToSend.phone) {
+                simplifiedPayload.phone = payloadToSend.phone;
+              }
+            }
 
             // Only include a few simple custom fields first to test
             const simpleCustomFields = {};
@@ -3696,13 +3706,14 @@ async function pushChangesToPipedrive(
               simplifiedPayload.custom_fields = simpleCustomFields;
             }
 
-            // Replace the payload with our simplified version for testing
-            payloadToSend = simplifiedPayload;
-            Logger.log(
-              `Using simplified payload for debugging: ${JSON.stringify(
-                payloadToSend
-              )}`
-            );
+            // DISABLED: Don't use simplified payload - it strips important fields like email/phone
+            // Uncomment the following lines only for debugging custom field issues
+            // payloadToSend = simplifiedPayload;
+            // Logger.log(
+            //   `Using simplified payload for debugging: ${JSON.stringify(
+            //     payloadToSend
+            //   )}`
+            // );
           }
 
           // Handle user_id.email format - convert to user_id if possible
@@ -3726,12 +3737,43 @@ async function pushChangesToPipedrive(
             }
           }
 
+          // Handle org_id field - convert organization name to ID if needed
+          if (payloadToSend.org_id && typeof payloadToSend.org_id === 'string' && isNaN(payloadToSend.org_id)) {
+            Logger.log(`org_id appears to be a name: "${payloadToSend.org_id}", needs conversion to ID`);
+            
+            // For now, we'll remove it to avoid the error
+            // TODO: Implement organization name to ID lookup
+            delete payloadToSend.org_id;
+            Logger.log('Removed org_id field as it contains name instead of ID');
+          }
+          
+          // Convert label_ids from string to array if needed
+          if (payloadToSend.label_ids && typeof payloadToSend.label_ids === 'string') {
+            try {
+              // Remove brackets and parse
+              const labelString = payloadToSend.label_ids.replace(/[\[\]]/g, '');
+              if (labelString) {
+                payloadToSend.label_ids = labelString.split(',').map(id => parseInt(id.trim()));
+                Logger.log(`Converted label_ids from string to array: ${JSON.stringify(payloadToSend.label_ids)}`);
+              } else {
+                delete payloadToSend.label_ids;
+              }
+            } catch (e) {
+              Logger.log(`Error parsing label_ids: ${e.message}`);
+              delete payloadToSend.label_ids;
+            }
+          }
+
           // Remove read-only fields that cannot be updated
           const readOnlyFields = [
             "add_time",
             "update_time",
             "id",
             "creator_user_id",
+            "related_open_deals_count", // This is also read-only
+            "related_closed_deals_count",
+            "related_won_deals_count",
+            "related_lost_deals_count"
           ];
           readOnlyFields.forEach((field) => {
             if (payloadToSend[field] !== undefined) {
@@ -4234,7 +4276,7 @@ async function pushChangesToPipedrive(
                 }
 
                 // Construct URL and options
-                const apiUrl = `https://${subdomain}.pipedrive.com/api/v1/deals/${Number(
+                const apiUrl = `https://${subdomain}.pipedrive.com/v1/deals/${Number(
                   rowData.id
                 )}`;
                 const options = {
@@ -4265,14 +4307,61 @@ async function pushChangesToPipedrive(
               break;
 
             case "persons":
-              // Use persons API
-              const personResponse = await apiClient.updatePerson({
-                id: Number(rowData.id), // Ensure ID is a number
-                body: payloadToSend,
-              });
-              responseBody = personResponse;
-              // Check if the response indicates success
-              success = personResponse && personResponse.success === true;
+              try {
+                // Get the Pipedrive OAuth token from script properties
+                const scriptProperties = PropertiesService.getScriptProperties();
+                const pipedriveToken = scriptProperties.getProperty("PIPEDRIVE_ACCESS_TOKEN");
+                
+                if (!pipedriveToken) {
+                  throw new Error("Pipedrive API token not found in script properties");
+                }
+                
+                // Get subdomain from properties
+                const subdomain = scriptProperties.getProperty("PIPEDRIVE_SUBDOMAIN") || "api";
+                
+                // Get field definitions for persons
+                let fieldDefinitions = {};
+                try {
+                  fieldDefinitions = getEntityFields('persons');
+                } catch (fieldErr) {
+                  Logger.log(`Could not get field definitions for persons: ${fieldErr.message}`);
+                }
+                
+                // Use direct API call to avoid URL constructor issue
+                Logger.log("Using direct API call for persons update to avoid URL constructor issue");
+                
+                // Construct URL and options
+                const apiUrl = `https://${subdomain}.pipedrive.com/v1/persons/${Number(rowData.id)}`;
+                const options = {
+                  method: "PUT",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${pipedriveToken}`,
+                  },
+                  payload: JSON.stringify(payloadToSend),
+                  muteHttpExceptions: true,
+                };
+                
+                Logger.log(`Direct API URL: ${apiUrl}`);
+                Logger.log(`Direct API payload: ${JSON.stringify(payloadToSend)}`);
+                
+                // Make the request
+                const response = UrlFetchApp.fetch(apiUrl, options);
+                responseCode = response.getResponseCode();
+                const responseText = response.getContentText();
+                
+                // Parse the response
+                responseBody = JSON.parse(responseText);
+                success = responseBody && responseBody.success === true;
+                
+                Logger.log(`Direct API call response for person: ${JSON.stringify(responseBody)}`);
+              } catch (personError) {
+                Logger.log(`Person update failed: ${personError.message}`);
+                responseBody = {
+                  error: personError.message,
+                };
+                success = false;
+              }
               break;
 
             case "organizations":
