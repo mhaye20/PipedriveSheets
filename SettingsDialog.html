@@ -582,17 +582,19 @@
       font-weight: 500;
       cursor: pointer;
       font-size: 11px;
-      text-decoration: none;
+      text-decoration: underline;
       margin-left: 8px;
       white-space: nowrap;
       opacity: 0.85;
       transition: opacity 0.2s ease;
-      display: flex;
+      display: inline-flex;
       align-items: center;
+      user-select: none;
     }
 
     .info-tooltip-toggle:hover {
       opacity: 1;
+      text-decoration: none;
     }
 
     .info-tooltip-toggle::after {
@@ -1433,7 +1435,7 @@
         <div class="info-tooltip-content">
           <div class="info-tooltip-header">
             <div class="info-tooltip-title">Field Editability in Pipedrive</div>
-            <span class="info-tooltip-toggle" id="apiDetailsToggle" onclick="toggleApiDetails()">Details</span>
+            <span class="info-tooltip-toggle" id="apiDetailsToggle">Details</span>
           </div>
           <div class="info-tooltip-description">Fields marked with 🔒 are read-only and cannot be pushed back to
             Pipedrive.</div>
@@ -1511,6 +1513,50 @@
   <script>
     let manualEntry = false;
     let filtersForEntity = {};
+    
+    // Function to toggle API details visibility - defined in global scope
+    function toggleApiDetails() {
+      console.log("toggleApiDetails called");
+      
+      // Debug: Check if we're in the right tab
+      const columnsTab = document.getElementById('columns-tab');
+      console.log("Columns tab element:", columnsTab);
+      console.log("Columns tab is active:", columnsTab && columnsTab.classList.contains('active'));
+      
+      const apiDetails = document.getElementById('apiDetails');
+      const toggleBtn = document.getElementById('apiDetailsToggle');
+      
+      console.log("apiDetails element:", apiDetails);
+      console.log("toggleBtn element:", toggleBtn);
+      
+      if (apiDetails) {
+        // Toggle the expanded class on the details div
+        const wasExpanded = apiDetails.classList.contains('expanded');
+        apiDetails.classList.toggle('expanded');
+        const isNowExpanded = apiDetails.classList.contains('expanded');
+        
+        console.log("Was expanded:", wasExpanded, "Is now expanded:", isNowExpanded);
+        console.log("apiDetails classes:", apiDetails.className);
+        
+        // Update the button text if we have the button
+        if (toggleBtn) {
+          // Toggle the expanded class on the button for arrow rotation
+          toggleBtn.classList.toggle('expanded');
+          
+          // Update the button text
+          if (isNowExpanded) {
+            toggleBtn.textContent = 'Hide';
+          } else {
+            toggleBtn.textContent = 'Details';
+          }
+        }
+      } else {
+        console.error("Could not find apiDetails element");
+        // Let's check all elements with IDs to debug
+        const allElements = document.querySelectorAll('[id]');
+        console.log("All elements with IDs:", Array.from(allElements).map(el => el.id));
+      }
+    }
 
     // Define variables for column selector functionality
     // These will be initialized either from dataScript or with defaults
@@ -1522,6 +1568,18 @@
 
     // Add this tab switching functionality
     document.addEventListener('DOMContentLoaded', function() {
+      // Add event listener for API details toggle
+      const apiDetailsToggle = document.getElementById('apiDetailsToggle');
+      if (apiDetailsToggle) {
+        console.log("Adding click listener to apiDetailsToggle");
+        apiDetailsToggle.addEventListener('click', function() {
+          console.log("API details toggle clicked via event listener");
+          toggleApiDetails();
+        });
+      } else {
+        console.log("apiDetailsToggle element not found during DOMContentLoaded");
+      }
+      
       const tabs = document.querySelectorAll('.tab');
       
       tabs.forEach(tab => {
@@ -2648,23 +2706,10 @@
         showHelp();
       });
 
-      document.getElementById('apiDetailsToggle').addEventListener('click', function () {
-        toggleApiDetails();
-      });
+      // Removed duplicate apiDetailsToggle event listener - already added in DOMContentLoaded
     };
 
-    function toggleApiDetails() {
-      const detailsElement = document.getElementById('apiDetails');
-      const toggleButton = document.getElementById('apiDetailsToggle');
-
-      if (detailsElement.style.display === 'none' || !detailsElement.style.display) {
-        detailsElement.style.display = 'block';
-        toggleButton.textContent = 'Hide';
-      } else {
-        detailsElement.style.display = 'none';
-        toggleButton.textContent = 'Details';
-      }
-    }
+    // Removed duplicate toggleApiDetails function - using the one defined earlier
 
     function loadData() {
       try {
@@ -3013,30 +3058,6 @@
     // Initial render
     renderAvailableList();
     renderSelectedList();
-
-    // Function to toggle API details visibility
-    function toggleApiDetails() {
-      const apiDetails = document.getElementById('apiDetails');
-      const toggleBtn = document.getElementById('apiDetailsToggle');
-      
-      if (apiDetails && toggleBtn) {
-        // Toggle the expanded class on the details div
-        apiDetails.classList.toggle('expanded');
-        
-        // Toggle the expanded class on the button for arrow rotation
-        toggleBtn.classList.toggle('expanded');
-        
-        // Update the button text
-        if (apiDetails.classList.contains('expanded')) {
-          toggleBtn.textContent = 'Hide';
-        } else {
-          toggleBtn.textContent = 'Details';
-        }
-      }
-    }
-    
-    // Make the function globally available
-    window.toggleApiDetails = toggleApiDetails;
 
     // Add the saveColumns and showHelp functions
     function saveColumns() {
