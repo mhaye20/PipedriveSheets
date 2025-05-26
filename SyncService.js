@@ -3196,7 +3196,8 @@ async function pushChangesToPipedrive(
         };
 
         // Add special fields container for API v2
-        if (!entityType.endsWith("Fields") && entityType !== "leads") {
+        // Note: Leads also need custom_fields as they inherit custom fields from deals
+        if (!entityType.endsWith("Fields")) {
           updateData.data.custom_fields = {};
         }
 
@@ -3747,6 +3748,106 @@ async function pushChangesToPipedrive(
             Logger.log('Removed org_id field as it contains name instead of ID');
           }
           
+          // Convert option labels to IDs for all fields with options (for Persons, Organizations, Deals, and Leads)
+          if (entityType === 'persons' || entityType === 'organizations' || entityType === 'deals' || entityType === 'leads') {
+            try {
+              // Get field definitions for the entity type
+              const fieldDefinitions = getFieldDefinitionsMap(entityType);
+              
+              // Helper function to process option fields
+              const processOptionField = (fieldKey, fieldValue, targetObject) => {
+                const fieldDef = fieldDefinitions[fieldKey];
+                
+                // Check if this is an enum or set field with options
+                if (fieldDef && (fieldDef.field_type === 'enum' || fieldDef.field_type === 'set') && fieldDef.options) {
+                  // Create a mapping of option labels to IDs
+                  const optionLabelToId = {};
+                  fieldDef.options.forEach(option => {
+                    if (option.label && option.id !== undefined) {
+                      optionLabelToId[option.label.toLowerCase()] = option.id;
+                    }
+                  });
+                  
+                  // Process single enum field
+                  if (fieldDef.field_type === 'enum' && typeof fieldValue === 'string') {
+                    // Check if it's already an ID (number as string)
+                    if (!isNaN(fieldValue)) {
+                      // It's a number, keep it as is but convert to number
+                      targetObject[fieldKey] = Number(fieldValue);
+                    } else {
+                      // It's a label, try to find the ID
+                      const optionId = optionLabelToId[fieldValue.toLowerCase()];
+                      if (optionId !== undefined) {
+                        targetObject[fieldKey] = optionId;
+                        Logger.log(`Converted option label "${fieldValue}" to ID: ${optionId} for field ${fieldKey}`);
+                      } else {
+                        // Label not found, could be a new option - keep as string for now
+                        Logger.log(`Option label "${fieldValue}" not found for field ${fieldKey}, keeping as string`);
+                      }
+                    }
+                  }
+                  
+                  // Process multi-select set field
+                  else if (fieldDef.field_type === 'set') {
+                    let processedOptions = [];
+                    let valueArray = [];
+                    
+                    // Convert string to array if needed
+                    if (typeof fieldValue === 'string') {
+                      // Remove brackets and quotes, split by comma
+                      const cleanValue = fieldValue.replace(/[\[\]"']/g, '');
+                      valueArray = cleanValue.split(',').map(s => s.trim()).filter(s => s);
+                    } else if (Array.isArray(fieldValue)) {
+                      valueArray = fieldValue;
+                    }
+                    
+                    // Process each value
+                    valueArray.forEach(val => {
+                      if (typeof val === 'number' || !isNaN(val)) {
+                        // It's already an ID
+                        processedOptions.push(Number(val));
+                      } else if (typeof val === 'string') {
+                        // It's a label, try to find the ID
+                        const optionId = optionLabelToId[val.toLowerCase()];
+                        if (optionId !== undefined) {
+                          processedOptions.push(optionId);
+                          Logger.log(`Converted option label "${val}" to ID: ${optionId} for set field ${fieldKey}`);
+                        } else {
+                          // Label not found, could be a new option
+                          Logger.log(`Option label "${val}" not found for set field ${fieldKey}, skipping`);
+                        }
+                      }
+                    });
+                    
+                    if (processedOptions.length > 0) {
+                      targetObject[fieldKey] = processedOptions;
+                      Logger.log(`Final set field ${fieldKey} values: ${JSON.stringify(processedOptions)}`);
+                    }
+                  }
+                }
+              };
+              
+              // Process standard fields
+              for (const fieldKey in payloadToSend) {
+                if (fieldKey !== 'custom_fields' && !fieldKey.startsWith('__')) {
+                  const fieldValue = payloadToSend[fieldKey];
+                  processOptionField(fieldKey, fieldValue, payloadToSend);
+                }
+              }
+              
+              // Process custom fields
+              if (payloadToSend.custom_fields) {
+                for (const fieldKey in payloadToSend.custom_fields) {
+                  const fieldValue = payloadToSend.custom_fields[fieldKey];
+                  processOptionField(fieldKey, fieldValue, payloadToSend.custom_fields);
+                }
+              }
+            } catch (e) {
+              Logger.log(`Error processing option labels for custom fields: ${e.message}`);
+              // Keep original values if conversion fails
+            }
+          }
+          
           // Convert label names to IDs for leads
           if (entityType === 'leads' && payloadToSend.label_ids) {
             try {
@@ -3842,10 +3943,15 @@ async function pushChangesToPipedrive(
             "update_time",
             "id",
             "creator_user_id",
+            "creator_id", // Read-only for leads
             "related_open_deals_count", // This is also read-only
             "related_closed_deals_count",
             "related_won_deals_count",
-            "related_lost_deals_count"
+            "related_lost_deals_count",
+            "cc_email", // System-generated for leads
+            "source_name", // May be read-only
+            "origin", // May be read-only
+            "origin_id" // May be read-only
           ];
           readOnlyFields.forEach((field) => {
             if (payloadToSend[field] !== undefined) {
@@ -3893,10 +3999,35 @@ async function pushChangesToPipedrive(
                 // Prepare payload
                 const finalPayload = {};
 
-                // Copy all non-custom fields
+                // Copy all non-custom fields with type conversions
                 Object.keys(payloadToSend).forEach((key) => {
                   if (key !== "custom_fields") {
-                    finalPayload[key] = payloadToSend[key];
+                    let value = payloadToSend[key];
+                    
+                    // Convert boolean strings to actual booleans for leads
+                    if (entityType === 'leads' && (key === 'is_archived' || key === 'was_seen')) {
+                      if (typeof value === 'string') {
+                        value = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
+                      }
+                    }
+                    
+                    // Convert visible_to text to number for leads
+                    if (entityType === 'leads' && key === 'visible_to' && typeof value === 'string') {
+                      const visibilityMap = {
+                        'owner only': '1',
+                        'owner & followers': '1',
+                        "owner's visibility group": '3',
+                        "owner's visibility group and sub-groups": '5',
+                        'entire company': '7',
+                        'all users': '3' // For Essential/Advanced plans
+                      };
+                      const mappedValue = visibilityMap[value.toLowerCase()];
+                      if (mappedValue) {
+                        value = mappedValue;
+                      }
+                    }
+                    
+                    finalPayload[key] = value;
                   }
                 });
 
@@ -4405,10 +4536,35 @@ async function pushChangesToPipedrive(
                 // Prepare final payload - move custom fields to top level for API v1
                 const finalPayload = {};
                 
-                // Copy all non-custom fields
+                // Copy all non-custom fields with type conversions
                 Object.keys(payloadToSend).forEach((key) => {
                   if (key !== "custom_fields") {
-                    finalPayload[key] = payloadToSend[key];
+                    let value = payloadToSend[key];
+                    
+                    // Convert boolean strings to actual booleans for leads
+                    if (entityType === 'leads' && (key === 'is_archived' || key === 'was_seen')) {
+                      if (typeof value === 'string') {
+                        value = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
+                      }
+                    }
+                    
+                    // Convert visible_to text to number for leads
+                    if (entityType === 'leads' && key === 'visible_to' && typeof value === 'string') {
+                      const visibilityMap = {
+                        'owner only': '1',
+                        'owner & followers': '1',
+                        "owner's visibility group": '3',
+                        "owner's visibility group and sub-groups": '5',
+                        'entire company': '7',
+                        'all users': '3' // For Essential/Advanced plans
+                      };
+                      const mappedValue = visibilityMap[value.toLowerCase()];
+                      if (mappedValue) {
+                        value = mappedValue;
+                      }
+                    }
+                    
+                    finalPayload[key] = value;
                   }
                 });
                 
@@ -4517,14 +4673,121 @@ async function pushChangesToPipedrive(
               break;
 
             case "leads":
-              // Use leads API - leads use string IDs
-              const leadResponse = await apiClient.updateLead({
-                id: String(rowData.id),
-                body: payloadToSend,
-              });
-              responseBody = leadResponse;
-              // Check if the response indicates success
-              success = leadResponse && leadResponse.success === true;
+              try {
+                // Get the Pipedrive OAuth token from script properties
+                const scriptProperties = PropertiesService.getScriptProperties();
+                const pipedriveToken = scriptProperties.getProperty("PIPEDRIVE_ACCESS_TOKEN");
+                
+                if (!pipedriveToken) {
+                  throw new Error("Pipedrive API token not found in script properties");
+                }
+                
+                // Get subdomain from properties
+                const subdomain = scriptProperties.getProperty("PIPEDRIVE_SUBDOMAIN") || "api";
+                
+                // Use direct API call for leads
+                Logger.log("Using direct API call for leads update");
+                
+                // Prepare final payload - move custom fields to top level for API v1
+                const finalPayload = {};
+                
+                // Copy all non-custom fields with type conversions
+                Object.keys(payloadToSend).forEach((key) => {
+                  if (key !== "custom_fields") {
+                    let value = payloadToSend[key];
+                    
+                    // Convert boolean strings to actual booleans for leads
+                    if (entityType === 'leads' && (key === 'is_archived' || key === 'was_seen')) {
+                      if (typeof value === 'string') {
+                        value = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
+                      }
+                    }
+                    
+                    // Convert visible_to text to number for leads
+                    if (entityType === 'leads' && key === 'visible_to' && typeof value === 'string') {
+                      const visibilityMap = {
+                        'owner only': '1',
+                        'owner & followers': '1',
+                        "owner's visibility group": '3',
+                        "owner's visibility group and sub-groups": '5',
+                        'entire company': '7',
+                        'all users': '3' // For Essential/Advanced plans
+                      };
+                      const mappedValue = visibilityMap[value.toLowerCase()];
+                      if (mappedValue) {
+                        value = mappedValue;
+                      }
+                    }
+                    
+                    finalPayload[key] = value;
+                  }
+                });
+                
+                // Move custom fields to top level with date formatting
+                if (payloadToSend.custom_fields) {
+                  // Get field definitions to check field types
+                  const fieldDefinitions = getFieldDefinitionsMap(entityType);
+                  
+                  Object.keys(payloadToSend.custom_fields).forEach((key) => {
+                    let value = payloadToSend.custom_fields[key];
+                    
+                    // Check if this is a date field and format it
+                    const fieldDef = fieldDefinitions[key];
+                    if (fieldDef && fieldDef.field_type === 'date' && value) {
+                      // Convert ISO date string to YYYY-MM-DD format
+                      if (typeof value === 'string' && value.includes('T')) {
+                        value = value.split('T')[0];
+                        Logger.log(`Formatted date field ${key}: ${payloadToSend.custom_fields[key]} -> ${value}`);
+                      }
+                    }
+                    
+                    // Check if this is a phone field and ensure it's a string
+                    if (fieldDef && fieldDef.field_type === 'phone' && value !== null && value !== undefined) {
+                      value = String(value);
+                      Logger.log(`Converted phone field ${key} to string: ${value}`);
+                    }
+                    
+                    // For Pipedrive API v1, custom fields should be at top level
+                    finalPayload[key] = value;
+                  });
+                  Logger.log(`Moved ${Object.keys(payloadToSend.custom_fields).length} custom fields to top level`);
+                }
+                
+                // Log the final payload
+                Logger.log(`Final payload for leads API call: ${JSON.stringify(finalPayload)}`);
+                
+                // Construct URL and options - leads use PATCH method
+                const apiUrl = `https://${subdomain}.pipedrive.com/v1/leads/${String(rowData.id)}`;
+                const options = {
+                  method: "PATCH",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${pipedriveToken}`,
+                  },
+                  payload: JSON.stringify(finalPayload),
+                  muteHttpExceptions: true,
+                };
+                
+                Logger.log(`Direct API URL: ${apiUrl}`);
+                Logger.log(`Direct API payload: ${JSON.stringify(finalPayload)}`);
+                
+                // Make the request
+                const response = UrlFetchApp.fetch(apiUrl, options);
+                responseCode = response.getResponseCode();
+                const responseText = response.getContentText();
+                
+                // Parse the response
+                responseBody = JSON.parse(responseText);
+                success = responseBody && responseBody.success === true;
+                
+                Logger.log(`Direct API call response for lead: ${JSON.stringify(responseBody)}`);
+              } catch (leadError) {
+                Logger.log(`Lead update failed: ${leadError.message}`);
+                responseBody = {
+                  error: leadError.message,
+                };
+                success = false;
+              }
               break;
 
             case "products":
