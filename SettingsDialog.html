@@ -3230,6 +3230,43 @@
         .withSuccessHandler(function(result) {
           console.log("Successfully fetched column data from server:", result);
           
+          // CLIENT-SIDE FILTER: Remove problematic array-indexed entries
+          if (result.availableColumns) {
+            const beforeCount = result.availableColumns.length;
+            
+            // Log entries that match our problematic pattern
+            result.availableColumns.forEach((col, idx) => {
+              if (col.name && col.name.match(/^(Email|Phone|Im) - \d+/)) {
+                console.log(`CLIENT: Found problematic entry at index ${idx}:`, {
+                  name: col.name,
+                  key: col.key,
+                  parentKey: col.parentKey,
+                  hasKey: !!col.key
+                });
+              }
+            });
+            
+            // Filter out entries with problematic names
+            result.availableColumns = result.availableColumns.filter(col => {
+              // Filter by name pattern for Email - 0, Phone - 0, Im - 0
+              if (col.name && col.name.match(/^(Email|Phone|Im) - \d+/)) {
+                console.log(`CLIENT: Filtering out array-indexed entry: name="${col.name}", key="${col.key || 'NO KEY'}"`);
+                return false;
+              }
+              
+              // Also filter if parentKey contains array indices
+              if (col.parentKey && col.parentKey.match(/^(email|phone|im)\.\d+/)) {
+                console.log(`CLIENT: Filtering out by parentKey: name="${col.name}", parentKey="${col.parentKey}"`);
+                return false;
+              }
+              
+              return true;
+            });
+            
+            const afterCount = result.availableColumns.length;
+            console.log(`CLIENT: Filtered ${beforeCount - afterCount} entries. Final count: ${afterCount}`);
+          }
+          
           // Set the data on window for global access
           window.availableColumns = result.availableColumns || [];
           window.selectedColumns = result.selectedColumns || [];

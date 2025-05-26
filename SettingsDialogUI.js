@@ -430,36 +430,40 @@ function showColumnSelectorUI() {
       if (Array.isArray(obj)) {
         Logger.log(`Processing array with ${obj.length} items, parent: ${parentPath}`);
         
+        // Skip arrays for IM fields - they're not commonly used and create clutter
+        if (parentPath === 'im') {
+          Logger.log(`Skipping IM array to reduce clutter`);
+          return;
+        }
+        
         // For arrays of structured objects, like emails or phones
         if (obj.length > 0 && typeof obj[0] === 'object' && obj[0] !== null) {
           // Special handling for email/phone arrays
           if (obj[0].hasOwnProperty('value') && obj[0].hasOwnProperty('primary')) {
-            let displayName = 'Primary ' + (parentName || 'Item');
             
             if (obj[0].hasOwnProperty('label')) {
               // For contact fields like email/phone
-              if ((parentPath === 'email' || parentPath === 'phone') && obj[0].label) {
-                // Add primary version first
+              if (parentPath === 'email' || parentPath === 'phone') {
+                // Don't create confusing array index entries
+                // Instead, add useful named fields
+                
+                // Add primary field
                 availableColumns.push({
-                  key: `${parentPath}.0.value`,
+                  key: `${parentPath}`,
                   name: `Primary ${formatColumnName(parentPath)}`,
                   isNested: true,
                   parentKey: parentPath
                 });
                 
-                // Then add specific types
-                const typeLabels = new Set();
-                obj.forEach(item => {
-                  if (item && item.label && !typeLabels.has(item.label.toLowerCase())) {
-                    typeLabels.add(item.label.toLowerCase());
-                    
-                    // Create specific field like "Email Work" or "Phone Mobile"
-                    const itemLabel = formatColumnName(item.label);
-                    const columnKey = `${parentPath}.${item.label.toLowerCase()}`;
-                    const columnName = `${formatColumnName(parentPath)} ${itemLabel}`;
+                // Add common label types
+                const commonLabels = ['work', 'home', 'mobile', 'other'];
+                commonLabels.forEach(label => {
+                  // Only add if this label type exists in the data
+                  if (obj.some(item => item.label && item.label.toLowerCase() === label)) {
+                    const columnName = `${formatColumnName(parentPath)} ${formatColumnName(label)}`;
                     
                     availableColumns.push({
-                      key: columnKey,
+                      key: `${parentPath}.${label}`,
                       name: columnName,
                       isNested: true,
                       parentKey: parentPath
@@ -470,9 +474,10 @@ function showColumnSelectorUI() {
                 return;
               }
             }
-          } else {
-            // For other object arrays, process the first item
-            extractFields(obj[0], parentPath + '.0', parentName + ' (First Item)');
+          } else if (parentPath !== 'im') {
+            // For other object arrays (not email/phone/im), don't create confusing entries
+            // Just skip them or handle specially
+            Logger.log(`Skipping generic array processing for ${parentPath} to avoid confusion`);
           }
         }
         return;
@@ -656,25 +661,39 @@ function showColumnSelectorUI() {
       }
       
       // Special handling for top-level email/phone fields
-      if (sampleItem.email && typeof sampleItem.email === 'object') {
-        availableColumns.push({
-          key: 'email',
-          name: 'Email',
-          isNested: false
-        });
+      if (sampleItem.email) {
+        // Add main email field (only if not already added)
+        if (!availableColumns.some(col => col.key === 'email')) {
+          availableColumns.push({
+            key: 'email',
+            name: 'Primary Email',
+            isNested: false
+          });
+        }
         
-        extractFields(sampleItem.email, 'email', 'Email');
+        // Only process email array if it's actually an array
+        if (Array.isArray(sampleItem.email)) {
+          extractFields(sampleItem.email, 'email', 'Email');
+        }
       }
       
-      if (sampleItem.phone && typeof sampleItem.phone === 'object') {
-        availableColumns.push({
-          key: 'phone',
-          name: 'Phone',
-          isNested: false
-        });
+      if (sampleItem.phone) {
+        // Add main phone field (only if not already added)
+        if (!availableColumns.some(col => col.key === 'phone')) {
+          availableColumns.push({
+            key: 'phone',
+            name: 'Primary Phone', 
+            isNested: false
+          });
+        }
         
-        extractFields(sampleItem.phone, 'phone', 'Phone');
+        // Only process phone array if it's actually an array
+        if (Array.isArray(sampleItem.phone)) {
+          extractFields(sampleItem.phone, 'phone', 'Phone');
+        }
       }
+      
+      // Skip IM field entirely to reduce clutter - don't even check for it
       
       // Then extract nested fields for all complex objects
       for (const key in sampleItem) {
@@ -687,8 +706,8 @@ function showColumnSelectorUI() {
           continue;
         }
         
-        // Skip email/phone - already handled
-        if (key === 'email' || key === 'phone') {
+        // Skip email/phone/im - already handled or intentionally skipped
+        if (key === 'email' || key === 'phone' || key === 'im') {
           continue;
         }
         
@@ -732,17 +751,67 @@ function showColumnSelectorUI() {
       Logger.log(`Using ${availableColumns.length} fallback columns after extraction error`);
     }
     
+    // Log all columns before filtering to debug
+    Logger.log(`Total columns before filtering: ${availableColumns.length}`);
+    const keylessColumns = availableColumns.filter(col => !col.key);
+    Logger.log(`Keyless columns found: ${keylessColumns.length}`);
+    keylessColumns.forEach(col => {
+      Logger.log(`Keyless column: name="${col.name}", parentKey="${col.parentKey || 'null'}"`);
+    });
+    
     // Filter out problematic fields
     availableColumns = availableColumns.filter(col => {
-      // Remove problematic fields like "im" and "lm"
-      if (col.key.startsWith('im.') || 
-          col.key.startsWith('lm.') ||
-          col.key === 'im' || 
-          col.key === 'lm' ||
-          col.key === 'first_char' ||
-          col.key === 'labels' ||
-          col.key === 'label') {
+      // CRITICAL: Filter out ALL entries that have no key
+      // These problematic entries only have name and parentKey
+      if (!col.key) {
+        Logger.log(`Filtering out keyless field: name="${col.name}", parentKey="${col.parentKey || 'null'}"`);
         return false;
+      }
+      
+      // Additional filters for fields that DO have keys
+      // Filter out all IM-related fields
+      if (col.parentKey && (col.parentKey === 'im' || col.parentKey.startsWith('im.'))) {
+        Logger.log(`Filtering out IM field: ${col.name} (parent: ${col.parentKey})`);
+        return false;
+      }
+      
+      // Filter out fields with email.0, phone.0 parentKeys
+      if (col.parentKey && col.parentKey.match(/^(email|phone)\.\d+$/)) {
+        Logger.log(`Filtering out field with numeric parent: ${col.name} (parent: ${col.parentKey})`);
+        return false;
+      }
+      
+      // Filter out fields where parentKey is just 'email' or 'phone' but name contains " - 0"
+      if (col.parentKey && (col.parentKey === 'email' || col.parentKey === 'phone') && 
+          col.name && col.name.includes(' - 0')) {
+        Logger.log(`Filtering out array field: ${col.name} (parent: ${col.parentKey})`);
+        return false;
+      }
+      
+      // Now handle fields that DO have keys
+      if (col.key) {
+        // Remove problematic fields like "im" and "lm"
+        if (col.key.startsWith('im.') || 
+            col.key.startsWith('lm.') ||
+            col.key === 'im' || 
+            col.key === 'lm' ||
+            col.key === 'first_char' ||
+            col.key === 'labels' ||
+            col.key === 'label') {
+          return false;
+        }
+        
+        // Remove confusing array-indexed email/phone fields
+        if (col.key.match(/^(email|phone|im)\.\d+/) || col.key.match(/\.\d+$/)) {
+          Logger.log(`Filtering out confusing array field by key: ${col.key} (${col.name})`);
+          return false;
+        }
+        
+        // Remove nested array fields that have numeric indices
+        if (col.key.includes('.') && col.key.match(/\.\d+\./)) {
+          Logger.log(`Filtering out nested array field: ${col.key}`);
+          return false;
+        }
       }
       
       // Skip fields that typically contain no useful data
@@ -868,6 +937,17 @@ function showColumnSelectorUI() {
 
       return true;
     });
+    
+    // Log results after filtering
+    Logger.log(`Total columns after filtering: ${availableColumns.length}`);
+    const remainingKeylessColumns = availableColumns.filter(col => !col.key);
+    Logger.log(`Remaining keyless columns: ${remainingKeylessColumns.length}`);
+    if (remainingKeylessColumns.length > 0) {
+      Logger.log(`ERROR: Still have keyless columns after filtering!`);
+      remainingKeylessColumns.forEach(col => {
+        Logger.log(`Remaining keyless: name="${col.name}", parentKey="${col.parentKey || 'null'}"`);
+      });
+    }
     
     // Additional pass to remove redundant org/organization fields
     const orgKeys = availableColumns
@@ -2147,6 +2227,16 @@ function formatEntityTypeName(entityType) {
  * @return {Object} Object with available and selected columns
  */
 function getColumnsDataForEntity(entityType, sheetName) {
+  Logger.log(`=== getColumnsDataForEntity CALLED with entityType: ${entityType}, sheetName: ${sheetName} ===`);
+  
+  // TEMPORARY TEST: Return empty data to see if function is called
+  if (false) { // Set to true to test
+    return {
+      availableColumns: [],
+      selectedColumns: []
+    };
+  }
+  
   try {
     Logger.log(`Getting column data for entity type ${entityType} in sheet ${sheetName}`);
     
@@ -2270,13 +2360,47 @@ function getColumnsDataForEntity(entityType, sheetName) {
           });
         }
         
-        // Improve column names for the UI
+        // Log all columns before filtering to debug
+        Logger.log(`[getColumnsDataForEntity] Total columns before filtering: ${availableColumns.length}`);
+        availableColumns.forEach((col, idx) => {
+          if (!col.key) {
+            Logger.log(`[getColumnsDataForEntity] Column ${idx} has NO KEY: name="${col.name}", parentKey="${col.parentKey || 'null'}"`);
+          }
+        });
+        
+        // CRITICAL: Filter out ALL keyless entries BEFORE any other processing
+        // These are the problematic "Email - 0", "Phone - 0", "Im - 0" entries
+        const beforeFilterCount = availableColumns.length;
+        availableColumns = availableColumns.filter(col => {
+          if (!col.key) {
+            Logger.log(`[getColumnsDataForEntity] REMOVING keyless field: name="${col.name}", parentKey="${col.parentKey || 'null'}"`);
+            return false;
+          }
+          return true;
+        });
+        Logger.log(`[getColumnsDataForEntity] Filtered ${beforeFilterCount - availableColumns.length} keyless entries before improveColumnNamesForUI. Remaining: ${availableColumns.length}`);
+        
+        // Improve column names for the UI (only process entries that have keys)
         availableColumns = improveColumnNamesForUI(availableColumns, entityType);
       }
     } catch (error) {
       Logger.log(`Error getting available columns: ${error.message}`);
       Logger.log(`Stack: ${error.stack}`);
       throw error;
+    }
+    
+    // Final check before returning
+    const keylessCount = availableColumns.filter(col => !col.key).length;
+    if (keylessCount > 0) {
+      Logger.log(`[getColumnsDataForEntity] ERROR: Still have ${keylessCount} keyless columns before returning!`);
+      availableColumns.forEach((col, idx) => {
+        if (!col.key) {
+          Logger.log(`[getColumnsDataForEntity] Keyless column ${idx}: name="${col.name}", parentKey="${col.parentKey || 'null'}"`);
+        }
+      });
+      // Force filter them out one more time
+      availableColumns = availableColumns.filter(col => col.key);
+      Logger.log(`[getColumnsDataForEntity] Force filtered to ${availableColumns.length} columns`);
     }
     
     return {
@@ -2691,8 +2815,10 @@ function processNestedObject(obj, parentKey, parentCategory, relatedEntityType, 
      } else if (!Array.isArray(value)) { // Add simple properties
        addColumnFn(currentPath, name, isNested, parentKey, currentCategory, isReadOnly);
      } 
-     // Handle arrays (e.g., email, phone) - Add specific entries if needed
-     else if (Array.isArray(value) && (parentKey === 'email' || parentKey === 'phone')) {
+     // DISABLED: Array processing for email/phone/im fields creates confusing "Email - 0" entries
+     // Users should use the main email/phone fields instead
+     /*
+     else if (Array.isArray(value) && (parentKey === 'email' || parentKey === 'phone' || parentKey === 'im')) {
          // Add entries for different labels (work, home, etc.) - logic handled by formatColumnName
          // Add the base array field first
          addColumnFn(parentKey, formatColumnName(parentKey), false, null, currentCategory, isReadOnly); 
@@ -2706,6 +2832,7 @@ function processNestedObject(obj, parentKey, parentCategory, relatedEntityType, 
              }
          });
      }
+     */
    }
 }
 
