@@ -285,7 +285,10 @@ function getActivityFields(forceRefresh = false) {
  * @return {Array} Array of field definition objects
  */
 function getLeadFields(forceRefresh = false) {
-  return getEntityFields('leadFields', forceRefresh);
+  // Leads don't have their own custom fields - they inherit from deals
+  // So we need to get deal fields and return them for leads
+  Logger.log('Getting lead fields - using deal fields as leads inherit from deals');
+  return getEntityFields('dealFields', forceRefresh);
 }
 
 /**
@@ -796,7 +799,7 @@ function getFieldDefinitionsMap(entityType, forceRefresh = false) {
     case ENTITY_TYPES.PERSONS: endpoint = 'personFields'; break;
     case ENTITY_TYPES.ORGANIZATIONS: endpoint = 'organizationFields'; break;
     case ENTITY_TYPES.ACTIVITIES: endpoint = 'activityFields'; break;
-    case ENTITY_TYPES.LEADS: endpoint = 'leadFields'; break; // Assuming leadFields exists
+    case ENTITY_TYPES.LEADS: endpoint = 'dealFields'; break; // Leads inherit custom fields from deals
     case ENTITY_TYPES.PRODUCTS: endpoint = 'productFields'; break;
     default:
       Logger.log(`Unknown entity type for field definitions: ${entityType}`);
@@ -1002,7 +1005,7 @@ function getCustomFieldsForEntity(entityType) {
         endpoint = 'activityFields';
         break;
       case 'leads':
-        endpoint = 'leadFields';
+        endpoint = 'dealFields'; // Leads inherit custom fields from deals
         break;
       case 'products':
         endpoint = 'productFields';
