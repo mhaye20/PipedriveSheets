@@ -1155,10 +1155,58 @@ function updateProductDirect(productId, payload, accessToken, basePath, fieldDef
     // Products in v1 API expect custom fields at root level
     const finalPayload = {};
     
-    // First, copy any standard fields (non-custom fields)
+    // First, copy any standard fields (non-custom fields) with type conversion
     for (const key in payload) {
       if (key !== 'custom_fields' && !key.startsWith('__')) {
-        finalPayload[key] = payload[key];
+        // Handle product-specific field conversions
+        if (key === 'unit') {
+          // unit must be a string or null
+          if (payload[key] !== null && payload[key] !== undefined && payload[key] !== '') {
+            finalPayload[key] = String(payload[key]);
+          } else {
+            finalPayload[key] = null;
+          }
+        } else if (key === 'category') {
+          // category must be a number or null (it's a category ID)
+          if (payload[key] !== null && payload[key] !== undefined && payload[key] !== '') {
+            // If it's a string that looks like a number, convert it
+            const numValue = Number(payload[key]);
+            if (!isNaN(numValue)) {
+              finalPayload[key] = numValue;
+            } else {
+              // If it's not a number, skip it (it's probably a category name, not ID)
+              Logger.log(`Skipping category field - value "${payload[key]}" is not a number`);
+            }
+          } else {
+            finalPayload[key] = null;
+          }
+        } else if (key === 'owner_id') {
+          // owner_id must be a number (user ID)
+          if (payload[key] !== null && payload[key] !== undefined && payload[key] !== '') {
+            const numValue = Number(payload[key]);
+            if (!isNaN(numValue)) {
+              finalPayload[key] = numValue;
+            } else {
+              // If it's a string like "Mike", skip it - we can't convert names to IDs here
+              Logger.log(`Skipping owner_id field - value "${payload[key]}" is not a number`);
+            }
+          }
+        } else if (key === 'prices') {
+          // prices must be an array of price objects
+          if (Array.isArray(payload[key])) {
+            finalPayload[key] = payload[key];
+          } else if (payload[key] !== null && payload[key] !== undefined) {
+            // Convert single price to array format
+            // Assuming the value is the price amount
+            finalPayload[key] = [{
+              price: Number(payload[key]) || 0,
+              currency: 'USD' // Default currency, should be configurable
+            }];
+            Logger.log(`Converted single price value to array: ${JSON.stringify(finalPayload[key])}`);
+          }
+        } else {
+          finalPayload[key] = payload[key];
+        }
       }
     }
     
