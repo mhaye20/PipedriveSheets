@@ -119,6 +119,25 @@ function setSyncRunning(isRunning) {
 function syncFromPipedrive() {
   try {
     Logger.log("Starting syncFromPipedrive function");
+    
+    // Check subscription status before syncing
+    const plan = PaymentService.getCurrentPlan();
+    if (plan.plan === 'free') {
+      // For free plan, check if this is a scheduled sync
+      const triggers = ScriptApp.getProjectTriggers();
+      const isScheduled = triggers.some(trigger => 
+        trigger.getHandlerFunction() === 'syncFromPipedrive' ||
+        trigger.getHandlerFunction() === 'scheduledSync'
+      );
+      
+      if (isScheduled) {
+        SpreadsheetApp.getUi().alert(
+          'Scheduled sync is not available on the Free plan. Please upgrade to Pro or Team to enable automatic syncing.'
+        );
+        return;
+      }
+    }
+    
     // Get active sheet info
     const sheet = SpreadsheetApp.getActiveSheet();
     const sheetName = sheet.getName();
@@ -134,6 +153,14 @@ function syncFromPipedrive() {
     const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
     const twoWaySyncEnabled =
       scriptProperties.getProperty(twoWaySyncEnabledKey) === "true";
+      
+    // Check if user has access to two-way sync
+    if (twoWaySyncEnabled && !PaymentService.hasFeatureAccess('two_way_sync')) {
+      SpreadsheetApp.getUi().alert(
+        'Two-way sync is only available on Pro and Team plans. Please upgrade to enable this feature.'
+      );
+      return;
+    }
 
     // Show confirmation dialog
     const ui = SpreadsheetApp.getUi();
@@ -304,6 +331,16 @@ function syncPipedriveDataToSheet(
     }
 
     Logger.log(`Retrieved ${items.length} items from Pipedrive`);
+    
+    // Check row limits based on subscription plan
+    try {
+      PaymentService.enforceRowLimit(items.length);
+    } catch (error) {
+      updateSyncStatus("3", "error", error.message, 0);
+      SpreadsheetApp.getUi().alert(error.message);
+      PaymentService.showUpgradeDialog();
+      return;
+    }
 
     // Log first item structure for debugging
     if (items.length > 0) {

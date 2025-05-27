@@ -9,6 +9,15 @@
 
 const TriggerManagerUI = {
   showTriggerManager() {
+    // Check if user has access to scheduled sync feature
+    if (!PaymentService.hasFeatureAccess('scheduled_sync')) {
+      SpreadsheetApp.getUi().alert(
+        'Scheduled sync is only available on Pro and Team plans. Please upgrade to enable automatic syncing.'
+      );
+      PaymentService.showUpgradeDialog();
+      return;
+    }
+    
     // Get the active sheet name
     const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     const activeSheetName = activeSheet.getName();

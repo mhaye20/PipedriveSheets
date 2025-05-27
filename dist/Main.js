@@ -106,9 +106,17 @@ function createPipedriveMenu() {
       .addSeparator()
       .addItem('⏱️ Schedule Sync', 'showTriggerManager')
       .addSeparator()
+      .addItem('💎 Upgrade Plan', 'showUpgradeDialog')
       .addItem('ℹ️ Help & About', 'showHelp');
       
   menu.addToUi();
+}
+
+/**
+ * Shows the upgrade dialog
+ */
+function showUpgradeDialog() {
+  PaymentService.showUpgradeDialog();
 }
 
 /**

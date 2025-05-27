@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f8f9fa;
+    }
+    
+    .container {
+      max-width: 450px;
+      margin: 0 auto;
+    }
+    
+    .current-plan {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .current-plan h3 {
+      margin: 0 0 10px 0;
+      color: #1a1a1a;
+      font-size: 18px;
+    }
+    
+    .plan-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 10px;
+    }
+    
+    .plan-badge.free {
+      background: #e3f2fd;
+      color: #1976d2;
+    }
+    
+    .plan-badge.pro {
+      background: #f3e5f5;
+      color: #7b1fa2;
+    }
+    
+    .plan-badge.team {
+      background: #ffe0b2;
+      color: #f57c00;
+    }
+    
+    .plans-grid {
+      display: grid;
+      gap: 15px;
+    }
+    
+    .plan-card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .plan-card.recommended {
+      border: 2px solid #4285f4;
+    }
+    
+    .recommended-badge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: #4285f4;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .plan-header {
+      margin-bottom: 15px;
+    }
+    
+    .plan-name {
+      font-size: 20px;
+      font-weight: 600;
+      margin: 0 0 5px 0;
+      color: #1a1a1a;
+    }
+    
+    .plan-price {
+      font-size: 28px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin: 0;
+    }
+    
+    .plan-price .period {
+      font-size: 16px;
+      font-weight: 400;
+      color: #666;
+    }
+    
+    .plan-annual {
+      font-size: 14px;
+      color: #666;
+      margin: 5px 0;
+    }
+    
+    .plan-annual .save {
+      color: #0f9d58;
+      font-weight: 500;
+    }
+    
+    .features-list {
+      list-style: none;
+      padding: 0;
+      margin: 15px 0;
+    }
+    
+    .features-list li {
+      padding: 8px 0;
+      font-size: 14px;
+      color: #333;
+      display: flex;
+      align-items: center;
+    }
+    
+    .features-list li:before {
+      content: "✓";
+      color: #0f9d58;
+      font-weight: bold;
+      margin-right: 10px;
+    }
+    
+    .upgrade-btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 15px;
+    }
+    
+    .upgrade-btn.primary {
+      background: #4285f4;
+      color: white;
+    }
+    
+    .upgrade-btn.primary:hover {
+      background: #3367d6;
+    }
+    
+    .upgrade-btn.secondary {
+      background: #f1f3f4;
+      color: #333;
+    }
+    
+    .upgrade-btn.secondary:hover {
+      background: #e8eaed;
+    }
+    
+    .upgrade-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    
+    .billing-toggle {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 20px;
+      gap: 10px;
+    }
+    
+    .toggle-switch {
+      position: relative;
+      width: 50px;
+      height: 26px;
+      background: #ccc;
+      border-radius: 13px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    
+    .toggle-switch.annual {
+      background: #4285f4;
+    }
+    
+    .toggle-switch .slider {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.3s;
+    }
+    
+    .toggle-switch.annual .slider {
+      transform: translateX(24px);
+    }
+    
+    .toggle-label {
+      font-size: 14px;
+      color: #666;
+    }
+    
+    .toggle-label.active {
+      color: #1a1a1a;
+      font-weight: 500;
+    }
+    
+    .error-message {
+      background: #ffebee;
+      color: #c62828;
+      padding: 10px;
+      border-radius: 8px;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #4285f4;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      vertical-align: middle;
+      margin-left: 10px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="current-plan">
+      <h3>Current Plan</h3>
+      <div class="plan-badge <?= currentPlan.plan ?>"><?= currentPlan.details.name ?></div>
+      <div style="font-size: 14px; color: #666; margin-top: 10px;">
+        <? if (currentPlan.plan === 'free') { ?>
+          • <?= currentPlan.details.limits.rows ?> rows per sync<br>
+          • <?= currentPlan.details.limits.filters ?> filter maximum<br>
+          • Manual sync only
+        <? } else if (currentPlan.plan === 'pro') { ?>
+          • Up to <?= currentPlan.details.limits.rows ?> rows per sync<br>
+          • Unlimited filters<br>
+          • Two-way sync enabled<br>
+          • Scheduled sync active
+        <? } else if (currentPlan.plan === 'team') { ?>
+          • Up to <?= currentPlan.details.limits.users ?> team members<br>
+          • <?= currentPlan.details.limits.rows ?> rows per sync<br>
+          • All Pro features included<br>
+          • Team collaboration enabled
+        <? } ?>
+      </div>
+    </div>
+    
+    <div class="billing-toggle">
+      <span class="toggle-label" id="monthly-label">Monthly</span>
+      <div class="toggle-switch" id="billing-toggle" onclick="toggleBilling()">
+        <div class="slider"></div>
+      </div>
+      <span class="toggle-label" id="annual-label">Annual (Save 20%)</span>
+    </div>
+    
+    <div class="plans-grid">
+      <? if (currentPlan.plan === 'free') { ?>
+      <!-- Pro Plan -->
+      <div class="plan-card recommended">
+        <div class="recommended-badge">Recommended</div>
+        <div class="plan-header">
+          <h4 class="plan-name">Pro</h4>
+          <p class="plan-price">
+            <span id="pro-price">$12.99</span>
+            <span class="period">/month</span>
+          </p>
+          <p class="plan-annual" id="pro-annual" style="display: none;">
+            $129/year <span class="save">(save $26)</span>
+          </p>
+        </div>
+        <ul class="features-list">
+          <li>Two-way sync with Pipedrive</li>
+          <li>Up to 5,000 rows per sync</li>
+          <li>Unlimited filters</li>
+          <li>Scheduled automatic syncs</li>
+          <li>Bulk edit & push to Pipedrive</li>
+          <li>Priority email support</li>
+        </ul>
+        <button class="upgrade-btn primary" onclick="upgradeToPlan('pro')" id="pro-btn">
+          Upgrade to Pro
+        </button>
+      </div>
+      
+      <!-- Team Plan -->
+      <div class="plan-card">
+        <div class="plan-header">
+          <h4 class="plan-name">Team</h4>
+          <p class="plan-price">
+            <span id="team-price">$39.99</span>
+            <span class="period">/month</span>
+          </p>
+          <p class="plan-annual" id="team-annual" style="display: none;">
+            $399/year <span class="save">(save $80)</span>
+          </p>
+        </div>
+        <ul class="features-list">
+          <li>Everything in Pro</li>
+          <li>Up to 5 team members</li>
+          <li>Shared filter configurations</li>
+          <li>Admin control dashboard</li>
+          <li>Team usage tracking</li>
+          <li>Priority team support</li>
+        </ul>
+        <button class="upgrade-btn secondary" onclick="upgradeToPlan('team')" id="team-btn">
+          Upgrade to Team
+        </button>
+      </div>
+      <? } else if (currentPlan.plan === 'pro') { ?>
+      <!-- Team Plan for Pro users -->
+      <div class="plan-card recommended">
+        <div class="recommended-badge">Expand Your Team</div>
+        <div class="plan-header">
+          <h4 class="plan-name">Team</h4>
+          <p class="plan-price">
+            <span id="team-price">$39.99</span>
+            <span class="period">/month</span>
+          </p>
+          <p class="plan-annual" id="team-annual" style="display: none;">
+            $399/year <span class="save">(save $80)</span>
+          </p>
+        </div>
+        <ul class="features-list">
+          <li>All your Pro features</li>
+          <li>Add up to 5 team members</li>
+          <li>Shared filter configurations</li>
+          <li>Admin control dashboard</li>
+          <li>Team usage tracking</li>
+          <li>Priority team support</li>
+        </ul>
+        <button class="upgrade-btn primary" onclick="upgradeToPlan('team')" id="team-btn">
+          Upgrade to Team
+        </button>
+      </div>
+      <? } ?>
+    </div>
+    
+    <div id="error-container"></div>
+  </div>
+  
+  <script>
+    let isAnnual = false;
+    
+    function toggleBilling() {
+      isAnnual = !isAnnual;
+      const toggle = document.getElementById('billing-toggle');
+      const monthlyLabel = document.getElementById('monthly-label');
+      const annualLabel = document.getElementById('annual-label');
+      
+      toggle.classList.toggle('annual', isAnnual);
+      monthlyLabel.classList.toggle('active', !isAnnual);
+      annualLabel.classList.toggle('active', isAnnual);
+      
+      // Update prices
+      const proPrice = document.getElementById('pro-price');
+      const teamPrice = document.getElementById('team-price');
+      const proAnnual = document.getElementById('pro-annual');
+      const teamAnnual = document.getElementById('team-annual');
+      
+      if (proPrice) {
+        proPrice.textContent = isAnnual ? '$10.75' : '$12.99';
+        proPrice.nextElementSibling.textContent = isAnnual ? '/month' : '/month';
+        if (proAnnual) proAnnual.style.display = isAnnual ? 'block' : 'none';
+      }
+      
+      if (teamPrice) {
+        teamPrice.textContent = isAnnual ? '$33.25' : '$39.99';
+        teamPrice.nextElementSibling.textContent = isAnnual ? '/month' : '/month';
+        if (teamAnnual) teamAnnual.style.display = isAnnual ? 'block' : 'none';
+      }
+    }
+    
+    function upgradeToPlan(plan) {
+      const planType = plan + (isAnnual ? '_annual' : '_monthly');
+      const button = document.getElementById(plan + '-btn');
+      const originalText = button.textContent;
+      
+      button.disabled = true;
+      button.innerHTML = 'Processing<span class="loading"></span>';
+      
+      google.script.run
+        .withSuccessHandler(function(checkoutUrl) {
+          if (checkoutUrl) {
+            // Open Stripe checkout in new tab
+            window.open(checkoutUrl, '_blank');
+            google.script.host.close();
+          } else {
+            showError('Failed to create checkout session. Please try again.');
+            button.disabled = false;
+            button.textContent = originalText;
+          }
+        })
+        .withFailureHandler(function(error) {
+          showError(error.message || 'An error occurred. Please try again.');
+          button.disabled = false;
+          button.textContent = originalText;
+        })
+        .createCheckoutSession(planType);
+    }
+    
+    function showError(message) {
+      const container = document.getElementById('error-container');
+      container.innerHTML = '<div class="error-message">' + message + '</div>';
+      setTimeout(() => {
+        container.innerHTML = '';
+      }, 5000);
+    }
+    
+    // For PaymentService
+    function createCheckoutSession(planType) {
+      return PaymentService.createCheckoutSession(planType);
+    }
+  </script>
+</body>
+</html>

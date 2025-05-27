@@ -21,6 +21,15 @@ var TwoWaySyncSettingsUI = TwoWaySyncSettingsUI || {};
  */
 TwoWaySyncSettingsUI.showTwoWaySyncSettings = function() {
   try {
+    // Check if user has access to two-way sync feature
+    if (!PaymentService.hasFeatureAccess('two_way_sync')) {
+      SpreadsheetApp.getUi().alert(
+        'Two-way sync is only available on Pro and Team plans. Please upgrade to enable this feature.'
+      );
+      PaymentService.showUpgradeDialog();
+      return;
+    }
+    
     // Get the active sheet name
     const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     const activeSheetName = activeSheet.getName();

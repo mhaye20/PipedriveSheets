@@ -1746,6 +1746,23 @@ TeamManagerUI.isScriptOwner = function() {
  */
 TeamManagerUI.showTeamManager = function(joinOnly = false) {
   try {
+    // Check subscription status for team features
+    const plan = PaymentService.getCurrentPlan();
+    if (plan.plan !== 'team') {
+      // Show limited view for non-team plans
+      const ui = SpreadsheetApp.getUi();
+      const result = ui.alert(
+        'Team Features',
+        'Team collaboration features are only available on the Team plan. Would you like to upgrade?',
+        ui.ButtonSet.YES_NO
+      );
+      
+      if (result === ui.Button.YES) {
+        PaymentService.showUpgradeDialog();
+      }
+      return;
+    }
+    
     // Get the active user's email
     var userEmail = Session.getActiveUser().getEmail();
     if (!userEmail) {
