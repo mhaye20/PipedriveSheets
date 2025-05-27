@@ -152,10 +152,26 @@ function createPipedriveMenu() {
       .addItem('👥 Team Management', 'showTeamManager')
       .addSeparator()
       .addItem('⏱️ Schedule Sync', 'showTriggerManager')
-      .addSeparator()
-      .addItem('💎 Upgrade Plan', 'showUpgradeDialog')
-      .addItem('💳 Manage Subscription', 'showManageSubscription')
-      .addItem('ℹ️ Help & About', 'showHelp');
+      .addSeparator();
+  
+  // Check subscription status to determine which payment option to show
+  try {
+    const plan = PaymentService.getCurrentPlan();
+    if (plan.plan !== 'free') {
+      // User has an active subscription (or canceling)
+      menu.addItem('💳 Manage Subscription', 'showManageSubscription');
+    } else {
+      // User is on free plan
+      menu.addItem('💎 Upgrade Plan', 'showUpgradeDialog');
+    }
+  } catch (error) {
+    // If there's an error checking status, show both options
+    Logger.log('Error checking subscription status for menu: ' + error.message);
+    menu.addItem('💎 Upgrade Plan', 'showUpgradeDialog')
+        .addItem('💳 Manage Subscription', 'showManageSubscription');
+  }
+  
+  menu.addItem('ℹ️ Help & About', 'showHelp');
       
   menu.addToUi();
 }
