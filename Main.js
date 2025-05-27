@@ -35,13 +35,60 @@ let VERIFIED_USERS = {};
  * Creates the menu when the spreadsheet opens
  */
 function onOpen() {
-  const ui = SpreadsheetApp.getUi();
-  ui.createMenu('Pipedrive')
-    .addItem('Initialize Pipedrive Menu', 'initializePipedriveMenu')
-    .addToUi();
+  try {
+    // Try to get user email without prompting
+    const userEmail = Session.getActiveUser().getEmail();
     
-  // Check if user just completed a payment (detect URL parameter)
-  checkForPaymentSuccess();
+    if (userEmail) {
+      // User email is available, try automatic initialization
+      Logger.log(`Auto-initializing for user: ${userEmail}`);
+      
+      // Preload verified users
+      preloadVerifiedUsers();
+      
+      // Check access
+      if (checkAnyUserAccess(userEmail) || 
+          hasVerifiedTeamAccess() || 
+          forceTeamMembershipCheck(userEmail)) {
+        
+        // User has access, create full menu
+        createPipedriveMenu();
+        
+        // Check if user just completed a payment
+        checkForPaymentSuccess();
+        return;
+      }
+    }
+    
+    // If we can't auto-initialize, show the initialization menu
+    const ui = SpreadsheetApp.getUi();
+    ui.createMenu('Pipedrive')
+      .addItem('🚀 Get Started with Pipedrive', 'initializePipedriveMenu')
+      .addToUi();
+      
+    // Check if this is the first time opening
+    const userProperties = PropertiesService.getUserProperties();
+    const hasSeenWelcome = userProperties.getProperty('HAS_SEEN_WELCOME');
+    
+    if (!hasSeenWelcome && !userEmail) {
+      // Show welcome message for first-time users
+      SpreadsheetApp.getActiveSpreadsheet().toast(
+        '👋 Welcome! Click "Pipedrive" → "Get Started" to begin.',
+        'Welcome to PipedriveSheets',
+        5
+      );
+      userProperties.setProperty('HAS_SEEN_WELCOME', 'true');
+    }
+      
+  } catch (error) {
+    Logger.log(`Error in onOpen: ${error.message}`);
+    
+    // Fallback to initialization menu
+    const ui = SpreadsheetApp.getUi();
+    ui.createMenu('Pipedrive')
+      .addItem('Initialize Pipedrive Menu', 'initializePipedriveMenu')
+      .addToUi();
+  }
 }
 
 /**
@@ -108,19 +155,13 @@ function initializePipedriveMenu() {
       // Replace the menu with the full Pipedrive menu
       createPipedriveMenu();
       
-      // Show a brief confirmation that initialization was successful
-      const html = HtmlService.createHtmlOutput(`
-        <p>Pipedrive menu has been successfully initialized!</p>
-        <script>
-          setTimeout(function() {
-            google.script.host.close();
-          }, 1500);
-        </script>
-      `)
-      .setWidth(300)
-      .setHeight(80);
+      // Show a toast notification instead of a modal
+      SpreadsheetApp.getActiveSpreadsheet().toast(
+        '✅ Pipedrive menu ready! Check the menu bar above.',
+        'Initialization Complete',
+        3
+      );
       
-      SpreadsheetApp.getUi().showModalDialog(html, 'Pipedrive Ready');
       return true;
     } else {
       // Show the team access request dialog
@@ -154,22 +195,10 @@ function createPipedriveMenu() {
       .addItem('⏱️ Schedule Sync', 'showTriggerManager')
       .addSeparator();
   
-  // Check subscription status to determine which payment option to show
-  try {
-    const plan = PaymentService.getCurrentPlan();
-    if (plan.plan !== 'free') {
-      // User has an active subscription (or canceling)
-      menu.addItem('💳 Manage Subscription', 'showManageSubscription');
-    } else {
-      // User is on free plan
-      menu.addItem('💎 Upgrade Plan', 'showUpgradeDialog');
-    }
-  } catch (error) {
-    // If there's an error checking status, show both options
-    Logger.log('Error checking subscription status for menu: ' + error.message);
-    menu.addItem('💎 Upgrade Plan', 'showUpgradeDialog')
-        .addItem('💳 Manage Subscription', 'showManageSubscription');
-  }
+  // For subscription menu items, we'll show both options since onOpen has limited authorization
+  // The individual functions will handle showing appropriate content based on actual subscription status
+  menu.addItem('💎 Upgrade Plan', 'showUpgradeDialog')
+      .addItem('💳 Manage Subscription', 'showManageSubscription');
   
   menu.addItem('ℹ️ Help & About', 'showHelp');
       
@@ -180,6 +209,25 @@ function createPipedriveMenu() {
  * Shows the upgrade dialog
  */
 function showUpgradeDialog() {
+  // Check if user already has a subscription
+  try {
+    const currentPlan = PaymentService.getCurrentPlan();
+    
+    if (currentPlan.plan !== 'free') {
+      // User already has a subscription, redirect to manage subscription
+      SpreadsheetApp.getUi().alert(
+        'Active Subscription',
+        `You already have an active ${currentPlan.details.name} subscription. Redirecting to subscription management...`,
+        SpreadsheetApp.getUi().ButtonSet.OK
+      );
+      showManageSubscription();
+      return;
+    }
+  } catch (error) {
+    Logger.log('Error checking plan in showUpgradeDialog: ' + error.message);
+  }
+  
+  // Show upgrade dialog for free users
   PaymentService.showUpgradeDialog();
 }
 
