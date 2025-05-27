@@ -79,7 +79,10 @@ const TriggerManagerUI = {
             // This is a stale trigger reference - delete it
             scriptProperties.deleteProperty(key);
             scriptProperties.deleteProperty(`TRIGGER_${triggerId}_FREQUENCY`);
-            Logger.log(`Cleaned up stale trigger reference: ${triggerId}`);
+            scriptProperties.deleteProperty(`TRIGGER_${triggerId}_WEEKDAY`);
+            scriptProperties.deleteProperty(`TRIGGER_${triggerId}_HOUR`);
+            scriptProperties.deleteProperty(`TRIGGER_${triggerId}_MINUTE`);
+            scriptProperties.deleteProperty(`TRIGGER_${triggerId}_MONTHDAY`);
           }
         }
       });
@@ -94,7 +97,6 @@ const TriggerManagerUI = {
           };
         });
     } catch (e) {
-      Logger.log(`Error in getTriggersForSheet: ${e.message}`);
       return [];
     }
   },
@@ -116,6 +118,7 @@ const TriggerManagerUI = {
 
       // First check if we have the frequency stored as a property
       const storedFrequency = scriptProperties.getProperty(`TRIGGER_${triggerId}_FREQUENCY`);
+      
 
       if (storedFrequency) {
         // We have the stored frequency, now format description based on it
@@ -133,16 +136,18 @@ const TriggerManagerUI = {
 
           case 'daily':
             let timeStr = '';
-            try {
-              const atHour = trigger.getAtHour();
-              const atMinute = trigger.getNearMinute();
-
-              if (atHour !== null && atMinute !== null) {
-                const hour12 = atHour % 12 === 0 ? 12 : atHour % 12;
-                const ampm = atHour < 12 ? 'AM' : 'PM';
-                timeStr = ` at ${hour12}:${atMinute < 10 ? '0' + atMinute : atMinute} ${ampm}`;
-              }
-            } catch (e) { }
+            
+            // Get stored time information
+            const storedDailyHour = scriptProperties.getProperty(`TRIGGER_${triggerId}_HOUR`);
+            const storedDailyMinute = scriptProperties.getProperty(`TRIGGER_${triggerId}_MINUTE`);
+            
+            if (storedDailyHour !== null && storedDailyMinute !== null) {
+              const hour = parseInt(storedDailyHour);
+              const minute = parseInt(storedDailyMinute);
+              const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+              const ampm = hour < 12 ? 'AM' : 'PM';
+              timeStr = ` at ${hour12}:${minute < 10 ? '0' + minute : minute} ${ampm}`;
+            }
 
             return {
               type: 'Daily',
@@ -151,31 +156,61 @@ const TriggerManagerUI = {
 
           case 'weekly':
             let dayInfo = '';
-            try {
-              const weekDay = trigger.getWeekDay();
-              if (weekDay) {
-                const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-                dayInfo = ` on ${weekDays[weekDay - 1] || 'a weekday'}`;
+            let weeklyTimeStr = '';
+            
+            // Get stored weekday information
+            const storedWeekDay = scriptProperties.getProperty(`TRIGGER_${triggerId}_WEEKDAY`);
+            const storedHour = scriptProperties.getProperty(`TRIGGER_${triggerId}_HOUR`);
+            const storedMinute = scriptProperties.getProperty(`TRIGGER_${triggerId}_MINUTE`);
+            
+            if (storedWeekDay) {
+              const weekDays = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+              const dayNum = parseInt(storedWeekDay);
+              const dayName = weekDays[dayNum] || '';
+              if (dayName) {
+                dayInfo = ` on ${dayName}`;
               }
-            } catch (e) { }
+            }
+            
+            if (storedHour !== null && storedMinute !== null) {
+              const hour = parseInt(storedHour);
+              const minute = parseInt(storedMinute);
+              if (!isNaN(hour) && !isNaN(minute)) {
+                const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+                const ampm = hour < 12 ? 'AM' : 'PM';
+                weeklyTimeStr = ` at ${hour12}:${minute < 10 ? '0' + minute : minute} ${ampm}`;
+              }
+            }
 
             return {
               type: 'Weekly',
-              description: `Every week${dayInfo}${sheetInfo}`
+              description: `Every week${dayInfo}${weeklyTimeStr}${sheetInfo}`
             };
 
           case 'monthly':
             let dayOfMonth = '';
-            try {
-              const monthDay = trigger.getMonthDay();
-              if (monthDay) {
-                dayOfMonth = ` on day ${monthDay}`;
-              }
-            } catch (e) { }
+            let monthlyTimeStr = '';
+            
+            // Get stored monthly day and time information
+            const storedMonthDay = scriptProperties.getProperty(`TRIGGER_${triggerId}_MONTHDAY`);
+            const storedMonthlyHour = scriptProperties.getProperty(`TRIGGER_${triggerId}_HOUR`);
+            const storedMonthlyMinute = scriptProperties.getProperty(`TRIGGER_${triggerId}_MINUTE`);
+            
+            if (storedMonthDay) {
+              dayOfMonth = ` on day ${storedMonthDay}`;
+            }
+            
+            if (storedMonthlyHour !== null && storedMonthlyMinute !== null) {
+              const hour = parseInt(storedMonthlyHour);
+              const minute = parseInt(storedMonthlyMinute);
+              const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+              const ampm = hour < 12 ? 'AM' : 'PM';
+              monthlyTimeStr = ` at ${hour12}:${minute < 10 ? '0' + minute : minute} ${ampm}`;
+            }
 
             return {
               type: 'Monthly',
-              description: `Every month${dayOfMonth}${sheetInfo}`
+              description: `Every month${dayOfMonth}${monthlyTimeStr}${sheetInfo}`
             };
 
           default:
@@ -199,7 +234,6 @@ const TriggerManagerUI = {
         description: 'Automatic sync'
       };
     } catch (e) {
-      Logger.log(`Error in getTriggerInfo: ${e.message}`);
       return {
         type: 'Scheduled',
         description: 'Automatic sync'
@@ -209,7 +243,6 @@ const TriggerManagerUI = {
   
   createSyncTrigger(triggerData) {
     try {
-      Logger.log(`Creating sync trigger for sheet: ${triggerData.sheetName}`);
       
       // Validate required data
       if (!triggerData || !triggerData.sheetName || !triggerData.frequency) {
@@ -239,28 +272,75 @@ const TriggerManagerUI = {
         const hour = parseInt(triggerData.hour) || 8;
         const minute = parseInt(triggerData.minute) || 0;
         
+        
         if (weekDays.length === 0) {
           // Default to Monday if no days selected
           trigger = builder.atHour(hour).nearMinute(minute).onWeekDay(ScriptApp.WeekDay.MONDAY).create();
-        } else {
-          // Create first trigger and save info
-          const dayNum = parseInt(weekDays[0]);
-          const weekDay = getWeekDayFromNumber(dayNum);
-          trigger = builder.atHour(hour).nearMinute(minute).onWeekDay(weekDay).create();
           
-          // Create additional triggers for other selected days
-          for (let i = 1; i < weekDays.length; i++) {
-            const additionalDayNum = parseInt(weekDays[i]);
-            const additionalWeekDay = getWeekDayFromNumber(additionalDayNum);
-            const additionalTrigger = ScriptApp.newTrigger('syncSheetFromTrigger')
-              .timeBased()
-              .atHour(hour)
-              .nearMinute(minute)
-              .onWeekDay(additionalWeekDay)
-              .create();
+          // Save info with Monday as the day
+          const triggerId = trigger.getUniqueId();
+          saveSheetInfoForTrigger(triggerId, triggerData.sheetName, frequency, {
+            weekDay: 1, // Monday
+            hour: hour,
+            minute: minute
+          });
+        } else {
+          // For weekly triggers with multiple days, we'll create separate triggers
+          const allCreatedTriggers = [];
+          
+          // Create triggers for each selected day
+          for (let i = 0; i < weekDays.length; i++) {
+            const dayNum = parseInt(weekDays[i]);
+            const weekDay = getWeekDayFromNumber(dayNum);
             
-            // Save info for additional trigger
-            saveSheetInfoForTrigger(additionalTrigger.getUniqueId(), triggerData.sheetName, frequency);
+            let newTrigger;
+            if (i === 0) {
+              // Use the main builder for the first trigger
+              trigger = builder.atHour(hour).nearMinute(minute).onWeekDay(weekDay).create();
+              newTrigger = trigger;
+            } else {
+              // Create additional triggers
+              newTrigger = ScriptApp.newTrigger('syncSheetFromTrigger')
+                .timeBased()
+                .atHour(hour)
+                .nearMinute(minute)
+                .onWeekDay(weekDay)
+                .create();
+            }
+            
+            // Save info for each trigger including day and time
+            const triggerId = newTrigger.getUniqueId();
+            saveSheetInfoForTrigger(triggerId, triggerData.sheetName, frequency, {
+              weekDay: dayNum,
+              hour: hour,
+              minute: minute
+            });
+            
+            allCreatedTriggers.push({
+              trigger: newTrigger,
+              dayNum: dayNum
+            });
+          }
+          
+          // Force a full refresh after creating multiple triggers
+          if (weekDays.length > 1) {
+            // Add a small delay to ensure properties are saved
+            Utilities.sleep(500);
+            
+            // Return all trigger IDs as an array
+            const allTriggerIds = allCreatedTriggers.map(t => t.trigger.getUniqueId());
+            // Return success but without specific trigger info to force a refresh
+            return {
+              success: true,
+              message: 'Multiple weekly triggers created successfully',
+              forceRefresh: true,
+              triggerId: allTriggerIds.join(','),
+              triggerInfo: {
+                id: allTriggerIds.join(','),
+                type: 'Weekly',
+                description: `Multiple weekly sync schedules created`
+              }
+            };
           }
         }
       } else if (frequency === 'monthly') {
@@ -276,7 +356,30 @@ const TriggerManagerUI = {
       // Save sheet name and frequency in properties for this trigger
       if (trigger) {
         const triggerId = trigger.getUniqueId();
-        saveSheetInfoForTrigger(triggerId, triggerData.sheetName, frequency);
+        
+        // Prepare additional info based on frequency
+        let additionalInfo = null;
+        if (frequency === 'daily') {
+          additionalInfo = {
+            hour: parseInt(triggerData.hour) || 8,
+            minute: parseInt(triggerData.minute) || 0
+          };
+        } else if (frequency === 'monthly') {
+          additionalInfo = {
+            monthDay: parseInt(triggerData.monthDay) || 1,
+            hour: parseInt(triggerData.hour) || 8,
+            minute: parseInt(triggerData.minute) || 0
+          };
+        } else if (frequency === 'weekly' && (!triggerData.weekDays || triggerData.weekDays.length === 0)) {
+          // Default Monday case
+          additionalInfo = {
+            weekDay: 1, // Monday
+            hour: parseInt(triggerData.hour) || 8,
+            minute: parseInt(triggerData.minute) || 0
+          };
+        }
+        
+        saveSheetInfoForTrigger(triggerId, triggerData.sheetName, frequency, additionalInfo);
         
         // Get trigger info for UI update
         const triggerInfo = this.getTriggerInfo(trigger);
@@ -295,14 +398,12 @@ const TriggerManagerUI = {
         return { success: false, error: 'Failed to create trigger' };
       }
     } catch (e) {
-      Logger.log(`Error in createSyncTrigger: ${e.message}`);
       return { success: false, error: e.message };
     }
   },
   
   deleteTrigger(triggerId) {
     try {
-      Logger.log(`Deleting trigger with ID: ${triggerId}`);
       
       // Find the trigger by ID
       const allTriggers = ScriptApp.getProjectTriggers();
@@ -326,10 +427,13 @@ const TriggerManagerUI = {
       const scriptProperties = PropertiesService.getScriptProperties();
       scriptProperties.deleteProperty(`TRIGGER_${triggerId}_SHEET`);
       scriptProperties.deleteProperty(`TRIGGER_${triggerId}_FREQUENCY`);
+      scriptProperties.deleteProperty(`TRIGGER_${triggerId}_WEEKDAY`);
+      scriptProperties.deleteProperty(`TRIGGER_${triggerId}_HOUR`);
+      scriptProperties.deleteProperty(`TRIGGER_${triggerId}_MINUTE`);
+      scriptProperties.deleteProperty(`TRIGGER_${triggerId}_MONTHDAY`);
       
       return { success: true, message: 'Trigger deleted successfully' };
     } catch (e) {
-      Logger.log(`Error in deleteTrigger: ${e.message}`);
       return { success: false, error: e.message };
     }
   }
@@ -350,10 +454,33 @@ function getWeekDayFromNumber(dayNum) {
 }
 
 // Helper function to save sheet info for a trigger
-function saveSheetInfoForTrigger(triggerId, sheetName, frequency) {
+function saveSheetInfoForTrigger(triggerId, sheetName, frequency, additionalInfo) {
   const scriptProperties = PropertiesService.getScriptProperties();
-  scriptProperties.setProperty(`TRIGGER_${triggerId}_SHEET`, sheetName);
-  scriptProperties.setProperty(`TRIGGER_${triggerId}_FREQUENCY`, frequency);
+  
+  // Build properties object to set all at once
+  const props = {};
+  props[`TRIGGER_${triggerId}_SHEET`] = sheetName;
+  props[`TRIGGER_${triggerId}_FREQUENCY`] = frequency;
+  
+  // Add additional info if provided
+  if (additionalInfo) {
+    if (additionalInfo.weekDay !== undefined) {
+      props[`TRIGGER_${triggerId}_WEEKDAY`] = String(additionalInfo.weekDay);
+    }
+    if (additionalInfo.hour !== undefined) {
+      props[`TRIGGER_${triggerId}_HOUR`] = String(additionalInfo.hour);
+    }
+    if (additionalInfo.minute !== undefined) {
+      props[`TRIGGER_${triggerId}_MINUTE`] = String(additionalInfo.minute);
+    }
+    if (additionalInfo.monthDay !== undefined) {
+      props[`TRIGGER_${triggerId}_MONTHDAY`] = String(additionalInfo.monthDay);
+    }
+  }
+  
+  // Set all properties at once
+  scriptProperties.setProperties(props);
+  
 }
 
 // Helper function to capitalize first letter
@@ -373,4 +500,19 @@ this.deleteTrigger = TriggerManagerUI.deleteTrigger;
  */
 function showTriggerManager() {
   return TriggerManagerUI.showTriggerManager();
+}
+
+/**
+ * Creates a sync trigger - global function callable from client-side
+ * This is the newer version that properly saves weekday/time info
+ */
+function createSyncTriggerV2(triggerData) {
+  return TriggerManagerUI.createSyncTrigger(triggerData);
+}
+
+/**
+ * Deletes a trigger - global function callable from client-side
+ */
+function deleteTrigger(triggerId) {
+  return TriggerManagerUI.deleteTrigger(triggerId);
 } 

@@ -130,6 +130,7 @@
     
     // If form is valid, create the trigger
     if (isValid) {
+      
       // Show loading spinner and disable buttons
       document.getElementById('saveLoading').style.display = 'inline-flex';
       
@@ -172,8 +173,8 @@
                   }
                   
                   // Create the table to hold triggers
-                  const container = document.querySelector('.container');
-                  const createHeading = document.querySelector('h4');
+                  const contentSection = document.querySelector('.content-section');
+                  const scheduleSection = document.querySelector('.schedule-section');
                   
                   const existingTriggersDiv = document.createElement('div');
                   existingTriggersDiv.className = 'existing-triggers fade-in';
@@ -191,7 +192,7 @@
                     </table>
                   `;
                   
-                  container.insertBefore(existingTriggersDiv, createHeading);
+                  contentSection.insertBefore(existingTriggersDiv, scheduleSection);
                 }, 300);
               }
               
@@ -233,6 +234,11 @@
               });
               
               updateFormVisibility();
+            } else if (result.forceRefresh) {
+              // For multiple weekly triggers, do a full refresh
+              setTimeout(() => {
+                google.script.run.showTriggerManager();
+              }, 500);
             } else {
               // If we don't have trigger info, just do a full refresh
               google.script.run.showTriggerManager();
@@ -260,7 +266,7 @@
           
           showStatus('error', 'Error: ' + error.message);
         })
-        .createSyncTrigger(triggerData);
+        .createSyncTriggerV2(triggerData);
     }
   }
   
@@ -404,8 +410,6 @@
   // Optional: Play sound for feedback
   function playSound(type) {
     // This is optional and would require adding audio elements to the HTML
-    // For now, we'll just log a message
-    console.log('Sound played: ' + type);
   }
   
   // Add ripple effect styles
@@ -445,6 +449,7 @@
     }
   `;
   document.head.appendChild(style);
+  
   
   // Initial form setup
   document.addEventListener('DOMContentLoaded', function() {
