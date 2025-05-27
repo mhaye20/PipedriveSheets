@@ -3,85 +3,53 @@
   function updateFormVisibility() {
     const frequency = document.getElementById('frequency').value;
     
-    // Add transition for smoother UI changes
-    const allGroups = ['hourlyGroup', 'weeklyGroup', 'monthlyGroup', 'timeGroup'];
-    allGroups.forEach(id => {
-      const element = document.getElementById(id);
-      if (element) {
-        element.style.transition = 'opacity 0.3s, max-height 0.3s';
-        element.style.overflow = 'hidden';
-      }
-    });
+    // Hide all groups first
+    document.getElementById('hourlyGroup').style.display = 'none';
+    document.getElementById('weeklyGroup').style.display = 'none';
+    document.getElementById('monthlyGroup').style.display = 'none';
+    document.getElementById('timeGroupInline').style.display = 'none';
+    document.getElementById('timeGroupStandalone').style.display = 'none';
     
-    // Hide all specific groups first
-    document.getElementById('hourlyGroup').style.opacity = '0';
-    document.getElementById('hourlyGroup').style.maxHeight = '0';
-    document.getElementById('weeklyGroup').style.opacity = '0';
-    document.getElementById('weeklyGroup').style.maxHeight = '0';
-    document.getElementById('monthlyGroup').style.opacity = '0';
-    document.getElementById('monthlyGroup').style.maxHeight = '0';
-    document.getElementById('timeGroup').style.opacity = '0';
-    document.getElementById('timeGroup').style.maxHeight = '0';
+    // Hide all help texts
+    document.getElementById('hourlyHelpText').style.display = 'none';
+    document.getElementById('monthlyHelpText').style.display = 'none';
+    document.getElementById('timeHelpText').style.display = 'none';
     
-    // Handle hourly help text visibility
-    const hourlyHelpText = document.getElementById('hourlyHelpText');
-    if (hourlyHelpText) {
-      hourlyHelpText.style.transition = 'opacity 0.3s';
-      hourlyHelpText.style.opacity = '0';
+    // Show relevant groups based on selection
+    if (frequency === 'hourly') {
+      document.getElementById('hourlyGroup').style.display = 'block';
+      document.getElementById('hourlyHelpText').style.display = 'block';
+    } else if (frequency === 'daily') {
+      document.getElementById('timeGroupInline').style.display = 'block';
+      document.getElementById('timeHelpText').style.display = 'block';
+    } else if (frequency === 'weekly') {
+      document.getElementById('timeGroupInline').style.display = 'block';
+      document.getElementById('weeklyGroup').style.display = 'block';
+      document.getElementById('timeHelpText').style.display = 'block';
+    } else if (frequency === 'monthly') {
+      document.getElementById('monthlyGroup').style.display = 'block';
+      document.getElementById('timeGroupStandalone').style.display = 'block';
+      document.getElementById('monthlyHelpText').style.display = 'block';
     }
     
-    // Small delay for smoother transitions
-    setTimeout(() => {
-      document.getElementById('hourlyGroup').style.display = 'none';
-      document.getElementById('weeklyGroup').style.display = 'none';
-      document.getElementById('monthlyGroup').style.display = 'none';
-      document.getElementById('timeGroup').style.display = 'none';
-      
-      if (hourlyHelpText) {
-        hourlyHelpText.style.display = 'none';
-      }
-      
-      // Show relevant groups based on selection
-      if (frequency === 'hourly') {
-        const hourlyGroup = document.getElementById('hourlyGroup');
-        hourlyGroup.style.display = 'block';
-        if (hourlyHelpText) {
-          hourlyHelpText.style.display = 'block';
-        }
-        // Small delay to ensure display change takes effect before animation
-        setTimeout(() => {
-          hourlyGroup.style.opacity = '1';
-          hourlyGroup.style.maxHeight = '200px';
-          if (hourlyHelpText) {
-            hourlyHelpText.style.opacity = '1';
-          }
-        }, 10);
-      } else {
-        const timeGroup = document.getElementById('timeGroup');
-        timeGroup.style.display = 'block';
-        
-        setTimeout(() => {
-          timeGroup.style.opacity = '1';
-          timeGroup.style.maxHeight = '200px';
-          
-          if (frequency === 'weekly') {
-            const weeklyGroup = document.getElementById('weeklyGroup');
-            weeklyGroup.style.display = 'block';
-            setTimeout(() => {
-              weeklyGroup.style.opacity = '1';
-              weeklyGroup.style.maxHeight = '200px';
-            }, 10);
-          } else if (frequency === 'monthly') {
-            const monthlyGroup = document.getElementById('monthlyGroup');
-            monthlyGroup.style.display = 'block';
-            setTimeout(() => {
-              monthlyGroup.style.opacity = '1';
-              monthlyGroup.style.maxHeight = '200px';
-            }, 10);
-          }
-        }, 10);
-      }
-    }, 300);
+    // Sync time values between inline and standalone groups
+    syncTimeValues();
+  }
+  
+  // Sync time values between inline and standalone time inputs
+  function syncTimeValues() {
+    const hourInline = document.getElementById('hourInline');
+    const minuteInline = document.getElementById('minuteInline');
+    const hourStandalone = document.getElementById('hourStandalone');
+    const minuteStandalone = document.getElementById('minuteStandalone');
+    
+    // Sync values
+    if (hourInline && hourStandalone) {
+      hourStandalone.value = hourInline.value;
+    }
+    if (minuteInline && minuteStandalone) {
+      minuteStandalone.value = minuteInline.value;
+    }
   }
   
   // Toggle day button selection with ripple effect
@@ -125,8 +93,14 @@
     if (frequency === 'hourly') {
       triggerData.hourlyInterval = document.getElementById('hourlyInterval').value;
     } else {
-      triggerData.hour = document.getElementById('hour').value;
-      triggerData.minute = document.getElementById('minute').value;
+      // Get hour and minute from the appropriate time group
+      if (frequency === 'monthly') {
+        triggerData.hour = document.getElementById('hourStandalone').value;
+        triggerData.minute = document.getElementById('minuteStandalone').value;
+      } else {
+        triggerData.hour = document.getElementById('hourInline').value;
+        triggerData.minute = document.getElementById('minuteInline').value;
+      }
       
       if (frequency === 'weekly') {
         // Get selected days
@@ -487,5 +461,35 @@
         this.parentElement.classList.remove('focused');
       });
     });
+    
+    // Add event listeners to sync time inputs
+    const hourInline = document.getElementById('hourInline');
+    const minuteInline = document.getElementById('minuteInline');
+    const hourStandalone = document.getElementById('hourStandalone');
+    const minuteStandalone = document.getElementById('minuteStandalone');
+    
+    if (hourInline) {
+      hourInline.addEventListener('change', function() {
+        if (hourStandalone) hourStandalone.value = this.value;
+      });
+    }
+    
+    if (minuteInline) {
+      minuteInline.addEventListener('change', function() {
+        if (minuteStandalone) minuteStandalone.value = this.value;
+      });
+    }
+    
+    if (hourStandalone) {
+      hourStandalone.addEventListener('change', function() {
+        if (hourInline) hourInline.value = this.value;
+      });
+    }
+    
+    if (minuteStandalone) {
+      minuteStandalone.addEventListener('change', function() {
+        if (minuteInline) minuteInline.value = this.value;
+      });
+    }
   });
 </script> 
