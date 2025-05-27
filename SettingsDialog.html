@@ -79,6 +79,9 @@
       font-size: 13px;
       color: var(--text-light);
       margin-bottom: 16px;
+      border: 2px #ffffff8a groove;
+      border-radius: 10px;
+      padding: 10px;
     }
 
     .container {
@@ -527,7 +530,6 @@
       font-weight: 500;
       cursor: pointer;
       font-size: 11px;
-      text-decoration: underline;
       margin-left: 8px;
       white-space: nowrap;
       opacity: 0.85;
@@ -727,6 +729,8 @@
       align-items: center;
       justify-content: space-between;
       margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(95, 74, 0, 0.1);
     }
 
     .entity-info-title {
@@ -1578,7 +1582,7 @@
               <li><strong>Stage/Pipeline:</strong> Enter stage or pipeline names (for Deals)</li>
             </ul>
             
-            <h4>Read-only fields include:</h4>
+            <h4 style="margin-top: 20px;">Read-only fields include:</h4>
             <ul class="field-list">
               <li><strong>System fields:</strong> Created date, updated date, ID, creator info</li>
               <li><strong>Calculated values:</strong> Weighted values, formatted addresses, totals</li>
@@ -2120,7 +2124,7 @@
                 ${getEditableLinkedFieldsForEntity(entityType)}
               </ul>
               
-              <h4>Read-only fields include:</h4>
+              <h4 style="margin-top: 20px;">Read-only fields include:</h4>
               <ul class="field-list">
                 <li><strong>System fields:</strong> Created date, updated date, ID, creator info</li>
                 <li><strong>Calculated values:</strong> Weighted values, formatted addresses, totals</li>
@@ -2130,7 +2134,7 @@
               
               <div class="entity-info-tip">
                 <span class="tip-icon">💡</span>
-                <span>For linked fields, simply type the name and it will be converted to the appropriate ID when saving.</span>
+                <span>To edit fields from other entities, create a filter for that specific entity type.</span>
               </div>
             `;
           }
