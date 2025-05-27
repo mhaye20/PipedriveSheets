@@ -144,7 +144,81 @@ const PaymentService = {
    * Check if user has access to a specific feature
    */
   hasFeatureAccess(feature) {
-    // First check cache
+    // First check if user is part of a team
+    const userEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+    
+    if (userEmail && isUserInTeam(userEmail)) {
+      // User is in a team - check if the team owner has a Team plan
+      const userTeam = getUserTeam(userEmail);
+      Logger.log('User team data: ' + JSON.stringify(userTeam));
+      
+      if (userTeam) {
+        const teamsData = getTeamsData();
+        const team = teamsData[userTeam.teamId];
+        Logger.log('Team data: ' + JSON.stringify(team));
+        
+        if (team) {
+          // Use createdBy if available, otherwise use first admin as team owner
+          const teamOwnerEmail = team.createdBy || (team.adminEmails && team.adminEmails[0]);
+          
+          if (!teamOwnerEmail) {
+            Logger.log('[hasFeatureAccess] No team owner found for team: ' + userTeam.teamId);
+            return false;
+          }
+          
+          Logger.log('Checking team owner subscription for: ' + teamOwnerEmail);
+          // Check cache first for team owner's subscription
+          const cache = CacheService.getUserCache();
+          const cacheKey = 'team_owner_sub_' + teamOwnerEmail.toLowerCase();
+          const cachedOwnerStatus = cache.get(cacheKey);
+          
+          let ownerHasTeamPlan = false;
+          
+          if (cachedOwnerStatus) {
+            ownerHasTeamPlan = cachedOwnerStatus === 'team';
+          } else {
+            // Check the subscription status of the team creator/owner
+            try {
+              // Normalize the team owner email for consistent checking
+              const normalizedOwnerEmail = teamOwnerEmail.toLowerCase();
+              
+              const response = UrlFetchApp.fetch(`${this.API_URL}/subscription/status`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                payload: JSON.stringify({
+                  email: normalizedOwnerEmail,
+                  googleUserId: '', // Let backend handle user ID lookup
+                  scriptId: ScriptApp.getScriptId()
+                }),
+                muteHttpExceptions: true
+              });
+              
+              if (response.getResponseCode() === 200) {
+                const ownerData = JSON.parse(response.getContentText());
+                Logger.log('Team owner subscription data: ' + JSON.stringify(ownerData));
+                ownerHasTeamPlan = ownerData.plan === 'team' && ownerData.status === 'active';
+                // Cache the result for 5 minutes
+                cache.put(cacheKey, ownerData.plan, 300);
+              } else {
+                Logger.log('Failed to get team owner subscription. Response code: ' + response.getResponseCode());
+                Logger.log('Response: ' + response.getContentText());
+              }
+            } catch (error) {
+              Logger.log('Error checking team owner subscription: ' + error.message);
+            }
+          }
+          
+          if (ownerHasTeamPlan) {
+            // Team owner has active Team plan, grant access to all team features
+            return true;
+          }
+        }
+      }
+    }
+    
+    // Fall back to checking individual subscription
     const cache = CacheService.getUserCache();
     const cachedStatus = cache.get('subscription_status');
     
@@ -172,6 +246,91 @@ const PaymentService = {
    * Get user's current plan details
    */
   getCurrentPlan() {
+    const userEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+    
+    // Check if user is a team member with inherited Team plan
+    if (userEmail && isUserInTeam(userEmail)) {
+      Logger.log('[getCurrentPlan] User is in team, checking for inherited access');
+      const userTeam = getUserTeam(userEmail);
+      if (userTeam) {
+        Logger.log('[getCurrentPlan] User team: ' + JSON.stringify(userTeam));
+        const teamsData = getTeamsData();
+        const team = teamsData[userTeam.teamId];
+        
+        if (team) {
+          // Use createdBy if available, otherwise use first admin as team owner
+          const teamOwnerEmail = team.createdBy || (team.adminEmails && team.adminEmails[0]);
+          
+          if (!teamOwnerEmail) {
+            Logger.log('[getCurrentPlan] No team owner found for team: ' + userTeam.teamId);
+            // Fall back to individual subscription check
+          } else {
+            Logger.log('[getCurrentPlan] Team owner email: ' + teamOwnerEmail);
+            
+            // Check if team owner has active Team plan
+            const cache = CacheService.getUserCache();
+            const cacheKey = 'team_owner_sub_' + teamOwnerEmail.toLowerCase();
+            const cachedOwnerStatus = cache.get(cacheKey);
+          
+          let ownerHasTeamPlan = false;
+          
+          if (cachedOwnerStatus) {
+            ownerHasTeamPlan = cachedOwnerStatus === 'team';
+          } else {
+            try {
+              const response = UrlFetchApp.fetch(`${this.API_URL}/subscription/status`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                payload: JSON.stringify({
+                  email: teamOwnerEmail.toLowerCase(),
+                  googleUserId: '', // Let backend handle user ID lookup
+                  scriptId: ScriptApp.getScriptId()
+                }),
+                muteHttpExceptions: true
+              });
+              
+              Logger.log('[getCurrentPlan] API Response code: ' + response.getResponseCode());
+              
+              if (response.getResponseCode() === 200) {
+                const ownerData = JSON.parse(response.getContentText());
+                Logger.log('[getCurrentPlan] Owner subscription data: ' + JSON.stringify(ownerData));
+                ownerHasTeamPlan = ownerData.plan === 'team' && ownerData.status === 'active';
+                cache.put(cacheKey, ownerData.plan, 300);
+              } else {
+                Logger.log('[getCurrentPlan] Failed to get owner subscription: ' + response.getContentText());
+              }
+            } catch (error) {
+              Logger.log('Error checking team owner subscription: ' + error.message);
+            }
+          }
+          
+          if (ownerHasTeamPlan) {
+            // Return team plan details with inherited status
+            return {
+              plan: 'team',
+              status: 'active',
+              isInherited: true,
+              teamName: team.name,
+              teamOwner: teamOwnerEmail,
+              details: {
+                name: 'Team',
+                limits: {
+                  rows: 5000,
+                  filters: -1,
+                  users: 5
+                },
+                features: ['two_way_sync', 'scheduled_sync', 'bulk_operations', 'team_features', 'shared_filters', 'admin_dashboard', 'priority_support']
+              }
+            };
+          }
+          }
+        }
+      }
+    }
+    
+    // Get individual subscription status
     const subscription = this.getSubscriptionStatus();
     
     const planDetails = {

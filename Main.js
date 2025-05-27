@@ -260,17 +260,7 @@ function getCurrentPlan() {
  * Shows the manage subscription dialog
  */
 function showManageSubscription() {
-  const currentPlan = PaymentService.getCurrentPlan();
-  
-  if (currentPlan.plan === 'free') {
-    SpreadsheetApp.getUi().alert(
-      'No Active Subscription',
-      'You are currently on the Free plan. Use "Upgrade Plan" to subscribe to a premium plan.',
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
-    return;
-  }
-  
+  // Let the dialog handle all plan types including inherited team plans
   PaymentService.showManageSubscriptionDialog();
 }
 

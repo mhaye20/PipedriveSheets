@@ -175,6 +175,11 @@
       margin-top: 12px;
       font-size: 14px;
     }
+    
+    .team-member-badge {
+      background: linear-gradient(135deg, #ff9800 0%, #ff5722 100%);
+      color: white;
+    }
   </style>
 </head>
 <body>
@@ -182,7 +187,47 @@
     <div class="subscription-card">
       <h2>Your Subscription</h2>
       
-      <? if (currentPlan.plan === 'free') { ?>
+      <? if (currentPlan.isInherited) { ?>
+      <!-- Team Member with Inherited Plan -->
+      <div class="plan-info">
+        <div class="info-row">
+          <span class="info-label">Current Plan</span>
+          <span class="info-value">
+            <span class="plan-badge team">Team (Member)</span>
+          </span>
+        </div>
+        
+        <div class="info-row">
+          <span class="info-label">Status</span>
+          <span class="info-value status-active">Active (Team Member)</span>
+        </div>
+        
+        <div class="info-row">
+          <span class="info-label">Team</span>
+          <span class="info-value"><?= currentPlan.teamName ?></span>
+        </div>
+        
+        <div class="info-row">
+          <span class="info-label">Added By</span>
+          <span class="info-value"><?= currentPlan.teamOwner ?></span>
+        </div>
+        
+        <div class="info-row">
+          <span class="info-label">Your Email</span>
+          <span class="info-value"><?= userEmail ?></span>
+        </div>
+      </div>
+      
+      <div class="note" style="background: #e8f5e9; color: #2e7d32;">
+        <strong>Team Member Access:</strong> You have been added to the "<?= currentPlan.teamName ?>" team by <?= currentPlan.teamOwner ?>. You have access to all Team plan features including two-way sync, scheduled updates, team collaboration features, and up to 5,000 rows.
+      </div>
+      
+      <div class="actions">
+        <button class="btn btn-secondary" onclick="google.script.host.close()">
+          Close
+        </button>
+      </div>
+      <? } else if (currentPlan.plan === 'free') { ?>
       <div class="plan-info">
         <div class="info-row">
           <span class="info-label">Current Plan</span>
