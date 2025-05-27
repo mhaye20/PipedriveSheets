@@ -130,9 +130,7 @@
     .scrollable {
       flex-grow: 1;
       overflow-y: auto;
-      border: 1px solid var(--border-color);
-      border-radius: 4px;
-      background-color: white;
+      overflow-x: hidden;
     }
 
     .item {
@@ -633,6 +631,7 @@
       margin-bottom: 8px;
       max-height: 550px;
       overflow-y: auto;
+      overflow-x: hidden;
     }
 
     .list .item {
@@ -659,6 +658,18 @@
       flex-wrap: wrap;
       word-break: break-word;
       padding-right: 8px;
+      flex-grow: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Ensure lock icon stays visible */
+    .column-text .lock-icon {
+      position: relative;
+      z-index: 1;
+      margin-right: 4px;
+      flex-shrink: 0;
     }
 
     /* Style for custom named columns */
@@ -2344,6 +2355,7 @@
                 const elements = document.querySelectorAll(`.item[data-key="${col.key}"] .column-text`);
                 elements.forEach(el => {
                   el.textContent = betterName;
+                  el.title = betterName; // Update tooltip as well
                 });
                 
                 // Update our local data too
@@ -2457,11 +2469,14 @@
           }
 
           columnText.appendChild(document.createTextNode(col.name));
+          columnText.title = col.name; // Show full name in tooltip
+          
           if (col.customName) {
             columnText.title = "Original field: " + col.name;
             columnText.style.fontStyle = 'italic';
             columnText.classList.add('custom-named');
           }
+          
           item.appendChild(columnText);
 
           // Create add button
@@ -2592,11 +2607,14 @@
             }
 
             columnText.appendChild(document.createTextNode(col.name));
+            columnText.title = col.name; // Show full name in tooltip
+            
             if (col.customName) {
               columnText.title = "Original field: " + col.name;
               columnText.style.fontStyle = 'italic';
               columnText.classList.add('custom-named');
             }
+            
             item.appendChild(columnText);
 
             // Create add button
@@ -2736,11 +2754,14 @@
         }
 
         columnText.appendChild(document.createTextNode(col.customName || col.name));
+        columnText.title = col.customName || col.name; // Show full name in tooltip
+        
         if (col.customName) {
-          columnText.title = "Original field: " + col.name;
+          columnText.title = col.customName + " (Original: " + col.name + ")";
           columnText.style.fontStyle = 'italic';
           columnText.classList.add('custom-named');
         }
+        
         item.appendChild(columnText);
 
         // Create container for action buttons
@@ -3543,6 +3564,7 @@
         })
         .getColumnsDataForEntity(currentEntityType, currentSheetName);
     }
+    
   </script>
 </body>
 </html>
