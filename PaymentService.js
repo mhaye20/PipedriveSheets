@@ -85,13 +85,17 @@ const PaymentService = {
       Logger.log('Plan Type: ' + planType);
       Logger.log('API URL: ' + this.API_URL);
       
+      // Get the current spreadsheet URL for proper redirect
+      const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+      const spreadsheetUrl = spreadsheet.getUrl();
+      
       const payload = {
         email: userEmail,
         googleUserId: userId,
         scriptId: ScriptApp.getScriptId(),
         planType: planType, // 'pro_monthly', 'pro_annual', 'team_monthly', 'team_annual'
-        successUrl: 'https://docs.google.com/spreadsheets', // Redirect after payment
-        cancelUrl: 'https://docs.google.com/spreadsheets'
+        successUrl: spreadsheetUrl + '?upgrade=success', // Redirect back to this spreadsheet
+        cancelUrl: spreadsheetUrl + '?upgrade=cancelled'
       };
       
       Logger.log('Payload: ' + JSON.stringify(payload));
@@ -232,5 +236,95 @@ const PaymentService = {
       .setHeight(600);
       
     SpreadsheetApp.getUi().showModalDialog(html, 'Upgrade Your Plan');
+  },
+  
+  /**
+   * Show manage subscription dialog
+   */
+  showManageSubscriptionDialog() {
+    const template = HtmlService.createTemplateFromFile('ManageSubscription');
+    template.currentPlan = this.getCurrentPlan();
+    template.userEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+    
+    const html = template.evaluate()
+      .setWidth(450)
+      .setHeight(400);
+      
+    SpreadsheetApp.getUi().showModalDialog(html, 'Manage Subscription');
+  },
+  
+  /**
+   * Create a Stripe customer portal session for managing subscription
+   */
+  createCustomerPortalSession() {
+    try {
+      const userEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+      const userId = Session.getTemporaryActiveUserKey() || 'anonymous-' + Utilities.getUuid();
+      const scriptId = ScriptApp.getScriptId();
+      
+      Logger.log('Creating customer portal session:');
+      Logger.log('Email: ' + userEmail);
+      Logger.log('User ID: ' + userId);
+      Logger.log('Script ID: ' + scriptId);
+      Logger.log('API URL: ' + this.API_URL);
+      
+      const payload = {
+        email: userEmail,
+        googleUserId: userId,
+        scriptId: scriptId,
+        returnUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl()
+      };
+      
+      Logger.log('Portal payload: ' + JSON.stringify(payload));
+      
+      const response = UrlFetchApp.fetch(`${this.API_URL}/create-portal-session`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      });
+      
+      Logger.log('Portal response code: ' + response.getResponseCode());
+      Logger.log('Portal response text: ' + response.getContentText());
+      
+      if (response.getResponseCode() === 404) {
+        Logger.log('404 Error - endpoint not found. Backend may need redeployment.');
+        throw new Error('Portal endpoint not available. Please try again later.');
+      }
+      
+      if (response.getResponseCode() !== 200) {
+        const errorText = response.getContentText();
+        try {
+          const errorData = JSON.parse(errorText);
+          const errorMessage = errorData.error || 'Failed to create portal session';
+          Logger.log('Portal error: ' + errorMessage);
+          
+          if (errorMessage.includes('No active subscription')) {
+            throw new Error('No active subscription found. Please ensure you have completed payment.');
+          }
+          
+          throw new Error(errorMessage);
+        } catch (parseError) {
+          Logger.log('Error parsing response: ' + parseError);
+          throw new Error('Failed to create portal session');
+        }
+      }
+      
+      const data = JSON.parse(response.getContentText());
+      
+      if (!data.portalUrl) {
+        Logger.log('No portal URL in response: ' + JSON.stringify(data));
+        throw new Error('No portal URL returned from server');
+      }
+      
+      return data.portalUrl;
+      
+    } catch (error) {
+      Logger.log('Error in createCustomerPortalSession: ' + error.toString());
+      Logger.log('Error stack: ' + error.stack);
+      throw error;
+    }
   }
 };

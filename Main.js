@@ -39,6 +39,53 @@ function onOpen() {
   ui.createMenu('Pipedrive')
     .addItem('Initialize Pipedrive Menu', 'initializePipedriveMenu')
     .addToUi();
+    
+  // Check if user just completed a payment (detect URL parameter)
+  checkForPaymentSuccess();
+}
+
+/**
+ * Check if user just returned from successful payment
+ */
+function checkForPaymentSuccess() {
+  try {
+    // Get current URL to check for success parameter
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const url = spreadsheet.getUrl();
+    
+    // This is a simple check - in a real implementation you might want to 
+    // use a more sophisticated method to detect the redirect
+    // For now, we'll use a timed approach or let the user manually check
+    
+    // Alternative: Set a flag in Properties when payment starts, check when it completes
+    const userProperties = PropertiesService.getUserProperties();
+    const paymentInProgress = userProperties.getProperty('PAYMENT_IN_PROGRESS');
+    
+    if (paymentInProgress) {
+      // Clear the flag
+      userProperties.deleteProperty('PAYMENT_IN_PROGRESS');
+      
+      // Small delay to ensure webhook has processed
+      Utilities.sleep(2000);
+      
+      // Check if subscription was upgraded
+      const currentPlan = PaymentService.getCurrentPlan();
+      if (currentPlan.plan !== 'free') {
+        // Show success message
+        const ui = SpreadsheetApp.getUi();
+        ui.alert(
+          'Payment Successful! 🎉',
+          `Welcome to ${currentPlan.details.name}! Your premium features are now active.\n\n` +
+          `✅ ${currentPlan.details.features.join('\n✅ ')}\n\n` +
+          'You can now access all premium features from the Pipedrive menu.',
+          ui.ButtonSet.OK
+        );
+      }
+    }
+  } catch (error) {
+    // Silently handle errors in this check
+    Logger.log('Error checking payment success: ' + error.message);
+  }
 }
 
 /**
@@ -107,6 +154,7 @@ function createPipedriveMenu() {
       .addItem('⏱️ Schedule Sync', 'showTriggerManager')
       .addSeparator()
       .addItem('💎 Upgrade Plan', 'showUpgradeDialog')
+      .addItem('💳 Manage Subscription', 'showManageSubscription')
       .addItem('ℹ️ Help & About', 'showHelp');
       
   menu.addToUi();
@@ -126,6 +174,48 @@ function showUpgradeDialog() {
  */
 function createCheckoutSession(planType) {
   return PaymentService.createCheckoutSession(planType);
+}
+
+/**
+ * Sets a flag indicating payment is in progress
+ */
+function setPaymentInProgress() {
+  const userProperties = PropertiesService.getUserProperties();
+  userProperties.setProperty('PAYMENT_IN_PROGRESS', 'true');
+}
+
+/**
+ * Gets the current plan - called from HTML dialog
+ * @return {Object} The current plan details
+ */
+function getCurrentPlan() {
+  return PaymentService.getCurrentPlan();
+}
+
+/**
+ * Shows the manage subscription dialog
+ */
+function showManageSubscription() {
+  const currentPlan = PaymentService.getCurrentPlan();
+  
+  if (currentPlan.plan === 'free') {
+    SpreadsheetApp.getUi().alert(
+      'No Active Subscription',
+      'You are currently on the Free plan. Use "Upgrade Plan" to subscribe to a premium plan.',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+    return;
+  }
+  
+  PaymentService.showManageSubscriptionDialog();
+}
+
+/**
+ * Creates a customer portal session - called from HTML dialog
+ * @return {string} The portal URL or null if error
+ */
+function createCustomerPortalSession() {
+  return PaymentService.createCustomerPortalSession();
 }
 
 /**

@@ -232,6 +232,15 @@
       font-size: 14px;
     }
     
+    .info-message {
+      background: #e3f2fd;
+      color: #1565c0;
+      padding: 10px;
+      border-radius: 8px;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    
     .loading {
       display: inline-block;
       width: 20px;
@@ -409,9 +418,25 @@
       google.script.run
         .withSuccessHandler(function(checkoutUrl) {
           if (checkoutUrl) {
+            // Set payment in progress flag
+            google.script.run.setPaymentInProgress();
+            
+            // Show instructions before opening checkout
+            button.innerHTML = 'Opening checkout...';
+            showInfo('Opening Stripe checkout in a new tab. After completing payment, return to this sheet to see your upgraded features.');
+            
             // Open Stripe checkout in new tab
             window.open(checkoutUrl, '_blank');
-            google.script.host.close();
+            
+            // Wait a moment then update the dialog
+            setTimeout(function() {
+              button.innerHTML = 'Waiting for payment...';
+              showInfo('Complete your payment in the Stripe checkout tab. When done, close this dialog and refresh the sheet to see your new features.');
+              
+              // Add a check status button
+              const container = document.getElementById('error-container');
+              container.innerHTML = '<button class="upgrade-btn secondary" onclick="checkPaymentStatus()">Check Payment Status</button>';
+            }, 2000);
           } else {
             showError('Failed to create checkout session. Please try again.');
             button.disabled = false;
@@ -432,6 +457,29 @@
       setTimeout(() => {
         container.innerHTML = '';
       }, 5000);
+    }
+    
+    function showInfo(message) {
+      const container = document.getElementById('error-container');
+      container.innerHTML = '<div class="info-message">' + message + '</div>';
+    }
+    
+    function checkPaymentStatus() {
+      google.script.run
+        .withSuccessHandler(function(plan) {
+          if (plan && plan.plan !== 'free') {
+            showInfo('Payment successful! Your ' + plan.details.name + ' plan is now active. You can close this dialog.');
+            setTimeout(() => {
+              google.script.host.close();
+            }, 3000);
+          } else {
+            showInfo('Payment is still processing. Please wait a moment and try again.');
+          }
+        })
+        .withFailureHandler(function(error) {
+          showError('Error checking status: ' + error.message);
+        })
+        .getCurrentPlan();
     }
   </script>
 </body>

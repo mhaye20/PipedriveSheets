@@ -164,6 +164,52 @@ function clearPaymentCache() {
   console.log('✅ Payment cache cleared');
 }
 
+// Test customer portal creation
+function testCustomerPortal() {
+  try {
+    console.log('=== TESTING CUSTOMER PORTAL ===');
+    
+    // First check current subscription
+    const plan = PaymentService.getCurrentPlan();
+    console.log('Current plan:', plan.plan);
+    console.log('Status:', plan.status);
+    
+    if (plan.plan === 'free') {
+      console.log('❌ No active subscription. Complete a test payment first.');
+      return;
+    }
+    
+    // Get user details
+    const userEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+    const userId = Session.getTemporaryActiveUserKey();
+    const scriptId = ScriptApp.getScriptId();
+    
+    console.log('\nUser Details:');
+    console.log('Email:', userEmail);
+    console.log('User ID:', userId);
+    console.log('Script ID:', scriptId);
+    
+    // Try to create portal session
+    console.log('\nCreating customer portal session...');
+    const portalUrl = PaymentService.createCustomerPortalSession();
+    
+    if (portalUrl) {
+      console.log('✅ Portal URL created successfully!');
+      console.log('URL:', portalUrl);
+    } else {
+      console.log('❌ Failed to create portal URL');
+    }
+    
+  } catch (error) {
+    console.error('❌ Error:', error.message);
+    console.log('\nCheck the Logs (View → Logs) for detailed error information');
+    console.log('\nCommon issues:');
+    console.log('1. Backend needs to be redeployed with the new endpoint');
+    console.log('2. Stripe Customer Portal needs to be activated');
+    console.log('3. No active subscription found for this user');
+  }
+}
+
 // Check authorization and email access
 function checkAuthorizationStatus() {
   console.log('=== AUTHORIZATION STATUS CHECK ===');

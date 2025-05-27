@@ -233,6 +233,41 @@ function getPlanFeatures(plan) {
   return features[plan] || [];
 }
 
+// Create Stripe customer portal session
+app.post('/api/create-portal-session', async (req, res) => {
+  try {
+    const { email, googleUserId, scriptId, returnUrl } = req.body;
+    
+    // Validate required fields
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Valid email address is required' });
+    }
+    
+    // Look up customer in database
+    const { data: subscription, error } = await supabase
+      .from('subscriptions')
+      .select('stripe_customer_id')
+      .eq('google_user_id', googleUserId)
+      .eq('script_id', scriptId)
+      .single();
+    
+    if (error || !subscription || !subscription.stripe_customer_id) {
+      return res.status(404).json({ error: 'No active subscription found' });
+    }
+    
+    // Create portal session
+    const portalSession = await stripe.billingPortal.sessions.create({
+      customer: subscription.stripe_customer_id,
+      return_url: returnUrl || 'https://docs.google.com/spreadsheets'
+    });
+    
+    res.json({ portalUrl: portalSession.url });
+  } catch (error) {
+    console.error('Error creating portal session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // For Vercel deployment
 if (process.env.VERCEL) {
   module.exports = app;
