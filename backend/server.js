@@ -182,11 +182,34 @@ app.post('/api/subscription/status', async (req, res) => {
       }
     }
     
+    // Check if subscription is scheduled for cancellation
+    let cancelAt = null;
+    let canceledAt = null;
+    if (subscription.stripe_subscription_id) {
+      try {
+        const stripeSubscription = await stripe.subscriptions.retrieve(
+          subscription.stripe_subscription_id
+        );
+        
+        if (stripeSubscription.cancel_at) {
+          cancelAt = new Date(stripeSubscription.cancel_at * 1000).toISOString();
+        }
+        
+        if (stripeSubscription.canceled_at) {
+          canceledAt = new Date(stripeSubscription.canceled_at * 1000).toISOString();
+        }
+      } catch (error) {
+        console.error('Error fetching cancellation details:', error);
+      }
+    }
+    
     res.json({
       plan: subscription.plan_type,
       status: subscription.status,
       expiresAt: subscription.expires_at,
-      features: getPlanFeatures(subscription.plan_type)
+      features: getPlanFeatures(subscription.plan_type),
+      cancelAt: cancelAt,
+      canceledAt: canceledAt
     });
     
   } catch (error) {

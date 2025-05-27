@@ -206,7 +206,9 @@ const PaymentService = {
     
     return {
       ...subscription,
-      details: planDetails[subscription.plan] || planDetails.free
+      details: planDetails[subscription.plan] || planDetails.free,
+      cancelAt: subscription.cancelAt,
+      canceledAt: subscription.canceledAt
     };
   },
   

@@ -83,6 +83,10 @@
       color: #0f9d58;
     }
     
+    .status-canceled {
+      color: #f57c00;
+    }
+    
     .actions {
       margin-top: 24px;
       display: flex;
@@ -213,10 +217,34 @@
         
         <div class="info-row">
           <span class="info-label">Status</span>
-          <span class="info-value status-active">
-            <?= currentPlan.status ? currentPlan.status.charAt(0).toUpperCase() + currentPlan.status.slice(1) : 'Active' ?>
+          <span class="info-value <?= currentPlan.cancelAt ? 'status-canceled' : 'status-active' ?>">
+            <? if (currentPlan.cancelAt) { ?>
+              Canceling
+            <? } else { ?>
+              <?= currentPlan.status ? currentPlan.status.charAt(0).toUpperCase() + currentPlan.status.slice(1) : 'Active' ?>
+            <? } ?>
           </span>
         </div>
+        
+        <? if (currentPlan.cancelAt) { ?>
+        <div class="info-row">
+          <span class="info-label">Access Until</span>
+          <span class="info-value" style="color: #f57c00; font-weight: 600;">
+            <?= new Date(currentPlan.cancelAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) ?>
+          </span>
+        </div>
+        
+        <div class="info-row">
+          <span class="info-label">Days Remaining</span>
+          <span class="info-value" style="color: #f57c00; font-weight: 600;">
+            <? 
+              var daysRemaining = Math.ceil((new Date(currentPlan.cancelAt) - new Date()) / (1000 * 60 * 60 * 24));
+              if (daysRemaining < 0) daysRemaining = 0;
+            ?>
+            <?= daysRemaining ?> days
+          </span>
+        </div>
+        <? } ?>
         
         <div class="info-row">
           <span class="info-label">Email</span>
@@ -237,6 +265,15 @@
       </div>
       
       <div class="actions">
+        <? if (currentPlan.cancelAt) { ?>
+        <button class="btn btn-primary" onclick="openCustomerPortal()">
+          Reactivate Subscription
+        </button>
+        
+        <button class="btn btn-secondary" onclick="openCustomerPortal()">
+          View Billing Details
+        </button>
+        <? } else { ?>
         <button class="btn btn-primary" onclick="openCustomerPortal()">
           Manage Billing & Payment
         </button>
@@ -250,10 +287,15 @@
         <button class="btn btn-danger" onclick="openCancelPortal()">
           Cancel Subscription
         </button>
+        <? } ?>
       </div>
       
       <div class="note">
+        <? if (currentPlan.cancelAt) { ?>
+        <strong>Important:</strong> Your subscription has been canceled but you will retain access to <?= currentPlan.details.name ?> features until <?= new Date(currentPlan.cancelAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) ?>. You can reactivate your subscription at any time before this date.
+        <? } else { ?>
         <strong>Note:</strong> You'll be redirected to Stripe's secure customer portal to manage your billing, update payment methods, download invoices, or cancel your subscription.
+        <? } ?>
       </div>
       <? } ?>
       
