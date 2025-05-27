@@ -110,3 +110,63 @@ The codebase is organized into the following files:
 ### Configuration
 
 - **appsscript.json**: Manifest file with OAuth scopes and add-on metadata 
+
+## FILE TREE: 
+
+PipedriveSheets
+├── .babelrc
+├── .clasp.json
+├── .claude
+│   └── settings.local.json
+├── .git
+├── .github
+│   └── workflows
+│       └── claude.yml
+├── .vscode
+├── CLAUDE.md
+├── ColumnSelector.html
+├── ColumnSelectorUI.js
+├── ComprehensiveFieldTest.js
+├── Constants.js
+├── HeaderService.js
+├── Help.html
+├── Main.js
+├── OAuth.js
+├── PipedriveAPI.js
+├── PipedriveDirectAPI.js
+├── PipedriveNpm.js
+├── PricingSummary.md
+├── README.md
+├── SettingsDialog.html
+├── SettingsDialogUI.js
+├── SyncService.js
+├── SyncStatus.html
+├── TeamAccess.js
+├── TeamData.js
+├── TeamManager.html
+├── TeamManagerUI.js
+├── TestOrganizationFix.js
+├── TestOrganizationPush.js
+├── TestPipedriveFields.js
+├── TriggerManager.html
+├── TriggerManagerUI.js
+├── TriggerManagerUI_Scripts.html
+├── TriggerManagerUI_Styles.html
+├── TwoWaySyncSettings.html
+├── TwoWaySyncSettingsUI.js
+├── UI.js
+├── Utilities.js
+├── appsscript.json
+├── dist
+├── gaswebpack.md
+├── node_modules
+├── package-lock.json
+├── package.json
+├── pipedriveAPIdocumentation.md
+├── pipedriveNPMapiV1.md
+├── pipedriveNPMapiV2.md
+├── pipedrive_client-nodejs.md
+├── src
+│   ├── api.js
+│   └── index.js
+└── webpack.gas.js
