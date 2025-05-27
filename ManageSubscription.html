@@ -74,6 +74,11 @@
       color: #f57c00;
     }
     
+    .plan-badge.free {
+      background: #e3f2fd;
+      color: #1976d2;
+    }
+    
     .status-active {
       color: #0f9d58;
     }
@@ -173,6 +178,31 @@
     <div class="subscription-card">
       <h2>Your Subscription</h2>
       
+      <? if (currentPlan.plan === 'free') { ?>
+      <div class="plan-info">
+        <div class="info-row">
+          <span class="info-label">Current Plan</span>
+          <span class="info-value">
+            <span class="plan-badge free">Free</span>
+          </span>
+        </div>
+        
+        <div class="info-row">
+          <span class="info-label">Status</span>
+          <span class="info-value">No active subscription</span>
+        </div>
+      </div>
+      
+      <div class="actions">
+        <button class="btn btn-primary" onclick="upgradeNow()">
+          Upgrade to Premium
+        </button>
+      </div>
+      
+      <div class="note">
+        You are currently on the Free plan with limited features. Upgrade to unlock premium features including two-way sync, scheduled updates, and more.
+      </div>
+      <? } else { ?>
       <div class="plan-info">
         <div class="info-row">
           <span class="info-label">Current Plan</span>
@@ -225,8 +255,15 @@
       <div class="note">
         <strong>Note:</strong> You'll be redirected to Stripe's secure customer portal to manage your billing, update payment methods, download invoices, or cancel your subscription.
       </div>
+      <? } ?>
       
       <div id="error-container"></div>
+      
+      <div style="text-align: center; margin-top: 20px;">
+        <button class="btn btn-secondary" onclick="refreshStatus()" style="font-size: 13px; padding: 8px 16px;">
+          Refresh Status
+        </button>
+      </div>
     </div>
   </div>
   
@@ -276,6 +313,31 @@
       setTimeout(() => {
         container.innerHTML = '';
       }, 5000);
+    }
+    
+    function upgradeNow() {
+      google.script.host.close();
+      google.script.run.showUpgradeDialog();
+    }
+    
+    function refreshStatus() {
+      const button = event.target;
+      button.disabled = true;
+      button.innerHTML = 'Refreshing<span class="loading"></span>';
+      
+      // Clear cache and reload
+      google.script.run
+        .withSuccessHandler(function() {
+          // Reload the dialog
+          google.script.run.showManageSubscription();
+          google.script.host.close();
+        })
+        .withFailureHandler(function(error) {
+          showError('Error refreshing status: ' + error.message);
+          button.disabled = false;
+          button.textContent = 'Refresh Status';
+        })
+        .clearSubscriptionCache();
     }
     
     // Global function for server-side call

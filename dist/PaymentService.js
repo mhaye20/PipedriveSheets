@@ -29,9 +29,9 @@ const PaymentService = {
       
       const data = JSON.parse(response.getContentText());
       
-      // Cache the result for 5 minutes to reduce API calls
+      // Cache the result for 1 minute (reduced from 5) to detect cancellations faster
       const cache = CacheService.getUserCache();
-      cache.put('subscription_status', JSON.stringify(data), 300);
+      cache.put('subscription_status', JSON.stringify(data), 60);
       
       return data;
     } catch (error) {
@@ -242,6 +242,9 @@ const PaymentService = {
    * Show manage subscription dialog
    */
   showManageSubscriptionDialog() {
+    // Clear cache to ensure we show the latest subscription status
+    this.clearSubscriptionCache();
+    
     const template = HtmlService.createTemplateFromFile('ManageSubscription');
     template.currentPlan = this.getCurrentPlan();
     template.userEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
@@ -251,6 +254,15 @@ const PaymentService = {
       .setHeight(400);
       
     SpreadsheetApp.getUi().showModalDialog(html, 'Manage Subscription');
+  },
+  
+  /**
+   * Clear the subscription cache
+   */
+  clearSubscriptionCache() {
+    const cache = CacheService.getUserCache();
+    cache.remove('subscription_status');
+    Logger.log('Subscription cache cleared');
   },
   
   /**

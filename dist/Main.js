@@ -219,6 +219,13 @@ function createCustomerPortalSession() {
 }
 
 /**
+ * Clears the subscription cache - called from HTML dialog
+ */
+function clearSubscriptionCache() {
+  PaymentService.clearSubscriptionCache();
+}
+
+/**
  * Checks if a user has any type of access
  * @param {string} userEmail The email address to check
  * @returns {boolean} True if the user has access, false otherwise

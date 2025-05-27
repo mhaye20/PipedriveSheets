@@ -149,20 +149,36 @@ app.post('/api/subscription/status', async (req, res) => {
         subscription.stripe_subscription_id
       );
       
-      if (stripeSubscription.status !== 'active') {
-        // Update database
+      // Update database with current status
+      if (stripeSubscription.status !== subscription.status) {
         await supabase
           .from('subscriptions')
-          .update({ status: stripeSubscription.status })
+          .update({ 
+            status: stripeSubscription.status,
+            updated_at: new Date().toISOString()
+          })
           .eq('id', subscription.id);
-          
-        if (stripeSubscription.status === 'canceled' || stripeSubscription.status === 'past_due') {
-          return res.json({
-            plan: 'free',
-            status: 'inactive',
-            features: []
-          });
-        }
+      }
+      
+      // Check various inactive states
+      const inactiveStates = ['canceled', 'incomplete', 'incomplete_expired', 'past_due', 'unpaid'];
+      if (inactiveStates.includes(stripeSubscription.status)) {
+        return res.json({
+          plan: 'free',
+          status: stripeSubscription.status,
+          features: [],
+          message: `Subscription ${stripeSubscription.status}`
+        });
+      }
+      
+      // Also check if subscription has a cancel_at date that has passed
+      if (stripeSubscription.cancel_at && new Date(stripeSubscription.cancel_at * 1000) < new Date()) {
+        return res.json({
+          plan: 'free',
+          status: 'canceled',
+          features: [],
+          message: 'Subscription has been canceled'
+        });
       }
     }
     
