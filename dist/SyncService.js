@@ -780,6 +780,30 @@ function writeDataToSheet(items, options) {
         Logger.log(`Error auto-resizing columns: ${e.message}`);
       }
     }
+    
+    // Check if timestamp is enabled for this sheet
+    const timestampEnabledKey = `TIMESTAMP_ENABLED_${sheetName}`;
+    const timestampEnabled = scriptProperties.getProperty(timestampEnabledKey) === 'true';
+    
+    // Add timestamp of last sync if enabled
+    if (timestampEnabled && items.length > 0) {
+      try {
+        const lastRow = sheet.getLastRow();
+        const timestampRow = lastRow + 2; // Add one blank row, then timestamp
+        
+        // Add the timestamp
+        sheet.getRange(timestampRow, 1).setValue('Last synced:');
+        sheet.getRange(timestampRow, 2).setValue(new Date()).setNumberFormat('yyyy-MM-dd HH:mm:ss');
+        
+        // Format the timestamp row for better visibility
+        sheet.getRange(timestampRow, 1, 1, 2).setFontWeight('bold');
+        sheet.getRange(timestampRow, 1, 1, 2).setBackground('#f1f3f4'); // Light gray background
+        
+        Logger.log(`Added sync timestamp at row ${timestampRow}`);
+      } catch (e) {
+        Logger.log(`Error adding timestamp: ${e.message}`);
+      }
+    }
 
     // Ensure we have a valid header-to-field mapping based on the current headers
     try {
@@ -10198,4 +10222,32 @@ function logObjectStructure(obj, label) {
   }
 
   Logger.log(`--- End of ${label} structure ---`);
+}
+
+/**
+ * Saves Pipedrive settings for the active sheet
+ * @param {string} apiKey - The Pipedrive API key (ignored in OAuth flow)
+ * @param {string} entityType - The entity type (deals, persons, etc.)
+ * @param {string} filterId - The filter ID
+ * @param {string} subdomain - The Pipedrive subdomain (ignored in OAuth flow)
+ * @param {string} sheetName - The name of the sheet
+ * @param {boolean} enableTimestamp - Whether to enable timestamp after sync
+ */
+function saveSettings(apiKey, entityType, filterId, subdomain, sheetName, enableTimestamp = false) {
+  const scriptProperties = PropertiesService.getScriptProperties();
+
+  // Note: In OAuth flow, we don't save API key or subdomain as they're handled by OAuth
+  // These parameters are kept for backward compatibility with the UI
+  
+  // Save sheet-specific settings
+  const sheetFilterIdKey = `FILTER_ID_${sheetName}`;
+  const sheetEntityTypeKey = `ENTITY_TYPE_${sheetName}`;
+  const timestampEnabledKey = `TIMESTAMP_ENABLED_${sheetName}`;
+
+  scriptProperties.setProperty(sheetFilterIdKey, filterId);
+  scriptProperties.setProperty(sheetEntityTypeKey, entityType);
+  scriptProperties.setProperty(timestampEnabledKey, enableTimestamp.toString());
+  scriptProperties.setProperty('SHEET_NAME', sheetName);
+  
+  Logger.log(`Saved settings for sheet "${sheetName}": entityType=${entityType}, filterId=${filterId}, enableTimestamp=${enableTimestamp}`);
 }

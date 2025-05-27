@@ -43,9 +43,11 @@ SettingsDialogUI.showSettings = function(initialTab = 'settings') {
     // Get sheet-specific settings using the sheet name
     const sheetFilterIdKey = `FILTER_ID_${activeSheetName}`;
     const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
+    const timestampEnabledKey = `TIMESTAMP_ENABLED_${activeSheetName}`;
     
     const savedFilterId = scriptProperties.getProperty(sheetFilterIdKey) || '';
     const savedEntityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
+    const savedTimestampEnabled = scriptProperties.getProperty(timestampEnabledKey) || 'false';
     
     // Create a template from the HTML file
     const template = HtmlService.createTemplateFromFile('SettingsDialog');
@@ -55,6 +57,7 @@ SettingsDialogUI.showSettings = function(initialTab = 'settings') {
     template.savedSubdomain = savedSubdomain;
     template.savedFilterId = savedFilterId;
     template.savedEntityType = savedEntityType;
+    template.savedTimestampEnabled = savedTimestampEnabled;
     template.initialTab = initialTab; // Pass which tab should be initially active
     
     // Initialize column data variables for the column tab

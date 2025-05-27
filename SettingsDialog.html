@@ -1359,6 +1359,69 @@
       border: 2px solid rgba(26, 115, 232, 0.2);
       border-top-color: var(--primary-color);
     }
+
+    /* Toggle switch styles */
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 40px;
+      height: 22px;
+      margin-right: 10px;
+      vertical-align: middle;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .3s;
+      border-radius: 34px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .toggle-slider {
+      background-color: var(--primary-color);
+    }
+
+    input:focus + .toggle-slider {
+      box-shadow: 0 0 1px var(--primary-color);
+    }
+
+    input:checked + .toggle-slider:before {
+      transform: translateX(18px);
+    }
+
+    .toggle-wrapper {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .toggle-label {
+      font-weight: normal;
+      cursor: pointer;
+    }
   </style>
   <?!= dataScript ?>
 </head>
@@ -1404,17 +1467,30 @@
 
     <div class="section">
       <div class="section-title">Data Settings</div>
-      <div class="form-group">
-        <label for="entityType">Data Type</label>
-        <select id="entityType" onchange="loadFiltersForEntity()">
-          <option value="deals" <?=savedEntityType==='deals' ? 'selected' : '' ?>>Deals</option>
-          <option value="persons" <?=savedEntityType==='persons' ? 'selected' : '' ?>>Persons</option>
-          <option value="organizations" <?=savedEntityType==='organizations' ? 'selected' : '' ?>>Organizations</option>
-          <option value="activities" <?=savedEntityType==='activities' ? 'selected' : '' ?>>Activities</option>
-          <option value="leads" <?=savedEntityType==='leads' ? 'selected' : '' ?>>Leads</option>
-          <option value="products" <?=savedEntityType==='products' ? 'selected' : '' ?>>Products</option>
-        </select>
-        <span class="tooltip">Select the type of data to sync from Pipedrive</span>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="entityType">Data Type</label>
+          <select id="entityType" onchange="loadFiltersForEntity()">
+            <option value="deals" <?=savedEntityType==='deals' ? 'selected' : '' ?>>Deals</option>
+            <option value="persons" <?=savedEntityType==='persons' ? 'selected' : '' ?>>Persons</option>
+            <option value="organizations" <?=savedEntityType==='organizations' ? 'selected' : '' ?>>Organizations</option>
+            <option value="activities" <?=savedEntityType==='activities' ? 'selected' : '' ?>>Activities</option>
+            <option value="leads" <?=savedEntityType==='leads' ? 'selected' : '' ?>>Leads</option>
+            <option value="products" <?=savedEntityType==='products' ? 'selected' : '' ?>>Products</option>
+          </select>
+          <span class="tooltip">Select the type of data to sync from Pipedrive</span>
+        </div>
+        <div class="form-group">
+          <label>Sync Timestamp</label>
+          <div class="toggle-wrapper">
+            <label class="toggle-switch">
+              <input type="checkbox" id="enableTimestamp" <?=savedTimestampEnabled === 'true' ? 'checked' : '' ?> />
+              <span class="toggle-slider"></span>
+            </label>
+            <label for="enableTimestamp" class="toggle-label">Add timestamp row after each sync</label>
+          </div>
+          <span class="tooltip">Adds date/time of the last sync at the bottom of the sheet</span>
+        </div>
       </div>
     </div>
 
@@ -1918,6 +1994,7 @@
         document.getElementById('filterId').value :
         document.getElementById('filterSelector').value;
       const sheetName = document.getElementById('sheetName').value;
+      const enableTimestamp = document.getElementById('enableTimestamp').checked;
 
       // Validate inputs
       if (!filterId) {
@@ -2082,7 +2159,7 @@
           // Show error message
           showStatus('error', 'Error saving settings: ' + error.message);
         })
-        .saveSettings('', entityType, filterId, '', sheetName);
+        .saveSettings('', entityType, filterId, '', sheetName, enableTimestamp);
     }
 
     /* Add a helper function for ripple effect */
