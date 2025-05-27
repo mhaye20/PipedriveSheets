@@ -24,6 +24,15 @@ app.use(express.json({
   }
 }));
 
+// Health check endpoint
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    service: 'PipedriveSheets Payment Backend',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Stripe webhook endpoint
 app.post('/webhook', async (req, res) => {
   const sig = req.headers['stripe-signature'];
@@ -215,7 +224,12 @@ function getPlanFeatures(plan) {
   return features[plan] || [];
 }
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// For Vercel deployment
+if (process.env.VERCEL) {
+  module.exports = app;
+} else {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
