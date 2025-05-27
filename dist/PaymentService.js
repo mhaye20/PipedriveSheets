@@ -175,7 +175,21 @@ const PaymentService = {
           let ownerHasTeamPlan = false;
           
           if (cachedOwnerStatus) {
-            ownerHasTeamPlan = cachedOwnerStatus === 'team';
+            try {
+              const cachedData = JSON.parse(cachedOwnerStatus);
+              if (cachedData.plan === 'team') {
+                if (cachedData.status === 'active' && !cachedData.cancelAt) {
+                  ownerHasTeamPlan = true;
+                } else if (cachedData.cancelAt) {
+                  const cancelDate = new Date(cachedData.cancelAt);
+                  const now = new Date();
+                  ownerHasTeamPlan = now < cancelDate;
+                }
+              }
+            } catch (e) {
+              // Old cache format, just check if it's 'team'
+              ownerHasTeamPlan = cachedOwnerStatus === 'team';
+            }
           } else {
             // Check the subscription status of the team creator/owner
             try {
@@ -198,9 +212,23 @@ const PaymentService = {
               if (response.getResponseCode() === 200) {
                 const ownerData = JSON.parse(response.getContentText());
                 Logger.log('Team owner subscription data: ' + JSON.stringify(ownerData));
-                ownerHasTeamPlan = ownerData.plan === 'team' && ownerData.status === 'active';
-                // Cache the result for 5 minutes
-                cache.put(cacheKey, ownerData.plan, 300);
+                
+                // Check if owner has team plan that's either active or canceled but still valid
+                if (ownerData.plan === 'team') {
+                  if (ownerData.status === 'active' && !ownerData.cancelAt) {
+                    // Active subscription without cancellation
+                    ownerHasTeamPlan = true;
+                  } else if (ownerData.cancelAt) {
+                    // Subscription is canceled but check if still within valid period
+                    const cancelDate = new Date(ownerData.cancelAt);
+                    const now = new Date();
+                    ownerHasTeamPlan = now < cancelDate;
+                    Logger.log('Team owner subscription canceled, valid until: ' + ownerData.cancelAt + ', still valid: ' + ownerHasTeamPlan);
+                  }
+                }
+                
+                // Cache the full owner data for use in getCurrentPlan
+                cache.put(cacheKey, JSON.stringify(ownerData), 300);
               } else {
                 Logger.log('Failed to get team owner subscription. Response code: ' + response.getResponseCode());
                 Logger.log('Response: ' + response.getContentText());
@@ -273,9 +301,24 @@ const PaymentService = {
             const cachedOwnerStatus = cache.get(cacheKey);
           
           let ownerHasTeamPlan = false;
+          let ownerData = null;
           
           if (cachedOwnerStatus) {
-            ownerHasTeamPlan = cachedOwnerStatus === 'team';
+            try {
+              ownerData = JSON.parse(cachedOwnerStatus);
+              if (ownerData.plan === 'team') {
+                if (ownerData.status === 'active' && !ownerData.cancelAt) {
+                  ownerHasTeamPlan = true;
+                } else if (ownerData.cancelAt) {
+                  const cancelDate = new Date(ownerData.cancelAt);
+                  const now = new Date();
+                  ownerHasTeamPlan = now < cancelDate;
+                }
+              }
+            } catch (e) {
+              // Old cache format, just check if it's 'team'
+              ownerHasTeamPlan = cachedOwnerStatus === 'team';
+            }
           } else {
             try {
               const response = UrlFetchApp.fetch(`${this.API_URL}/subscription/status`, {
@@ -294,10 +337,25 @@ const PaymentService = {
               Logger.log('[getCurrentPlan] API Response code: ' + response.getResponseCode());
               
               if (response.getResponseCode() === 200) {
-                const ownerData = JSON.parse(response.getContentText());
+                ownerData = JSON.parse(response.getContentText());
                 Logger.log('[getCurrentPlan] Owner subscription data: ' + JSON.stringify(ownerData));
-                ownerHasTeamPlan = ownerData.plan === 'team' && ownerData.status === 'active';
-                cache.put(cacheKey, ownerData.plan, 300);
+                
+                // Check if owner has team plan that's either active or canceled but still valid
+                if (ownerData.plan === 'team') {
+                  if (ownerData.status === 'active' && !ownerData.cancelAt) {
+                    // Active subscription without cancellation
+                    ownerHasTeamPlan = true;
+                  } else if (ownerData.cancelAt) {
+                    // Subscription is canceled but check if still within valid period
+                    const cancelDate = new Date(ownerData.cancelAt);
+                    const now = new Date();
+                    ownerHasTeamPlan = now < cancelDate;
+                    Logger.log('[getCurrentPlan] Team owner subscription canceled, valid until: ' + ownerData.cancelAt + ', still valid: ' + ownerHasTeamPlan);
+                  }
+                }
+                
+                // Cache the full owner data
+                cache.put(cacheKey, JSON.stringify(ownerData), 300);
               } else {
                 Logger.log('[getCurrentPlan] Failed to get owner subscription: ' + response.getContentText());
               }
@@ -308,7 +366,7 @@ const PaymentService = {
           
           if (ownerHasTeamPlan) {
             // Return team plan details with inherited status
-            return {
+            const result = {
               plan: 'team',
               status: 'active',
               isInherited: true,
@@ -324,6 +382,14 @@ const PaymentService = {
                 features: ['two_way_sync', 'scheduled_sync', 'bulk_operations', 'team_features', 'shared_filters', 'admin_dashboard', 'priority_support']
               }
             };
+            
+            // If the team owner's subscription is canceled, include that info
+            if (ownerData && ownerData.cancelAt) {
+              result.cancelAt = ownerData.cancelAt;
+              result.teamOwnerCanceled = true;
+            }
+            
+            return result;
           }
           }
         }

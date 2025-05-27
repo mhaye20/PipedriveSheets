@@ -199,7 +199,13 @@
         
         <div class="info-row">
           <span class="info-label">Status</span>
-          <span class="info-value status-active">Active (Team Member)</span>
+          <span class="info-value <?= currentPlan.teamOwnerCanceled ? 'status-canceled' : 'status-active' ?>">
+            <? if (currentPlan.teamOwnerCanceled) { ?>
+              Active until <?= new Date(currentPlan.cancelAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) ?>
+            <? } else { ?>
+              Active (Team Member)
+            <? } ?>
+          </span>
         </div>
         
         <div class="info-row">
@@ -217,6 +223,12 @@
           <span class="info-value"><?= userEmail ?></span>
         </div>
       </div>
+      
+      <? if (currentPlan.teamOwnerCanceled) { ?>
+      <div class="note" style="background: #fff3cd; color: #856404; margin-bottom: 16px;">
+        <strong>Important:</strong> The team owner has canceled their subscription. You will retain access to Team features until <?= new Date(currentPlan.cancelAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) ?>.
+      </div>
+      <? } ?>
       
       <div class="note" style="background: #e8f5e9; color: #2e7d32;">
         <strong>Team Member Access:</strong> You have been added to the "<?= currentPlan.teamName ?>" team by <?= currentPlan.teamOwner ?>. You have access to all Team plan features including two-way sync, scheduled updates, team collaboration features, and up to 5,000 rows.
