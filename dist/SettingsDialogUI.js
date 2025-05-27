@@ -1080,6 +1080,7 @@ function showColumnSelectorUI() {
       // Common read-only fields across all entity types
       if (col.key && (
           // System-generated fields
+          col.key === 'id' ||  // ID is always read-only for all entity types
           col.key === 'creator_user_id' || 
           col.key === 'followers_count' ||
           col.key === 'participants_count' ||

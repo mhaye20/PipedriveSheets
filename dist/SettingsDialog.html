@@ -1278,6 +1278,7 @@
       color: #202124;
       border: none;
       padding: 8px 16px;
+      border: 2px white groove;
       border-radius: 4px;
       cursor: pointer;
       font-weight: 500;
@@ -1468,7 +1469,7 @@
     <div class="section">
       <div class="section-title">Data Settings</div>
       <div class="form-row">
-        <div class="form-group">
+        <div class="form-group" style="width: 30% !important; flex: unset;">
           <label for="entityType">Data Type</label>
           <select id="entityType" onchange="loadFiltersForEntity()">
             <option value="deals" <?=savedEntityType==='deals' ? 'selected' : '' ?>>Deals</option>
