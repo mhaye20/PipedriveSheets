@@ -17,7 +17,11 @@
     "https://www.googleapis.com/auth/script.container.ui",
     "https://www.googleapis.com/auth/script.external_request"
   ],
-  "urlFetchWhitelist": ["https://*.pipedrive.com/"],
+  "urlFetchWhitelist": [
+    "https://*.pipedrive.com/",
+    "https://pipedrive-sheets.vercel.app/",
+    "https://*.vercel.app/"
+  ],
   "addOns": {
     "common": {
       "name": "Pipedrive for Sheets",

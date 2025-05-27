@@ -163,3 +163,76 @@ function clearPaymentCache() {
   cache.remove('subscription_status');
   console.log('✅ Payment cache cleared');
 }
+
+// Check authorization and email access
+function checkAuthorizationStatus() {
+  console.log('=== AUTHORIZATION STATUS CHECK ===');
+  
+  try {
+    // Check active user
+    const activeUser = Session.getActiveUser().getEmail();
+    console.log('Active User Email:', activeUser || 'NOT AVAILABLE');
+    
+    // Check effective user
+    const effectiveUser = Session.getEffectiveUser().getEmail();
+    console.log('Effective User Email:', effectiveUser || 'NOT AVAILABLE');
+    
+    // Check authorization mode
+    const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
+    console.log('Authorization Status:', authInfo.getAuthorizationStatus());
+    
+    // Check script ID
+    console.log('Script ID:', ScriptApp.getScriptId());
+    
+    // Check temporary user key
+    console.log('Temporary User Key:', Session.getTemporaryActiveUserKey() || 'NOT AVAILABLE');
+    
+    console.log('\nNOTE: If emails are not available, the add-on may need to be:');
+    console.log('1. Properly authorized with necessary scopes');
+    console.log('2. Re-installed to grant email permissions');
+    console.log('3. Run from a properly authenticated Google account');
+    
+  } catch (error) {
+    console.error('Error checking authorization:', error.message);
+  }
+}
+
+// Debug function to test checkout creation with detailed logging
+function debugCheckoutCreation() {
+  try {
+    console.log('=== DEBUG CHECKOUT CREATION ===');
+    
+    // Test user info
+    const userEmail = Session.getActiveUser().getEmail();
+    const userId = Session.getTemporaryActiveUserKey();
+    const scriptId = ScriptApp.getScriptId();
+    
+    console.log('User Email:', userEmail || 'NOT AVAILABLE');
+    console.log('User ID:', userId || 'NOT AVAILABLE');
+    console.log('Script ID:', scriptId || 'NOT AVAILABLE');
+    
+    // Test API endpoint
+    console.log('\nTesting API endpoint...');
+    console.log('API URL:', PaymentService.API_URL);
+    
+    // Test basic connectivity
+    try {
+      const healthResponse = UrlFetchApp.fetch(PaymentService.API_URL.replace('/api', ''), {
+        muteHttpExceptions: true
+      });
+      console.log('Health check response:', healthResponse.getResponseCode());
+      console.log('Health check body:', healthResponse.getContentText());
+    } catch (e) {
+      console.log('Health check failed:', e.message);
+    }
+    
+    // Test checkout creation
+    console.log('\nTesting checkout creation...');
+    const checkoutUrl = PaymentService.createCheckoutSession('pro_monthly');
+    console.log('Success! Checkout URL:', checkoutUrl);
+    
+  } catch (error) {
+    console.error('Debug failed:', error.message);
+    console.log('\nCheck the Logs (View → Logs) for detailed error information');
+  }
+}

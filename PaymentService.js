@@ -49,29 +49,90 @@ const PaymentService = {
    */
   createCheckoutSession(planType) {
     try {
-      const userEmail = Session.getActiveUser().getEmail();
-      const userId = Session.getTemporaryActiveUserKey();
+      let userEmail = Session.getActiveUser().getEmail();
+      const userId = Session.getTemporaryActiveUserKey() || 'anonymous-' + Utilities.getUuid();
+      
+      // If email is not available, try to get it from effective user
+      if (!userEmail) {
+        userEmail = Session.getEffectiveUser().getEmail();
+      }
+      
+      // If still no email, prompt user
+      if (!userEmail) {
+        const ui = SpreadsheetApp.getUi();
+        const response = ui.prompt(
+          'Email Required',
+          'Please enter your email address to continue with the upgrade:',
+          ui.ButtonSet.OK_CANCEL
+        );
+        
+        if (response.getSelectedButton() === ui.Button.OK) {
+          userEmail = response.getResponseText();
+          
+          // Basic email validation
+          if (!userEmail || !userEmail.includes('@')) {
+            throw new Error('Please enter a valid email address');
+          }
+        } else {
+          throw new Error('Email is required to process payment');
+        }
+      }
+      
+      Logger.log('Creating checkout session:');
+      Logger.log('Email: ' + userEmail);
+      Logger.log('User ID: ' + userId);
+      Logger.log('Script ID: ' + ScriptApp.getScriptId());
+      Logger.log('Plan Type: ' + planType);
+      Logger.log('API URL: ' + this.API_URL);
+      
+      const payload = {
+        email: userEmail,
+        googleUserId: userId,
+        scriptId: ScriptApp.getScriptId(),
+        planType: planType, // 'pro_monthly', 'pro_annual', 'team_monthly', 'team_annual'
+        successUrl: 'https://docs.google.com/spreadsheets', // Redirect after payment
+        cancelUrl: 'https://docs.google.com/spreadsheets'
+      };
+      
+      Logger.log('Payload: ' + JSON.stringify(payload));
       
       const response = UrlFetchApp.fetch(`${this.API_URL}/create-checkout-session`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        payload: JSON.stringify({
-          email: userEmail,
-          googleUserId: userId,
-          scriptId: ScriptApp.getScriptId(),
-          planType: planType, // 'pro_monthly', 'pro_annual', 'team_monthly', 'team_annual'
-          successUrl: 'https://docs.google.com/spreadsheets', // Redirect after payment
-          cancelUrl: 'https://docs.google.com/spreadsheets'
-        })
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true // This will return the error response instead of throwing
       });
       
+      Logger.log('Response code: ' + response.getResponseCode());
+      Logger.log('Response text: ' + response.getContentText());
+      
+      if (response.getResponseCode() !== 200) {
+        const errorText = response.getContentText();
+        Logger.log('Error response: ' + errorText);
+        
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(errorData.error || 'Failed to create payment session');
+        } catch (e) {
+          throw new Error('Failed to create payment session: ' + errorText);
+        }
+      }
+      
       const data = JSON.parse(response.getContentText());
+      
+      if (!data.checkoutUrl) {
+        Logger.log('No checkout URL in response: ' + JSON.stringify(data));
+        throw new Error('No checkout URL returned from server');
+      }
+      
       return data.checkoutUrl;
     } catch (error) {
+      Logger.log('Error in createCheckoutSession: ' + error.toString());
+      Logger.log('Error stack: ' + error.stack);
       console.error('Error creating checkout session:', error);
-      throw new Error('Failed to create payment session');
+      throw error;
     }
   },
   

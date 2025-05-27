@@ -120,6 +120,15 @@ function showUpgradeDialog() {
 }
 
 /**
+ * Creates a checkout session - called from HTML dialog
+ * @param {string} planType - The plan type (e.g., 'pro_monthly', 'pro_annual', etc.)
+ * @return {string} The checkout URL or null if error
+ */
+function createCheckoutSession(planType) {
+  return PaymentService.createCheckoutSession(planType);
+}
+
+/**
  * Checks if a user has any type of access
  * @param {string} userEmail The email address to check
  * @returns {boolean} True if the user has access, false otherwise

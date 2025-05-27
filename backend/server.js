@@ -74,6 +74,15 @@ app.post('/api/create-checkout-session', async (req, res) => {
   try {
     const { email, googleUserId, scriptId, planType, successUrl, cancelUrl } = req.body;
     
+    // Validate required fields
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Valid email address is required' });
+    }
+    
+    if (!planType || !['pro_monthly', 'pro_annual', 'team_monthly', 'team_annual'].includes(planType)) {
+      return res.status(400).json({ error: 'Invalid plan type' });
+    }
+    
     // Define price IDs (create these in Stripe Dashboard)
     const priceIds = {
       'pro_monthly': process.env.STRIPE_PRO_MONTHLY_PRICE_ID,
