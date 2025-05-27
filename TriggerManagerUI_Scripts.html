@@ -23,6 +23,13 @@
     document.getElementById('timeGroup').style.opacity = '0';
     document.getElementById('timeGroup').style.maxHeight = '0';
     
+    // Handle hourly help text visibility
+    const hourlyHelpText = document.getElementById('hourlyHelpText');
+    if (hourlyHelpText) {
+      hourlyHelpText.style.transition = 'opacity 0.3s';
+      hourlyHelpText.style.opacity = '0';
+    }
+    
     // Small delay for smoother transitions
     setTimeout(() => {
       document.getElementById('hourlyGroup').style.display = 'none';
@@ -30,14 +37,24 @@
       document.getElementById('monthlyGroup').style.display = 'none';
       document.getElementById('timeGroup').style.display = 'none';
       
+      if (hourlyHelpText) {
+        hourlyHelpText.style.display = 'none';
+      }
+      
       // Show relevant groups based on selection
       if (frequency === 'hourly') {
         const hourlyGroup = document.getElementById('hourlyGroup');
         hourlyGroup.style.display = 'block';
+        if (hourlyHelpText) {
+          hourlyHelpText.style.display = 'block';
+        }
         // Small delay to ensure display change takes effect before animation
         setTimeout(() => {
           hourlyGroup.style.opacity = '1';
           hourlyGroup.style.maxHeight = '200px';
+          if (hourlyHelpText) {
+            hourlyHelpText.style.opacity = '1';
+          }
         }, 10);
       } else {
         const timeGroup = document.getElementById('timeGroup');
