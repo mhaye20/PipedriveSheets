@@ -262,6 +262,10 @@ function verifyTeamAccess() {
           // Also store in cache for faster lookup
           Logger.log(`Added ${userEmail} to verified users list`);
         }
+        
+        // Store verification status in user properties for future sessions
+        const userProperties = PropertiesService.getUserProperties();
+        userProperties.setProperty('VERIFIED_TEAM_MEMBER', 'true');
       } catch (e) {
         Logger.log(`Error adding to verified users: ${e.message}`);
       }

@@ -208,6 +208,15 @@ function createTeam(teamName) {
       // Update email map
       updateEmailToTeamMap();
       
+      // Store verification status in user properties for future sessions
+      try {
+        const userProperties = PropertiesService.getUserProperties();
+        userProperties.setProperty('VERIFIED_TEAM_MEMBER', 'true');
+        Logger.log('Set VERIFIED_TEAM_MEMBER flag for team creator');
+      } catch (e) {
+        Logger.log('Error setting verified team member flag: ' + e.message);
+      }
+      
       // Try to refresh the menu
       try {
         fixMenuAfterJoin();
@@ -276,6 +285,15 @@ function joinTeam(teamId) {
     if (saveTeamsData(teamsData)) {
       // Update email map
       updateEmailToTeamMap();
+      
+      // Store verification status in user properties for future sessions
+      try {
+        const userProperties = PropertiesService.getUserProperties();
+        userProperties.setProperty('VERIFIED_TEAM_MEMBER', 'true');
+        Logger.log('Set VERIFIED_TEAM_MEMBER flag for user');
+      } catch (e) {
+        Logger.log('Error setting verified team member flag: ' + e.message);
+      }
       
       // Try to refresh the menu
       try {
@@ -419,6 +437,15 @@ function leaveTeam() {
     
     // Update the email-to-team map
     updateEmailToTeamMap();
+    
+    // Clear the verification flag since user is no longer in a team
+    try {
+      const userProperties = PropertiesService.getUserProperties();
+      userProperties.deleteProperty('VERIFIED_TEAM_MEMBER');
+      Logger.log('Cleared VERIFIED_TEAM_MEMBER flag after leaving team');
+    } catch (e) {
+      Logger.log('Error clearing verified team member flag: ' + e.message);
+    }
     
     return { success: true, message: 'You have successfully left the team.' };
   } catch (e) {

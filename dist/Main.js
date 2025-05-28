@@ -36,6 +36,18 @@ let VERIFIED_USERS = {};
  */
 function onOpen() {
   try {
+    // First check if user was previously verified as a team member
+    const userProperties = PropertiesService.getUserProperties();
+    const wasVerified = userProperties.getProperty('VERIFIED_TEAM_MEMBER') === 'true';
+    
+    if (wasVerified) {
+      // User was previously verified, show full menu immediately
+      Logger.log('User was previously verified as team member, showing full menu');
+      createPipedriveMenu();
+      checkForPaymentSuccess();
+      return;
+    }
+    
     // Try to get user email without prompting
     const userEmail = Session.getActiveUser().getEmail();
     
@@ -54,6 +66,9 @@ function onOpen() {
         // User has access, create full menu
         createPipedriveMenu();
         
+        // Store verification status for future sessions
+        userProperties.setProperty('VERIFIED_TEAM_MEMBER', 'true');
+        
         // Check if user just completed a payment
         checkForPaymentSuccess();
         return;
@@ -67,7 +82,6 @@ function onOpen() {
       .addToUi();
       
     // Check if this is the first time opening
-    const userProperties = PropertiesService.getUserProperties();
     const hasSeenWelcome = userProperties.getProperty('HAS_SEEN_WELCOME');
     
     if (!hasSeenWelcome && !userEmail) {
@@ -154,6 +168,10 @@ function initializePipedriveMenu() {
       
       // Replace the menu with the full Pipedrive menu
       createPipedriveMenu();
+      
+      // Store verification status for future sessions
+      const userProperties = PropertiesService.getUserProperties();
+      userProperties.setProperty('VERIFIED_TEAM_MEMBER', 'true');
       
       // Show a toast notification instead of a modal
       SpreadsheetApp.getActiveSpreadsheet().toast(
