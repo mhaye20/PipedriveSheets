@@ -1617,7 +1617,7 @@
           <?= savedSubdomain ?>.pipedrive.com
         </span>
       </div>
-      <button class="reconnect-btn" onclick="reconnect()">Reconnect</button>
+      <button class="reconnect-btn" onclick="reconnect()" <?= isReadOnly ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : '' ?>>Reconnect</button>
     </div>
 
     <? if (isReadOnly) { ?>
@@ -2194,6 +2194,12 @@
     });
 
     function saveSettings() {
+      // Check if in read-only mode
+      if (window.isReadOnly || <?= isReadOnly ? 'true' : 'false' ?>) {
+        showStatus('error', 'You do not have permission to modify settings. Only team admins can change these settings.');
+        return;
+      }
+      
       const entityType = document.getElementById('entityType').value;
       const filterId = manualEntry ?
         document.getElementById('filterId').value :
@@ -2389,6 +2395,11 @@
     }
 
     function reconnect() {
+      // Check if in read-only mode
+      if (window.isReadOnly || <?= isReadOnly ? 'true' : 'false' ?>) {
+        return; // Do nothing if read-only
+      }
+      
       const btn = document.querySelector('.reconnect-btn');
 
       // Add ripple effect
@@ -3563,6 +3574,12 @@
 
     // Add the saveColumns and showHelp functions
     function saveColumns() {
+      // Check if in read-only mode
+      if (window.isReadOnly || <?= isReadOnly ? 'true' : 'false' ?>) {
+        showStatus('error', 'You do not have permission to modify columns. Only team admins can change these settings.');
+        return;
+      }
+      
       // Validate - must have at least one column and ID column must be first
       if (selectedColumns.length === 0) {
         showStatus('error', 'Please select at least one column');

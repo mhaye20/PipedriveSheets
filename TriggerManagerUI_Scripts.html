@@ -21,6 +21,7 @@
     if (frequency === 'minutes') {
       document.getElementById('minutesGroup').style.display = 'block';
       document.getElementById('minutesHelpText').style.display = 'block';
+      updateMinutesHelpText(); // Update help text with specific interval
     } else if (frequency === 'hourly') {
       document.getElementById('hourlyGroup').style.display = 'block';
       document.getElementById('hourlyHelpText').style.display = 'block';
@@ -55,6 +56,13 @@
     if (minuteInline && minuteStandalone) {
       minuteStandalone.value = minuteInline.value;
     }
+  }
+  
+  // Update minutes help text with specific interval
+  function updateMinutesHelpText() {
+    const minutesInterval = document.getElementById('minutesInterval').value;
+    const helpText = document.getElementById('minutesHelpText');
+    helpText.textContent = `The sync will run every ${minutesInterval} minute${minutesInterval !== '1' ? 's' : ''}. Note: Frequent syncing may impact performance.`;
   }
   
   // Toggle day button selection with ripple effect
@@ -502,6 +510,12 @@
       minuteStandalone.addEventListener('change', function() {
         if (minuteInline) minuteInline.value = this.value;
       });
+    }
+    
+    // Add event listener for minutes interval dropdown to update help text
+    const minutesInterval = document.getElementById('minutesInterval');
+    if (minutesInterval) {
+      minutesInterval.addEventListener('change', updateMinutesHelpText);
     }
   });
 </script> 

@@ -66,7 +66,18 @@
       "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"function saveSettings\" *.js)",
       "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -B 5 -A 5 \"success.*true.*message.*Trigger created\" TriggerManagerUI.js)",
       "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"Trigger created successfully\" TriggerManagerUI.js)",
-      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"Trigger deleted successfully\" TriggerManagerUI.js)"
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"Trigger deleted successfully\" TriggerManagerUI.js)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -B 5 -A 5 \"reconnect-btn\" SettingsDialog.html)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -B 5 -A 5 \"Save.*Close|columnsTabSaveBtn\" SettingsDialog.html)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"button.*Save\" SettingsDialog.html)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -B 5 -A 10 \"function saveSettings.*{\" SettingsDialog.html)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 15 \"function saveSettings\" SettingsDialog.html)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 15 \"function saveColumns\" SettingsDialog.html)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -B 5 -A 5 \"every few minutes\" TriggerManager.html)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -B 10 -A 10 \"minutesHelpText|updateFormVisibility\" TriggerManagerUI_Scripts.html)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 30 \"Hide all help text first\" TriggerManagerUI_Scripts.html)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 40 \"Show relevant help text\" TriggerManagerUI_Scripts.html)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -B 5 -A 15 \"addEventListener.*change\" TriggerManagerUI_Scripts.html)"
     ],
     "deny": []
   }
