@@ -237,21 +237,8 @@ const PaymentService = {
                   const ownerData = JSON.parse(response.getContentText());
                   Logger.log('Team owner subscription data: ' + JSON.stringify(ownerData));
                   
-                  // WORKAROUND: If API returns free but we know they should have team access
-                  // check if there's a team with this owner that has active members
-                  if (ownerData.plan === 'free' && team.memberEmails && team.memberEmails.length > 1) {
-                    Logger.log('API returned free for team owner, but team has multiple members - assuming Team plan is active');
-                    // For now, assume team plan is active if:
-                    // 1. The team exists with multiple members
-                    // 2. The owner is listed as team creator
-                    // This is a temporary workaround until backend is fixed
-                    ownerHasTeamPlan = true;
-                    ownerData = {
-                      plan: 'team',
-                      status: 'active',
-                      assumedFromTeamData: true
-                    };
-                  } else if (ownerData.plan === 'team') {
+                  // Check if owner has team plan
+                  if (ownerData.plan === 'team') {
                     if (ownerData.status === 'active' && !ownerData.cancelAt) {
                       // Active subscription without cancellation
                       ownerHasTeamPlan = true;
@@ -401,16 +388,8 @@ const PaymentService = {
                   ownerData = JSON.parse(response.getContentText());
                   Logger.log('[getCurrentPlan] Owner subscription data: ' + JSON.stringify(ownerData));
                   
-                  // WORKAROUND: If API returns free but we know they should have team access
-                  if (ownerData.plan === 'free' && team.memberEmails && team.memberEmails.length > 1) {
-                    Logger.log('[getCurrentPlan] API returned free for team owner, but team has multiple members - assuming Team plan is active');
-                    ownerHasTeamPlan = true;
-                    ownerData = {
-                      plan: 'team',
-                      status: 'active',
-                      assumedFromTeamData: true
-                    };
-                  } else if (ownerData.plan === 'team') {
+                  // Check if owner has team plan
+                  if (ownerData.plan === 'team') {
                     if (ownerData.status === 'active' && !ownerData.cancelAt) {
                       // Active subscription without cancellation
                       ownerHasTeamPlan = true;
