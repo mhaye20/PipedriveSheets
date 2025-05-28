@@ -20,11 +20,21 @@
       <p>Two-way sync allows you to make changes in your sheet and push them back to Pipedrive. The system will track which rows have been modified since the last sync.</p>
     </div>
     
+    <? if (isReadOnly) { ?>
+    <div style="background-color: #fef7e0; border-left: 4px solid #f4b400; padding: 14px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center;">
+      <span style="color: #f4b400; font-size: 20px; margin-right: 12px;">ℹ️</span>
+      <div>
+        <strong>View Only Mode</strong><br>
+        <span style="font-size: 12px; color: var(--text-light);">You are a team member with view-only access. Only team admins can modify two-way sync settings.</span>
+      </div>
+    </div>
+    <? } ?>
+    
     <div class="form-container">
       <div class="form-group">
         <div class="switch-container">
           <label class="switch">
-            <input type="checkbox" id="enableTwoWaySync" <?!= data.twoWaySyncEnabled ? 'checked' : '' ?>>
+            <input type="checkbox" id="enableTwoWaySync" <?!= data.twoWaySyncEnabled ? 'checked' : '' ?> <?= isReadOnly ? 'disabled' : '' ?>>
             <span class="slider"></span>
           </label>
           <strong>Enable Two-Way Sync for this sheet</strong>
@@ -36,7 +46,7 @@
         <label for="trackingColumn">
           Tracking Column Letter (Optional)
         </label>
-        <input type="text" id="trackingColumn" value="<?!= data.trackingColumn || '' ?>" placeholder="e.g., Z" />
+        <input type="text" id="trackingColumn" value="<?!= data.trackingColumn || '' ?>" placeholder="e.g., Z" <?= isReadOnly ? 'disabled' : '' ?> />
         <span class="tooltip">Specify which column to use for tracking changes. Leave empty to use the last column.</span>
         <div class="last-sync">Last sync: <?!= data.lastSync && data.lastSync !== 'Never' ? (function() { var d = new Date(data.lastSync); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }); })() : 'Never' ?></div>
       </div>
@@ -86,7 +96,7 @@
       
       <div class="button-container">
         <button type="button" id="cancelBtn" class="button-secondary">Cancel</button>
-        <button type="button" id="saveBtn" class="button-primary">
+        <button type="button" id="saveBtn" class="button-primary" <?= isReadOnly ? 'disabled' : '' ?>>
           <span id="saveSpinner" class="spinner" style="display:none;"></span>Save Settings
         </button>
       </div>

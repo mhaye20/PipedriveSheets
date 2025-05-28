@@ -49,6 +49,18 @@ TwoWaySyncSettingsUI.showTwoWaySyncSettings = function() {
     const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
     const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
     
+    // Check if user is in read-only mode (team member, not admin)
+    let isReadOnly = false;
+    try {
+      if (typeof TeamAccess !== 'undefined' && typeof TeamAccess.getUserRole === 'function') {
+        const userRole = TeamAccess.getUserRole();
+        isReadOnly = (userRole === 'member');
+      }
+    } catch (e) {
+      Logger.log(`Error checking user role: ${e.message}`);
+      isReadOnly = false;
+    }
+    
     // Create the HTML template
     const template = HtmlService.createTemplateFromFile('TwoWaySyncSettings');
     
@@ -60,6 +72,9 @@ TwoWaySyncSettingsUI.showTwoWaySyncSettings = function() {
       lastSync: lastSync,
       entityType: entityType
     };
+    
+    // Pass read-only status to template
+    template.isReadOnly = isReadOnly;
     
     // Make include function available to the template
     template.include = function(filename) {
@@ -125,6 +140,22 @@ TwoWaySyncSettingsUI.handleColumnPreferencesChange = function(sheetName) {
  */
 function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
   try {
+    // Check if user is in read-only mode (team member, not admin)
+    let isReadOnly = false;
+    try {
+      if (typeof TeamAccess !== 'undefined' && typeof TeamAccess.getUserRole === 'function') {
+        const userRole = TeamAccess.getUserRole();
+        isReadOnly = (userRole === 'member');
+      }
+    } catch (e) {
+      Logger.log(`Error checking user role: ${e.message}`);
+      isReadOnly = false;
+    }
+    
+    if (isReadOnly) {
+      throw new Error('You do not have permission to modify these settings. Only team admins can change two-way sync settings.');
+    }
+    
     // Get the active sheet
     const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     const activeSheetName = activeSheet.getName();
@@ -406,6 +437,20 @@ TwoWaySyncSettingsUI.getStyles = function() {
       margin-bottom: 4px;
     }
     
+    .view-only-alert {
+      background-color: #e8eaf6;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border-left: 4px solid #3f51b5;
+    }
+    
+    .view-only-alert h4 {
+      color: #3f51b5;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+    
     .form-group {
       margin-bottom: 20px;
     }
@@ -488,6 +533,17 @@ TwoWaySyncSettingsUI.getStyles = function() {
       box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
     }
     
+    input:disabled, select:disabled {
+      background-color: #f5f5f5;
+      color: #999;
+      cursor: not-allowed;
+    }
+    
+    .switch input:disabled + .slider {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    
     .tooltip {
       display: block;
       font-size: 12px;
@@ -516,6 +572,17 @@ TwoWaySyncSettingsUI.getStyles = function() {
     .button-primary:hover {
       background-color: var(--primary-dark);
       box-shadow: var(--shadow-hover);
+    }
+    
+    .button-primary:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+    
+    .button-primary:disabled:hover {
+      background-color: #ccc;
+      box-shadow: none;
     }
     
     .button-secondary {
@@ -627,6 +694,10 @@ TwoWaySyncSettingsUI.getStyles = function() {
  */
 TwoWaySyncSettingsUI.getScripts = function() {
   return `<script>
+    // Initialize read-only mode
+    let isReadOnly = <?= isReadOnly ? 'true' : 'false' ?>;
+    window.isReadOnly = isReadOnly;
+    
     // Initialize
     document.addEventListener('DOMContentLoaded', function() {
       // Hide any loading indicators
@@ -653,6 +724,12 @@ TwoWaySyncSettingsUI.getScripts = function() {
     
     // Save settings
     function saveSettings() {
+      // Check if in read-only mode
+      if (window.isReadOnly || <?= isReadOnly ? 'true' : 'false' ?>) {
+        showStatus('error', 'You do not have permission to modify settings. Only team admins can change these settings.');
+        return;
+      }
+      
       const enableTwoWaySync = document.getElementById('enableTwoWaySync').checked;
       const trackingColumn = document.getElementById('trackingColumn').value.trim();
       
