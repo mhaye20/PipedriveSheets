@@ -6,7 +6,6 @@
     <?!= include('TwoWaySyncSettingsUI_Styles') ?>
   </head>
   <body>
-    <h3>Two-Way Sync Settings</h3>
     
     <div class="sheet-info">
       <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24">
@@ -39,7 +38,7 @@
         </label>
         <input type="text" id="trackingColumn" value="<?!= data.trackingColumn || '' ?>" placeholder="e.g., Z" />
         <span class="tooltip">Specify which column to use for tracking changes. Leave empty to use the last column.</span>
-        <div class="last-sync">Last sync: <?!= data.lastSync || 'Never' ?></div>
+        <div class="last-sync">Last sync: <?!= data.lastSync && data.lastSync !== 'Never' ? (function() { var d = new Date(data.lastSync); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }); })() : 'Never' ?></div>
       </div>
       
       <div class="form-group">
