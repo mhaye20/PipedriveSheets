@@ -186,6 +186,20 @@
               </div>
               <? } ?>
               
+              <!-- Recent Activity Section -->
+              <div class="section">
+                <div class="section-header">
+                  <i class="material-icons">history</i>
+                  <h5>Recent Team Activity</h5>
+                </div>
+                <div id="recent-activity-container" class="recent-activity">
+                  <div class="loading-activity">
+                    <div class="spinner-small"></div>
+                    <span>Loading activity...</span>
+                  </div>
+                </div>
+              </div>
+              
               <!-- Team Actions -->
               <div class="team-actions">
                 <? if (userEmail !== teamCreator) { ?>

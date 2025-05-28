@@ -506,6 +506,10 @@ function addTeamMember(email) {
     if (saveTeamsData(teamsData)) {
       // Update email map
       updateEmailToTeamMap();
+      
+      // Log activity
+      logTeamActivity('member_added', `added ${email} to the team`);
+      
       return { success: true, message: 'Member added successfully.' };
     } else {
       return { success: false, message: 'Failed to save team data.' };
@@ -774,6 +778,10 @@ function removeTeamMember(email) {
     if (saveTeamsData(teamsData)) {
       // Update email map
       updateEmailToTeamMap();
+      
+      // Log activity
+      logTeamActivity('member_removed', `removed ${email} from the team`);
+      
       return { success: true, message: 'Member removed successfully.' };
     } else {
       return { success: false, message: 'Failed to update team data.' };
@@ -835,6 +843,95 @@ function renameTeam(newName) {
   }
 }
 
+/**
+ * Logs team activity
+ * @param {string} type - Type of activity
+ * @param {string} description - Description of the activity
+ * @param {Object} metadata - Additional metadata for the activity
+ */
+function logTeamActivity(type, description, metadata = {}) {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) return;
+    
+    // Get user's team
+    const userTeam = getUserTeam(userEmail);
+    if (!userTeam || !userTeam.teamId) return;
+    
+    // Create activity object
+    const activity = {
+      teamId: userTeam.teamId,
+      userEmail: userEmail,
+      type: type,
+      description: description,
+      timestamp: new Date().toISOString(),
+      ...metadata
+    };
+    
+    // Get script properties
+    const scriptProps = PropertiesService.getScriptProperties();
+    const activityKey = `TEAM_ACTIVITY_${userTeam.teamId}`;
+    
+    // Get existing activities
+    let activities = [];
+    const existingData = scriptProps.getProperty(activityKey);
+    if (existingData) {
+      try {
+        activities = JSON.parse(existingData);
+      } catch (e) {
+        activities = [];
+      }
+    }
+    
+    // Add new activity at the beginning
+    activities.unshift(activity);
+    
+    // Keep only last 50 activities
+    if (activities.length > 50) {
+      activities = activities.slice(0, 50);
+    }
+    
+    // Save activities
+    scriptProps.setProperty(activityKey, JSON.stringify(activities));
+  } catch (e) {
+    Logger.log(`Error logging team activity: ${e.message}`);
+  }
+}
+
+/**
+ * Gets recent team activity
+ * @return {Array} Array of recent activities
+ */
+function getTeamRecentActivity() {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) return [];
+    
+    // Get user's team
+    const userTeam = getUserTeam(userEmail);
+    if (!userTeam || !userTeam.teamId) return [];
+    
+    // Get script properties
+    const scriptProps = PropertiesService.getScriptProperties();
+    const activityKey = `TEAM_ACTIVITY_${userTeam.teamId}`;
+    
+    // Get activities
+    const existingData = scriptProps.getProperty(activityKey);
+    if (!existingData) return [];
+    
+    try {
+      const activities = JSON.parse(existingData);
+      // Return only the last 20 activities
+      return activities.slice(0, 20);
+    } catch (e) {
+      return [];
+    }
+  } catch (e) {
+    Logger.log(`Error getting team activity: ${e.message}`);
+    return [];
+  }
+}
+
 // Explicitly export these functions to ensure they're globally accessible
 this.addTeamMember = addTeamMember;
 this.deleteTeam = deleteTeam;
@@ -842,4 +939,6 @@ this.promoteTeamMember = promoteTeamMember;
 this.demoteTeamMember = demoteTeamMember;
 this.removeTeamMember = removeTeamMember;
 this.joinTeam = joinTeam;
-this.renameTeam = renameTeam; 
+this.renameTeam = renameTeam;
+this.logTeamActivity = logTeamActivity;
+this.getTeamRecentActivity = getTeamRecentActivity; 

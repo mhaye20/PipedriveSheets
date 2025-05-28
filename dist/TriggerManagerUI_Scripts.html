@@ -4,6 +4,7 @@
     const frequency = document.getElementById('frequency').value;
     
     // Hide all groups first
+    document.getElementById('minutesGroup').style.display = 'none';
     document.getElementById('hourlyGroup').style.display = 'none';
     document.getElementById('weeklyGroup').style.display = 'none';
     document.getElementById('monthlyGroup').style.display = 'none';
@@ -11,12 +12,16 @@
     document.getElementById('timeGroupStandalone').style.display = 'none';
     
     // Hide all help texts
+    document.getElementById('minutesHelpText').style.display = 'none';
     document.getElementById('hourlyHelpText').style.display = 'none';
     document.getElementById('monthlyHelpText').style.display = 'none';
     document.getElementById('timeHelpText').style.display = 'none';
     
     // Show relevant groups based on selection
-    if (frequency === 'hourly') {
+    if (frequency === 'minutes') {
+      document.getElementById('minutesGroup').style.display = 'block';
+      document.getElementById('minutesHelpText').style.display = 'block';
+    } else if (frequency === 'hourly') {
       document.getElementById('hourlyGroup').style.display = 'block';
       document.getElementById('hourlyHelpText').style.display = 'block';
     } else if (frequency === 'daily') {
@@ -90,7 +95,9 @@
       frequency: frequency
     };
     
-    if (frequency === 'hourly') {
+    if (frequency === 'minutes') {
+      triggerData.minutesInterval = document.getElementById('minutesInterval').value;
+    } else if (frequency === 'hourly') {
       triggerData.hourlyInterval = document.getElementById('hourlyInterval').value;
     } else {
       // Get hour and minute from the appropriate time group

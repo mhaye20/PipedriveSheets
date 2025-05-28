@@ -76,13 +76,26 @@
             <div class="form-group" style="flex: unset; width: 40%;">
               <label for="frequency">Sync Frequency</label>
               <select id="frequency" onchange="updateFormVisibility()">
+                <option value="minutes">Every X Minutes</option>
+                <option value="hourly">Hourly</option>
                 <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
                 <option value="monthly">Monthly</option>
-                <option value="hourly">Hourly</option>
               </select>
             </div>
             
+            <div class="form-group" id="minutesGroup" style="display:none;">
+              <label>Run every</label>
+              <select id="minutesInterval">
+                <option value="5">5 minutes</option>
+                <option value="10">10 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="20">20 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="45">45 minutes</option>
+              </select>
+            </div>
+
             <div class="form-group" id="hourlyGroup" style="display:none;">
               <label>Run every</label>
               <select id="hourlyInterval">
@@ -156,6 +169,7 @@
               </div>
             </div>
           </div>
+          <p class="help-text" id="minutesHelpText" style="display:none;">The sync will run every few minutes. Note: Frequent syncing may impact performance.</p>
           <p class="help-text" id="hourlyHelpText" style="display:none;">The sync will run at regular intervals throughout the day.</p>
           <p class="help-text" id="monthlyHelpText" style="display:none;">The sync will run once per month on this day.</p>
           <p class="help-text" id="timeHelpText" style="display:none;">Times are based on your Google account's timezone.</p>

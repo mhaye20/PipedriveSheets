@@ -1620,6 +1620,16 @@
       <button class="reconnect-btn" onclick="reconnect()">Reconnect</button>
     </div>
 
+    <? if (isReadOnly) { ?>
+    <div style="background-color: #fef7e0; border-left: 4px solid #f4b400; padding: 14px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center;">
+      <span style="color: #f4b400; font-size: 20px; margin-right: 12px;">ℹ️</span>
+      <div>
+        <strong>View Only Mode</strong><br>
+        <span style="font-size: 12px; color: var(--text-light);">You are a team member with view-only access. Only team admins can modify these settings.</span>
+      </div>
+    </div>
+    <? } ?>
+
     <div class="sheet-info">
       <svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
         <path d="M0 0h24v24H0z" fill="none" />
@@ -1636,7 +1646,7 @@
       <div class="form-row">
         <div class="form-group" style="width: 30% !important; flex: unset;">
           <label for="entityType">Data Type</label>
-          <select id="entityType" onchange="loadFiltersForEntity()">
+          <select id="entityType" onchange="loadFiltersForEntity()" <?= isReadOnly ? 'disabled' : '' ?>>
             <option value="deals" <?=savedEntityType==='deals' ? 'selected' : '' ?>>Deals</option>
             <option value="persons" <?=savedEntityType==='persons' ? 'selected' : '' ?>>Persons</option>
             <option value="organizations" <?=savedEntityType==='organizations' ? 'selected' : '' ?>>Organizations</option>
@@ -1650,7 +1660,7 @@
           <label>Sync Timestamp</label>
           <div class="toggle-wrapper">
             <label class="toggle-switch">
-              <input type="checkbox" id="enableTimestamp" <?=savedTimestampEnabled === 'true' ? 'checked' : '' ?> />
+              <input type="checkbox" id="enableTimestamp" <?=savedTimestampEnabled === 'true' ? 'checked' : '' ?> <?= isReadOnly ? 'disabled' : '' ?> />
               <span class="toggle-slider"></span>
             </label>
             <label for="enableTimestamp" class="toggle-label">Add timestamp row after each sync</label>
@@ -1670,7 +1680,7 @@
             placeholder="Enter filter ID manually" />
           <div id="loadingFilters" class="loading-filters">Loading filters...</div>
         </div>
-        <div class="filter-toggle" id="toggleManualEntry">Switch to manual ID entry</div>
+        <div class="filter-toggle" id="toggleManualEntry" <?= isReadOnly ? 'style="display: none;"' : '' ?>>Switch to manual ID entry</div>
         <span class="tooltip">Select a saved filter from Pipedrive or enter a filter ID manually</span>
       </div>
     </div>
@@ -1678,7 +1688,7 @@
     <input type="hidden" id="sheetName" value="<?= activeSheetName ?>" />
 
     <div class="button-container">
-      <button type="button" id="saveBtn" class="button-primary" onclick="saveSettings()">Save Settings</button>
+      <button type="button" id="saveBtn" class="button-primary" onclick="saveSettings()" <?= isReadOnly ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : '' ?>>Save Settings</button>
     </div>
 
   </div>
@@ -1707,6 +1717,16 @@
         order.
         <strong>Note: The ID column (★) is required</strong> for proper Pipedrive integration and cannot be removed.
       </p>
+      
+      <div id="planLimitWarning" style="display: none; background-color: #fef7e0; border-left: 4px solid #f4b400; padding: 14px 16px; border-radius: 8px; margin-bottom: 20px;">
+        <div style="display: flex; align-items: center;">
+          <span style="color: #f4b400; font-size: 20px; margin-right: 12px;">⚠️</span>
+          <div>
+            <strong>Free Plan Limitations</strong><br>
+            <span style="font-size: 12px; color: var(--text-light);" id="planLimitMessage"></span>
+          </div>
+        </div>
+      </div>
 
       <div class="entity-info-card">
         <div class="entity-info-header">
@@ -1786,7 +1806,7 @@
       </div>
       <div class="action-btns">
         <button class="secondary-btn" id="cancelBtn">Cancel</button>
-        <button class="primary-btn" id="columnsTabSaveBtn">Save & Close</button>
+        <button class="primary-btn" id="columnsTabSaveBtn" <?= isReadOnly ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : '' ?>>Save & Close</button>
       </div>
     </div>
   </div>
@@ -1801,6 +1821,7 @@
   <script>
     let manualEntry = false;
     let filtersForEntity = {};
+    let isReadOnly = <?= isReadOnly ? 'true' : 'false' ?>;
     
     // Function to toggle API details visibility - defined in global scope
     function toggleApiDetails() {
@@ -1940,6 +1961,19 @@
         return;
       }
 
+      // If in read-only mode, just show current filter
+      if (isReadOnly) {
+        filterSelector.style.display = 'block';
+        filterSelector.disabled = true;
+        filterIdInput.disabled = true;
+        loadingElement.style.display = 'none';
+        const savedFilterId = "<?= savedFilterId ?>";
+        if (savedFilterId) {
+          filterSelector.innerHTML = '<option value="' + savedFilterId + '">Filter ID: ' + savedFilterId + '</option>';
+        }
+        return;
+      }
+
       // Otherwise fetch filters from the server
       google.script.run
         .withSuccessHandler(function (filters) {
@@ -1968,6 +2002,12 @@
       const savedFilterId = "<?= savedFilterId ?>";
 
       loadingElement.style.display = 'none';
+      
+      // Disable selectors if in read-only mode
+      if (isReadOnly) {
+        filterSelector.disabled = true;
+        filterIdInput.disabled = true;
+      }
 
       // Clear existing options
       filterSelector.innerHTML = '';
@@ -2628,18 +2668,20 @@
           
           item.appendChild(columnText);
 
-          // Create add button
-          const addBtn = document.createElement('span');
-          addBtn.className = 'add-btn';
-          addBtn.title = 'Add column';
-          addBtn.innerHTML = '<i class="material-icons" style="font-size:18px">add</i>';
-          addBtn.onclick = (e) => {
-            e.stopPropagation();
-            addColumn(col);
-          };
-          item.appendChild(addBtn);
+          // Create add button (only if not in read-only mode)
+          if (!isReadOnly) {
+            const addBtn = document.createElement('span');
+            addBtn.className = 'add-btn';
+            addBtn.title = 'Add column';
+            addBtn.innerHTML = '<i class="material-icons" style="font-size:18px">add</i>';
+            addBtn.onclick = (e) => {
+              e.stopPropagation();
+              addColumn(col);
+            };
+            item.appendChild(addBtn);
 
-          item.onclick = () => addColumn(col);
+            item.onclick = () => addColumn(col);
+          }
           availableList.appendChild(item);
         });
       }
@@ -2766,18 +2808,20 @@
             
             item.appendChild(columnText);
 
-            // Create add button
-            const addBtn = document.createElement('span');
-            addBtn.className = 'add-btn';
-            addBtn.title = 'Add column';
-            addBtn.innerHTML = '<i class="material-icons" style="font-size:18px">add</i>';
-            addBtn.onclick = (e) => {
-              e.stopPropagation();
-              addColumn(col);
-            };
-            item.appendChild(addBtn);
+            // Create add button (only if not in read-only mode)
+            if (!isReadOnly) {
+              const addBtn = document.createElement('span');
+              addBtn.className = 'add-btn';
+              addBtn.title = 'Add column';
+              addBtn.innerHTML = '<i class="material-icons" style="font-size:18px">add</i>';
+              addBtn.onclick = (e) => {
+                e.stopPropagation();
+                addColumn(col);
+              };
+              item.appendChild(addBtn);
 
-            item.onclick = () => addColumn(col);
+              item.onclick = () => addColumn(col);
+            }
             availableList.appendChild(item);
           });
         }
@@ -2797,8 +2841,21 @@
     function renderSelectedList() {
       selectedList.innerHTML = '';
 
-      // Update selected count
-      selectedCountEl.textContent = '(' + selectedColumns.length + ')';
+      // Update selected count with limit if applicable
+      if (window.columnLimit && window.columnLimit !== -1) {
+        selectedCountEl.textContent = `(${selectedColumns.length}/${window.columnLimit})`;
+        // Add warning color if approaching or at limit
+        if (selectedColumns.length >= window.columnLimit) {
+          selectedCountEl.style.color = '#db4437';
+        } else if (selectedColumns.length >= window.columnLimit - 2) {
+          selectedCountEl.style.color = '#f4b400';
+        } else {
+          selectedCountEl.style.color = 'var(--text-light)';
+        }
+      } else {
+        selectedCountEl.textContent = '(' + selectedColumns.length + ')';
+        selectedCountEl.style.color = 'var(--text-light)';
+      }
 
       if (selectedColumns.length === 0) {
         const emptyState = document.createElement('div');
@@ -2833,8 +2890,8 @@
         item.className = 'item selected';
         item.dataset.key = col.key;
         item.dataset.index = index;
-        // Make the ID column non-draggable
-        item.draggable = col.key !== 'id';
+        // Make the ID column non-draggable, and disable all dragging in read-only mode
+        item.draggable = !isReadOnly && col.key !== 'id';
 
         // Add read-only class for address components
         if (isReadOnlyField(col.key, col)) {
@@ -2913,41 +2970,43 @@
         
         item.appendChild(columnText);
 
-        // Create container for action buttons
-        const actionButtons = document.createElement('div');
-        actionButtons.className = 'action-buttons';
+        // Create container for action buttons (only if not in read-only mode)
+        if (!isReadOnly) {
+          const actionButtons = document.createElement('div');
+          actionButtons.className = 'action-buttons';
 
-        // Add rename button
-        const renameBtn = document.createElement('span');
-        renameBtn.className = 'rename-btn';
-        renameBtn.innerHTML = '<i class="material-icons" style="font-size:18px">edit</i>';
-        renameBtn.title = 'Rename column';
-        renameBtn.onclick = (e) => {
-          e.stopPropagation();
-          renameColumn(index);
-        };
-        actionButtons.appendChild(renameBtn);
+          // Add rename button
+          const renameBtn = document.createElement('span');
+          renameBtn.className = 'rename-btn';
+          renameBtn.innerHTML = '<i class="material-icons" style="font-size:18px">edit</i>';
+          renameBtn.title = 'Rename column';
+          renameBtn.onclick = (e) => {
+            e.stopPropagation();
+            renameColumn(index);
+          };
+          actionButtons.appendChild(renameBtn);
 
-        // Add remove button (but disable for ID column)
-        const removeBtn = document.createElement('span');
-        removeBtn.className = 'remove-btn';
-        removeBtn.innerHTML = '<i class="material-icons" style="font-size:18px">close</i>';
-        removeBtn.title = col.key === 'id' ? 'ID column cannot be removed' : 'Remove column';
-        removeBtn.onclick = (e) => {
-          e.stopPropagation();
-          removeColumn(col);
-        };
-        if (col.key === 'id') {
-          removeBtn.style.opacity = '0.5';
-          removeBtn.style.cursor = 'not-allowed';
+          // Add remove button (but disable for ID column)
+          const removeBtn = document.createElement('span');
+          removeBtn.className = 'remove-btn';
+          removeBtn.innerHTML = '<i class="material-icons" style="font-size:18px">close</i>';
+          removeBtn.title = col.key === 'id' ? 'ID column cannot be removed' : 'Remove column';
+          removeBtn.onclick = (e) => {
+            e.stopPropagation();
+            removeColumn(col);
+          };
+          if (col.key === 'id') {
+            removeBtn.style.opacity = '0.5';
+            removeBtn.style.cursor = 'not-allowed';
+          }
+          actionButtons.appendChild(removeBtn);
+
+          // Add the action buttons container to the item
+          item.appendChild(actionButtons);
         }
-        actionButtons.appendChild(removeBtn);
 
-        // Add the action buttons container to the item
-        item.appendChild(actionButtons);
-
-        // Set up drag events
-        if (col.key !== 'id') { // Only set up drag events for non-ID columns
+        // Set up drag events (only if not in read-only mode)
+        if (!isReadOnly && col.key !== 'id') { // Only set up drag events for non-ID columns in edit mode
           item.ondragstart = handleDragStart;
           item.ondragover = handleDragOver;
           item.ondrop = handleDrop;
@@ -3020,6 +3079,18 @@
 
     // Column management
     function addColumn(column) {
+      // Check if in read-only mode
+      if (isReadOnly) {
+        showStatus('error', 'You do not have permission to modify columns. Only team admins can change these settings.');
+        return;
+      }
+      
+      // Check column limit for Free plan
+      if (window.columnLimit && window.columnLimit !== -1 && selectedColumns.length >= window.columnLimit) {
+        showStatus('error', `You have reached the ${window.columnLimit} column limit for the Free plan. Please upgrade to Pro for unlimited columns.`);
+        return;
+      }
+      
       // Find the column in the original available columns array to ensure we have complete data
       const fullColumn = window.originalAvailableColumns.find(col => col.key === column.key);
       if (fullColumn) {
@@ -3040,6 +3111,12 @@
     }
 
     function removeColumn(column) {
+      // Check if in read-only mode
+      if (isReadOnly) {
+        showStatus('error', 'You do not have permission to modify columns. Only team admins can change these settings.');
+        return;
+      }
+      
       // Prevent removing the ID column
       if (column.key === 'id') {
         showStatus('error', 'The ID column is required and cannot be removed');
@@ -3055,6 +3132,12 @@
     }
 
     function renameColumn(columnIndex) {
+      // Check if in read-only mode
+      if (isReadOnly) {
+        showStatus('error', 'You do not have permission to rename columns. Only team admins can change these settings.');
+        return;
+      }
+      
       const column = selectedColumns[columnIndex];
       const currentName = column.customName || column.name;
       const newName = prompt("Enter custom header name for '" + column.name + "'", currentName);
@@ -3172,6 +3255,29 @@
 
         // Initialize the original columns array
         initializeColumns();
+
+        // Check plan limitations and show warning if needed
+        if (window.currentPlan && window.currentPlan.plan === 'free') {
+          const warningEl = document.getElementById('planLimitWarning');
+          const messageEl = document.getElementById('planLimitMessage');
+          
+          let warningMessages = [];
+          
+          // Check column limit
+          if (window.columnLimit && window.columnLimit !== -1) {
+            warningMessages.push(`Limited to ${window.columnLimit} columns`);
+          }
+          
+          // Check custom field access
+          if (window.canAccessCustomFields === false) {
+            warningMessages.push('Custom fields are not available');
+          }
+          
+          if (warningMessages.length > 0) {
+            messageEl.textContent = warningMessages.join(' • ') + '. Upgrade to Pro for unlimited columns and custom fields.';
+            warningEl.style.display = 'block';
+          }
+        }
 
         // Render the UI
         renderLists();

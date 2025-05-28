@@ -663,6 +663,102 @@ TeamManagerUI.getStyles = function() {
       border: 1px dashed var(--border-color);
       display: none;
     }
+    
+    /* Recent Activity Styles */
+    .recent-activity {
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-small);
+      background-color: var(--bg-light);
+    }
+    
+    .loading-activity {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      gap: 12px;
+      color: var(--text-medium);
+    }
+    
+    .spinner-small {
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(66, 133, 244, 0.2);
+      border-radius: 50%;
+      border-top: 2px solid var(--primary-color);
+      animation: spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+    
+    .activity-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      transition: var(--transition-fast);
+    }
+    
+    .activity-item:last-child {
+      border-bottom: none;
+    }
+    
+    .activity-item:hover {
+      background-color: var(--bg-white);
+    }
+    
+    .activity-icon {
+      color: var(--primary-color);
+      flex-shrink: 0;
+    }
+    
+    .activity-content {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .activity-description {
+      font-size: 13px;
+      color: var(--text-dark);
+      margin-bottom: 4px;
+    }
+    
+    .activity-description strong {
+      font-weight: 500;
+      color: var(--primary-color);
+    }
+    
+    .activity-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-medium);
+    }
+    
+    .activity-time {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    
+    .activity-sheet {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      background-color: var(--bg-white);
+      border-radius: var(--border-radius-small);
+      border: 1px solid var(--border-color);
+    }
+    
+    .no-activity {
+      text-align: center;
+      padding: 30px;
+      color: var(--text-medium);
+      font-style: italic;
+    }
   `;
 };
 
@@ -1643,6 +1739,110 @@ TeamManagerUI.getScripts = function() {
           .removeTeamMember(email);
       });
     });
+    
+    // Load recent activity for team members
+    function loadRecentActivity() {
+      var container = document.getElementById('recent-activity-container');
+      if (!container) return;
+      
+      // Show loading state
+      container.innerHTML = '<div class="loading-activity">' +
+        '<div class="spinner-small"></div>' +
+        '<span>Loading activity...</span>' +
+        '</div>';
+      
+      // Call server to get recent activity
+      google.script.run
+        .withSuccessHandler(function(activities) {
+          displayRecentActivity(activities);
+        })
+        .withFailureHandler(function(error) {
+          container.innerHTML = '<div class="no-activity">' +
+            'Unable to load recent activity' +
+            '</div>';
+        })
+        .getTeamRecentActivity();
+    }
+    
+    // Display recent activity
+    function displayRecentActivity(activities) {
+      var container = document.getElementById('recent-activity-container');
+      if (!container) return;
+      
+      if (!activities || activities.length === 0) {
+        container.innerHTML = '<div class="no-activity">' +
+          'No recent team activity' +
+          '</div>';
+        return;
+      }
+      
+      // Build activity HTML
+      var html = '';
+      activities.forEach(function(activity) {
+        var timeAgo = getTimeAgo(new Date(activity.timestamp));
+        var icon = getActivityIcon(activity.type);
+        
+        html += '<div class="activity-item">' +
+          '<i class="material-icons activity-icon">' + icon + '</i>' +
+          '<div class="activity-content">' +
+            '<div class="activity-description">' +
+              '<strong>' + activity.userEmail + '</strong> ' + activity.description +
+            '</div>' +
+            '<div class="activity-meta">' +
+              '<div class="activity-time">' +
+                '<i class="material-icons" style="font-size: 14px;">access_time</i>' +
+                '<span>' + timeAgo + '</span>' +
+              '</div>' +
+              (activity.sheetName ? 
+                '<div class="activity-sheet">' +
+                  '<i class="material-icons" style="font-size: 14px;">description</i>' +
+                  '<span>' + activity.sheetName + '</span>' +
+                '</div>' : '') +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      });
+      
+      container.innerHTML = html;
+    }
+    
+    // Get activity icon based on type
+    function getActivityIcon(type) {
+      var icons = {
+        'sync': 'sync',
+        'settings': 'settings',
+        'filter': 'filter_list',
+        'columns': 'view_column',
+        'trigger': 'schedule',
+        'member_added': 'person_add',
+        'member_removed': 'person_remove',
+        'role_changed': 'admin_panel_settings'
+      };
+      return icons[type] || 'update';
+    }
+    
+    // Get human-readable time ago
+    function getTimeAgo(date) {
+      var seconds = Math.floor((new Date() - date) / 1000);
+      
+      if (seconds < 60) return 'just now';
+      
+      var minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return minutes + (minutes === 1 ? ' minute ago' : ' minutes ago');
+      
+      var hours = Math.floor(minutes / 60);
+      if (hours < 24) return hours + (hours === 1 ? ' hour ago' : ' hours ago');
+      
+      var days = Math.floor(hours / 24);
+      if (days < 7) return days + (days === 1 ? ' day ago' : ' days ago');
+      
+      return date.toLocaleDateString();
+    }
+    
+    // Load recent activity when team management tab is shown
+    if (document.getElementById('manage-tab')) {
+      loadRecentActivity();
+    }
     
     // Close button handler
     document.getElementById('close-button').addEventListener('click', function() {

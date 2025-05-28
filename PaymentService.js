@@ -312,7 +312,7 @@ const PaymentService = {
         details: {
           name: 'Team',
           limits: {
-            rows: 5000,
+            rows: -1, // unlimited
             filters: -1,
             users: 5
           },
@@ -449,7 +449,7 @@ const PaymentService = {
               details: {
                 name: 'Team',
                 limits: {
-                  rows: 5000,
+                  rows: -1, // unlimited
                   filters: -1,
                   users: 5
                 },
@@ -496,25 +496,31 @@ const PaymentService = {
         limits: {
           rows: 50,
           filters: 1,
-          users: 1
+          users: 1,
+          columns: 10,
+          customFields: false
         },
         features: ['manual_sync', 'basic_support']
       },
       'pro': {
         name: 'Pro',
         limits: {
-          rows: 5000,
+          rows: -1, // unlimited
           filters: -1, // unlimited
-          users: 1
+          users: 1,
+          columns: -1, // unlimited
+          customFields: true
         },
         features: ['two_way_sync', 'scheduled_sync', 'bulk_operations', 'priority_support']
       },
       'team': {
         name: 'Team',
         limits: {
-          rows: 5000,
+          rows: -1, // unlimited
           filters: -1,
-          users: 5
+          users: 5,
+          columns: -1, // unlimited
+          customFields: true
         },
         features: ['two_way_sync', 'scheduled_sync', 'bulk_operations', 'team_features', 'shared_filters', 'admin_dashboard', 'priority_support']
       }
@@ -543,8 +549,48 @@ const PaymentService = {
     const plan = this.getCurrentPlan();
     const limit = plan.details.limits.rows;
     
+    // -1 means unlimited, so skip check
+    if (limit === -1) {
+      return true;
+    }
+    
     if (limit > 0 && currentRows > limit) {
       throw new Error(`Your ${plan.details.name} plan allows up to ${limit} rows. Please upgrade to sync more data.`);
+    }
+    
+    return true;
+  },
+  
+  /**
+   * Check if user can access custom fields
+   */
+  canAccessCustomFields() {
+    const plan = this.getCurrentPlan();
+    return plan.details.limits.customFields === true;
+  },
+  
+  /**
+   * Get column limit for current plan
+   */
+  getColumnLimit() {
+    const plan = this.getCurrentPlan();
+    return plan.details.limits.columns;
+  },
+  
+  /**
+   * Enforce column limits based on plan
+   */
+  enforceColumnLimit(selectedColumns) {
+    const plan = this.getCurrentPlan();
+    const limit = plan.details.limits.columns;
+    
+    // -1 means unlimited, so skip check
+    if (limit === -1) {
+      return true;
+    }
+    
+    if (limit > 0 && selectedColumns.length > limit) {
+      throw new Error(`Your ${plan.details.name} plan allows up to ${limit} columns. Please upgrade to select more columns.`);
     }
     
     return true;

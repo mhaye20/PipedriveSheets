@@ -92,6 +92,7 @@ const TriggerManagerUI = {
             scriptProperties.deleteProperty(`TRIGGER_${triggerId}_HOUR`);
             scriptProperties.deleteProperty(`TRIGGER_${triggerId}_MINUTE`);
             scriptProperties.deleteProperty(`TRIGGER_${triggerId}_MONTHDAY`);
+            scriptProperties.deleteProperty(`TRIGGER_${triggerId}_MINUTES_INTERVAL`);
           }
         }
       });
@@ -132,6 +133,16 @@ const TriggerManagerUI = {
       if (storedFrequency) {
         // We have the stored frequency, now format description based on it
         switch (storedFrequency) {
+          case 'minutes':
+            // Get stored minutes interval
+            const storedMinutesInterval = scriptProperties.getProperty(`TRIGGER_${triggerId}_MINUTES_INTERVAL`);
+            const minutesInterval = storedMinutesInterval ? parseInt(storedMinutesInterval) : 5;
+            
+            return {
+              type: 'Minutes',
+              description: `Every ${minutesInterval} minute${minutesInterval > 1 ? 's' : ''}${sheetInfo}`
+            };
+            
           case 'hourly':
             let hourInterval = 1;
             try {
@@ -266,7 +277,33 @@ const TriggerManagerUI = {
       const builder = ScriptApp.newTrigger('syncSheetFromTrigger')
         .timeBased();
       
-      if (frequency === 'hourly') {
+      if (frequency === 'minutes') {
+        // Minutes trigger
+        const minutesInterval = parseInt(triggerData.minutesInterval) || 5;
+        trigger = builder.everyMinutes(minutesInterval).create();
+        
+        // Save minutes interval info after trigger is created
+        if (trigger) {
+          const triggerId = trigger.getUniqueId();
+          saveSheetInfoForTrigger(triggerId, triggerData.sheetName, frequency, {
+            minutesInterval: minutesInterval
+          });
+          
+          // Get trigger info for UI update
+          const triggerInfo = this.getTriggerInfo(trigger);
+          
+          return {
+            success: true,
+            message: 'Trigger created successfully',
+            triggerId: triggerId,
+            triggerInfo: {
+              id: triggerId,
+              type: triggerInfo.type,
+              description: triggerInfo.description
+            }
+          };
+        }
+      } else if (frequency === 'hourly') {
         // Hourly trigger
         const hourlyInterval = parseInt(triggerData.hourlyInterval) || 1;
         trigger = builder.everyHours(hourlyInterval).create();
@@ -440,6 +477,7 @@ const TriggerManagerUI = {
       scriptProperties.deleteProperty(`TRIGGER_${triggerId}_HOUR`);
       scriptProperties.deleteProperty(`TRIGGER_${triggerId}_MINUTE`);
       scriptProperties.deleteProperty(`TRIGGER_${triggerId}_MONTHDAY`);
+      scriptProperties.deleteProperty(`TRIGGER_${triggerId}_MINUTES_INTERVAL`);
       
       return { success: true, message: 'Trigger deleted successfully' };
     } catch (e) {
@@ -484,6 +522,9 @@ function saveSheetInfoForTrigger(triggerId, sheetName, frequency, additionalInfo
     }
     if (additionalInfo.monthDay !== undefined) {
       props[`TRIGGER_${triggerId}_MONTHDAY`] = String(additionalInfo.monthDay);
+    }
+    if (additionalInfo.minutesInterval !== undefined) {
+      props[`TRIGGER_${triggerId}_MINUTES_INTERVAL`] = String(additionalInfo.minutesInterval);
     }
   }
   

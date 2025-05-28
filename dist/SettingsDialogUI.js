@@ -19,6 +19,24 @@ SettingsDialogUI.showSettings = function(initialTab = 'settings') {
     const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     const activeSheetName = activeSheet.getName();
     
+    // Check user permissions for team plans
+    const userEmail = Session.getActiveUser().getEmail();
+    let isReadOnly = false;
+    let userRole = '';
+    
+    // Check if user is on a team plan and their role
+    const plan = PaymentService.getCurrentPlan();
+    if (plan.plan === 'team' || plan.isInherited) {
+      // User is on a team plan, check their role
+      if (userEmail && isUserInTeam(userEmail)) {
+        const teamAccess = new TeamAccess();
+        userRole = teamAccess.getUserRole(userEmail);
+        
+        // Members can only view settings, not edit
+        isReadOnly = userRole === 'Member';
+      }
+    }
+    
     // Get current settings from properties
     const scriptProperties = PropertiesService.getScriptProperties();
     const accessToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
@@ -59,6 +77,8 @@ SettingsDialogUI.showSettings = function(initialTab = 'settings') {
     template.savedEntityType = savedEntityType;
     template.savedTimestampEnabled = savedTimestampEnabled;
     template.initialTab = initialTab; // Pass which tab should be initially active
+    template.isReadOnly = isReadOnly;
+    template.userRole = userRole;
     
     // Initialize column data variables for the column tab
     let availableColumnsData = [];
@@ -117,6 +137,11 @@ SettingsDialogUI.showSettings = function(initialTab = 'settings') {
       }
     }
     
+    // Get current plan information
+    const currentPlan = PaymentService.getCurrentPlan();
+    const columnLimit = currentPlan.details.limits.columns;
+    const canAccessCustomFields = currentPlan.details.limits.customFields;
+    
     // Create the data script with either real data or empty defaults
     template.dataScript = `<script>
       // Pass all available columns and selected columns to the front-end
@@ -125,6 +150,9 @@ SettingsDialogUI.showSettings = function(initialTab = 'settings') {
       window.entityType = "${savedEntityType}";
       window.sheetName = "${activeSheetName}";
       window.entityTypeName = "${formattedEntityType}";
+      window.currentPlan = ${JSON.stringify(currentPlan)};
+      window.columnLimit = ${columnLimit};
+      window.canAccessCustomFields = ${canAccessCustomFields};
     </script>`;
     
     template.entityTypeName = formattedEntityType;
@@ -295,6 +323,12 @@ function showColumnSelectorUI() {
     function extractFields(obj, parentPath = '', parentName = '') {
       // Special handling for custom_fields in API v2
       if (parentPath === 'custom_fields') {
+        // Skip custom fields entirely if user doesn't have access
+        if (!canAccessCustomFields) {
+          Logger.log('Skipping custom_fields - Free plan limitation');
+          return;
+        }
+        
         Logger.log('Processing custom_fields object');
         
         for (const key in obj) {
@@ -583,6 +617,10 @@ function showColumnSelectorUI() {
       
       Logger.log(`Got ${fieldDefinitions.length} field definitions and created field map`);
       
+      // Check if user can access custom fields based on their plan
+      const canAccessCustomFields = PaymentService.canAccessCustomFields();
+      Logger.log(`User can access custom fields: ${canAccessCustomFields}`);
+      
       // Create a record of already added custom fields to avoid duplicates
       const addedCustomFields = new Set();
       const addedKeys = new Set();
@@ -709,6 +747,12 @@ function showColumnSelectorUI() {
           continue;
         }
         
+        // Skip custom_fields if user doesn't have access
+        if (key === 'custom_fields' && !canAccessCustomFields) {
+          Logger.log('Skipping custom_fields at top level - Free plan limitation');
+          continue;
+        }
+        
         // Skip email/phone/im - already handled or intentionally skipped
         if (key === 'email' || key === 'phone' || key === 'im') {
           continue;
@@ -772,6 +816,12 @@ function showColumnSelectorUI() {
       }
       
       // Additional filters for fields that DO have keys
+      // Filter out custom fields if user doesn't have access
+      if (!canAccessCustomFields && col.key && (col.key.startsWith('custom_fields.') || col.parentKey === 'custom_fields')) {
+        Logger.log(`Filtering out custom field: ${col.name} - Free plan limitation`);
+        return false;
+      }
+      
       // Filter out all IM-related fields
       if (col.parentKey && (col.parentKey === 'im' || col.parentKey.startsWith('im.'))) {
         Logger.log(`Filtering out IM field: ${col.name} (parent: ${col.parentKey})`);
@@ -1863,6 +1913,13 @@ function saveColumnPreferences(entityType, sheetName, columns) {
   try {
     Logger.log(`Saving column preferences for ${entityType} in sheet "${sheetName}"`);
     Logger.log(`Received ${columns.length} columns to save`);
+    
+    // Check column limit for Free plan users
+    const columnLimit = PaymentService.getColumnLimit();
+    if (columnLimit !== -1 && columns.length > columnLimit) {
+      const planName = PaymentService.getCurrentPlan().details.name;
+      throw new Error(`Your ${planName} plan allows up to ${columnLimit} columns. You selected ${columns.length}. Please upgrade to select more columns.`);
+    }
     
     // Log the first 10 columns to help debug
     if (columns.length > 0) {

@@ -225,6 +225,14 @@ function syncFromPipedrive() {
     // Show completion message
     Logger.log("Sync completed successfully");
     SpreadsheetApp.getUi().alert("Sync completed successfully!");
+    
+    // Log team activity if user is in a team
+    if (typeof logTeamActivity === 'function') {
+      logTeamActivity('sync', `synced ${entityType} data`, {
+        sheetName: sheetName,
+        entityType: entityType
+      });
+    }
   } catch (error) {
     Logger.log(`Error in syncFromPipedrive: ${error.message}`);
     Logger.log(`Stack trace: ${error.stack}`);
