@@ -301,6 +301,26 @@ const PaymentService = {
   getCurrentPlan() {
     const userEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
     
+    // First, get the user's individual subscription status
+    const individualSubscription = this.getSubscriptionStatus();
+    
+    // If user has their own Team subscription, return it directly
+    if (individualSubscription.plan === 'team') {
+      Logger.log('[getCurrentPlan] User has their own Team subscription');
+      return {
+        ...individualSubscription,
+        details: {
+          name: 'Team',
+          limits: {
+            rows: 5000,
+            filters: -1,
+            users: 5
+          },
+          features: ['two_way_sync', 'scheduled_sync', 'bulk_operations', 'team_features', 'shared_filters', 'admin_dashboard', 'priority_support']
+        }
+      };
+    }
+    
     // Check if user is a team member with inherited Team plan
     if (userEmail && isUserInTeam(userEmail)) {
       Logger.log('[getCurrentPlan] User is in team, checking for inherited access');
@@ -414,11 +434,16 @@ const PaymentService = {
           }
           
           if (ownerHasTeamPlan) {
+            // Check if current user is the team owner
+            const normalizedOwnerEmail = teamOwnerEmail.toLowerCase();
+            const currentUserEmail = userEmail.toLowerCase();
+            const isTeamOwner = normalizedOwnerEmail === currentUserEmail;
+            
             // Return team plan details with inherited status
             const result = {
               plan: 'team',
               status: 'active',
-              isInherited: true,
+              isInherited: !isTeamOwner,  // Only inherited if user is NOT the team owner
               teamName: team.name,
               teamOwner: teamOwnerEmail,
               details: {
@@ -462,8 +487,8 @@ const PaymentService = {
       }
     }
     
-    // Get individual subscription status
-    const subscription = this.getSubscriptionStatus();
+    // Use the individual subscription we already got at the beginning
+    const subscription = individualSubscription;
     
     const planDetails = {
       'free': {

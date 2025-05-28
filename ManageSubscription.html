@@ -317,7 +317,11 @@
         <div class="info-row">
           <span class="info-label">Current Plan</span>
           <span class="info-value">
+            <? if (currentPlan.plan === 'team' && !currentPlan.isInherited) { ?>
+            <span class="plan-badge team">Team (Owner)</span>
+            <? } else { ?>
             <span class="plan-badge <?= currentPlan.plan ?>"><?= currentPlan.details.name ?></span>
+            <? } ?>
           </span>
         </div>
         
