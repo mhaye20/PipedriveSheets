@@ -1748,7 +1748,8 @@ TeamManagerUI.showTeamManager = function(joinOnly = false) {
   try {
     // Check subscription status for team features
     const plan = PaymentService.getCurrentPlan();
-    if (plan.plan !== 'team') {
+    // Allow access if user has team plan OR inherited team access
+    if (plan.plan !== 'team' && !plan.isInherited) {
       // Show limited view for non-team plans
       const ui = SpreadsheetApp.getUi();
       const result = ui.alert(

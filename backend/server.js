@@ -128,12 +128,36 @@ app.post('/api/subscription/status', async (req, res) => {
     const { email, googleUserId, scriptId } = req.body;
     
     // Look up user's subscription in database
-    const { data: subscription, error } = await supabase
-      .from('subscriptions')
-      .select('*')
-      .eq('google_user_id', googleUserId)
-      .eq('script_id', scriptId)
-      .single();
+    let subscription = null;
+    let error = null;
+    
+    // First try to look up by googleUserId if provided
+    if (googleUserId) {
+      const result = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('google_user_id', googleUserId)
+        .eq('script_id', scriptId)
+        .single();
+      
+      subscription = result.data;
+      error = result.error;
+    }
+    
+    // If not found by googleUserId (or googleUserId not provided), try by email
+    if ((!subscription || error) && email) {
+      const result = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('email', email.toLowerCase())
+        .eq('script_id', scriptId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      
+      subscription = result.data;
+      error = result.error;
+    }
     
     if (error || !subscription) {
       return res.json({

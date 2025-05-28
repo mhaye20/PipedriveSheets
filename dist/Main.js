@@ -960,3 +960,17 @@ function showSettingsTab() {
     SpreadsheetApp.getUi().alert('Error', 'Failed to open filter settings: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
+
+/**
+ * Shows the team manager dialog
+ * This function is called from the menu and from other dialogs
+ * @param {boolean} joinOnly - Whether to show only the join team section
+ */
+function showTeamManager(joinOnly) {
+  try {
+    TeamManagerUI.showTeamManager(joinOnly);
+  } catch (e) {
+    Logger.log('Error in showTeamManager: ' + e.message);
+    SpreadsheetApp.getUi().alert('Error', 'Failed to open team manager: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
