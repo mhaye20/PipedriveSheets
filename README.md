@@ -131,11 +131,16 @@ PipedriveSheets
 ├── HeaderService.js
 ├── Help.html
 ├── Main.js
+├── ManageSubscription.html
 ├── OAuth.js
+├── PAYMENT_INTEGRATION_GUIDE.md
+├── PaymentDialog.html
+├── PaymentService.js
 ├── PipedriveAPI.js
 ├── PipedriveDirectAPI.js
 ├── PipedriveNpm.js
 ├── PricingSummary.md
+├── QuickSetup.js
 ├── README.md
 ├── SettingsDialog.html
 ├── SettingsDialogUI.js
@@ -147,6 +152,7 @@ PipedriveSheets
 ├── TeamManagerUI.js
 ├── TestOrganizationFix.js
 ├── TestOrganizationPush.js
+├── TestPaymentSystem.js
 ├── TestPipedriveFields.js
 ├── TriggerManager.html
 ├── TriggerManagerUI.js
@@ -157,6 +163,18 @@ PipedriveSheets
 ├── UI.js
 ├── Utilities.js
 ├── appsscript.json
+├── backend
+│   ├── .env.example
+│   ├── .gitignore
+│   ├── .vercel
+│   │   ├── README.txt
+│   │   └── project.json
+│   ├── DEPLOYMENT_STEPS.md
+│   ├── PORTAL_SETUP.md
+│   ├── READMEBACK.md
+│   ├── package.json
+│   ├── server.js
+│   └── vercel.json
 ├── dist
 ├── gaswebpack.md
 ├── node_modules
