@@ -56,7 +56,17 @@
       "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"function.*sync\" UI.js)",
       "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"SyncService\\.sync.*=.*function|syncDataFromPipedrive\" SyncService.js)",
       "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -B 5 -A 5 \"sync.*complet|Successfully.*sync|Sync.*successful\" SyncService.js)",
-      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -B 5 -A 5 \"Team member added successfully\" TeamData.js)"
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -B 5 -A 5 \"Team member added successfully\" TeamData.js)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"handleSaveSettings|saveSettings.*function\" SettingsDialogUI.js)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"function.*save\" SettingsDialogUI.js)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -B 10 -A 10 \"setProperty.*FILTER_ID\" SettingsDialogUI.js)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -B 5 -A 15 \"function saveSettings\" SettingsDialog.html)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 20 \"google\\.script\\.run.*save\" SettingsDialog.html)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 30 \"saveBtn.*onclick.*saveSettings\" SettingsDialog.html)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"function saveSettings\" *.js)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -B 5 -A 5 \"success.*true.*message.*Trigger created\" TriggerManagerUI.js)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"Trigger created successfully\" TriggerManagerUI.js)",
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"Trigger deleted successfully\" TriggerManagerUI.js)"
     ],
     "deny": []
   }

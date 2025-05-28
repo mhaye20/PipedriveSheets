@@ -292,6 +292,15 @@ const TriggerManagerUI = {
           // Get trigger info for UI update
           const triggerInfo = this.getTriggerInfo(trigger);
           
+          // Log team activity if user is in a team
+          if (typeof logTeamActivity === 'function') {
+            logTeamActivity('trigger', `created ${frequency} sync trigger`, {
+              sheetName: triggerData.sheetName,
+              frequency: frequency,
+              interval: triggerData.minutesInterval || triggerData.hourlyInterval || null
+            });
+          }
+          
           return {
             success: true,
             message: 'Trigger created successfully',
@@ -430,6 +439,14 @@ const TriggerManagerUI = {
         // Get trigger info for UI update
         const triggerInfo = this.getTriggerInfo(trigger);
         
+        // Log team activity if user is in a team
+        if (typeof logTeamActivity === 'function') {
+          logTeamActivity('trigger', `created ${frequency} sync trigger`, {
+            sheetName: triggerData.sheetName,
+            frequency: frequency
+          });
+        }
+        
         return {
           success: true,
           message: 'Trigger created successfully',
@@ -478,6 +495,13 @@ const TriggerManagerUI = {
       scriptProperties.deleteProperty(`TRIGGER_${triggerId}_MINUTE`);
       scriptProperties.deleteProperty(`TRIGGER_${triggerId}_MONTHDAY`);
       scriptProperties.deleteProperty(`TRIGGER_${triggerId}_MINUTES_INTERVAL`);
+      
+      // Log team activity if user is in a team
+      if (typeof logTeamActivity === 'function') {
+        logTeamActivity('trigger', 'deleted sync trigger', {
+          triggerId: triggerId
+        });
+      }
       
       return { success: true, message: 'Trigger deleted successfully' };
     } catch (e) {

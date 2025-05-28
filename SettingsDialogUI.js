@@ -1999,6 +1999,15 @@ function saveColumnPreferences(entityType, sheetName, columns) {
     // Save to Script Properties
     properties.setProperty(columnsKey, columnsJson);
     
+    // Log team activity if user is in a team
+    if (typeof logTeamActivity === 'function') {
+      logTeamActivity('columns', `updated column selection for ${entityType} (${columns.length} columns)`, {
+        sheetName: sheetName,
+        entityType: entityType,
+        columnCount: columns.length
+      });
+    }
+    
     // NEW: Create and store a header-to-field key mapping for pushChangesToPipedrive
     // This mapping will allow us to find the right Pipedrive field key regardless of header name changes
     const headerToFieldKeyMap = {};

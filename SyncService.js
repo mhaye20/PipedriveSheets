@@ -10294,5 +10294,14 @@ function saveSettings(apiKey, entityType, filterId, subdomain, sheetName, enable
   scriptProperties.setProperty(timestampEnabledKey, enableTimestamp.toString());
   scriptProperties.setProperty('SHEET_NAME', sheetName);
   
+  // Log team activity if user is in a team
+  if (typeof logTeamActivity === 'function') {
+    logTeamActivity('settings', `updated filter settings for ${entityType}`, {
+      sheetName: sheetName,
+      entityType: entityType,
+      filterId: filterId
+    });
+  }
+  
   Logger.log(`Saved settings for sheet "${sheetName}": entityType=${entityType}, filterId=${filterId}, enableTimestamp=${enableTimestamp}`);
 }
