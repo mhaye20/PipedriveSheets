@@ -214,13 +214,18 @@
         </div>
         
         <div class="info-row">
-          <span class="info-label">Added By</span>
+          <span class="info-label">Team Owner</span>
           <span class="info-value"><?= currentPlan.teamOwner ?></span>
         </div>
         
         <div class="info-row">
-          <span class="info-label">Your Email</span>
+          <span class="info-label">Your Account</span>
           <span class="info-value"><?= userEmail ?></span>
+        </div>
+        
+        <div class="info-row">
+          <span class="info-label">Features</span>
+          <span class="info-value">5,000 rows • Team collaboration</span>
         </div>
       </div>
       
@@ -231,10 +236,54 @@
       <? } ?>
       
       <div class="note" style="background: #e8f5e9; color: #2e7d32;">
-        <strong>Team Member Access:</strong> You have been added to the "<?= currentPlan.teamName ?>" team by <?= currentPlan.teamOwner ?>. You have access to all Team plan features including two-way sync, scheduled updates, team collaboration features, and up to 5,000 rows.
+        <strong>Team Member Benefits:</strong> As a member of "<?= currentPlan.teamName ?>", you have full access to all Team plan features:
+        <ul style="margin: 8px 0 0 0; padding-left: 20px;">
+          <li>Two-way sync with Pipedrive</li>
+          <li>Scheduled automatic updates</li>
+          <li>Up to 5,000 rows per sync</li>
+          <li>Unlimited filters</li>
+          <li>Team collaboration features</li>
+          <li>Priority support</li>
+        </ul>
       </div>
       
       <div class="actions">
+        <button class="btn btn-primary" onclick="viewTeamDetails()">
+          View Team Details
+        </button>
+        <button class="btn btn-secondary" onclick="google.script.host.close()">
+          Close
+        </button>
+      </div>
+      <? } else if (currentPlan.plan === 'free' && currentPlan.teamName) { ?>
+      <!-- Free user who is part of a team but team owner doesn't have Team plan -->
+      <div class="plan-info">
+        <div class="info-row">
+          <span class="info-label">Current Plan</span>
+          <span class="info-value">
+            <span class="plan-badge free">Free</span>
+          </span>
+        </div>
+        
+        <div class="info-row">
+          <span class="info-label">Status</span>
+          <span class="info-value">Team member (inactive)</span>
+        </div>
+        
+        <div class="info-row">
+          <span class="info-label">Team</span>
+          <span class="info-value"><?= currentPlan.teamName ?></span>
+        </div>
+      </div>
+      
+      <div class="note" style="background: #fff3cd; color: #856404;">
+        <strong>Team Access Unavailable:</strong> You are a member of "<?= currentPlan.teamName ?>" but your team owner doesn't have an active Team subscription. To access team features, the team owner (<?= currentPlan.teamOwner ?>) needs to upgrade to the Team plan.
+      </div>
+      
+      <div class="actions">
+        <button class="btn btn-primary" onclick="upgradeNow()">
+          Get Your Own Premium Plan
+        </button>
         <button class="btn btn-secondary" onclick="google.script.host.close()">
           Close
         </button>
@@ -417,6 +466,11 @@
     function upgradeNow() {
       google.script.host.close();
       google.script.run.showUpgradeDialog();
+    }
+    
+    function viewTeamDetails() {
+      google.script.host.close();
+      google.script.run.showTeamManager();
     }
     
     function refreshStatus() {

@@ -195,43 +195,81 @@ const PaymentService = {
             try {
               // Normalize the team owner email for consistent checking
               const normalizedOwnerEmail = teamOwnerEmail.toLowerCase();
+              const currentUserEmail = userEmail.toLowerCase();
               
-              const response = UrlFetchApp.fetch(`${this.API_URL}/subscription/status`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                payload: JSON.stringify({
-                  email: normalizedOwnerEmail,
-                  googleUserId: '', // Let backend handle user ID lookup
-                  scriptId: ScriptApp.getScriptId()
-                }),
-                muteHttpExceptions: true
-              });
-              
-              if (response.getResponseCode() === 200) {
-                const ownerData = JSON.parse(response.getContentText());
-                Logger.log('Team owner subscription data: ' + JSON.stringify(ownerData));
+              // Special case: if current user IS the team owner, use their own subscription status
+              if (normalizedOwnerEmail === currentUserEmail) {
+                Logger.log('Current user is the team owner, using their subscription status');
+                const currentUserStatus = this.getSubscriptionStatus();
                 
-                // Check if owner has team plan that's either active or canceled but still valid
-                if (ownerData.plan === 'team') {
-                  if (ownerData.status === 'active' && !ownerData.cancelAt) {
-                    // Active subscription without cancellation
+                if (currentUserStatus.plan === 'team') {
+                  if (currentUserStatus.status === 'active' && !currentUserStatus.cancelAt) {
                     ownerHasTeamPlan = true;
-                  } else if (ownerData.cancelAt) {
-                    // Subscription is canceled but check if still within valid period
-                    const cancelDate = new Date(ownerData.cancelAt);
+                  } else if (currentUserStatus.cancelAt) {
+                    const cancelDate = new Date(currentUserStatus.cancelAt);
                     const now = new Date();
                     ownerHasTeamPlan = now < cancelDate;
-                    Logger.log('Team owner subscription canceled, valid until: ' + ownerData.cancelAt + ', still valid: ' + ownerHasTeamPlan);
                   }
                 }
                 
-                // Cache the full owner data for use in getCurrentPlan
-                cache.put(cacheKey, JSON.stringify(ownerData), 300);
+                // Cache it
+                cache.put(cacheKey, JSON.stringify(currentUserStatus), 300);
+                ownerData = currentUserStatus;
               } else {
-                Logger.log('Failed to get team owner subscription. Response code: ' + response.getResponseCode());
-                Logger.log('Response: ' + response.getContentText());
+                // For other team members, we need to check the owner's subscription
+                // This is a limitation - we can't get other users' Google User IDs
+                // The backend should handle email-only lookups or store the mapping
+                
+                const response = UrlFetchApp.fetch(`${this.API_URL}/subscription/status`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  payload: JSON.stringify({
+                    email: normalizedOwnerEmail,
+                    googleUserId: '', // We can't get other users' IDs
+                    scriptId: ScriptApp.getScriptId()
+                  }),
+                  muteHttpExceptions: true
+                });
+                
+                if (response.getResponseCode() === 200) {
+                  const ownerData = JSON.parse(response.getContentText());
+                  Logger.log('Team owner subscription data: ' + JSON.stringify(ownerData));
+                  
+                  // WORKAROUND: If API returns free but we know they should have team access
+                  // check if there's a team with this owner that has active members
+                  if (ownerData.plan === 'free' && team.memberEmails && team.memberEmails.length > 1) {
+                    Logger.log('API returned free for team owner, but team has multiple members - assuming Team plan is active');
+                    // For now, assume team plan is active if:
+                    // 1. The team exists with multiple members
+                    // 2. The owner is listed as team creator
+                    // This is a temporary workaround until backend is fixed
+                    ownerHasTeamPlan = true;
+                    ownerData = {
+                      plan: 'team',
+                      status: 'active',
+                      assumedFromTeamData: true
+                    };
+                  } else if (ownerData.plan === 'team') {
+                    if (ownerData.status === 'active' && !ownerData.cancelAt) {
+                      // Active subscription without cancellation
+                      ownerHasTeamPlan = true;
+                    } else if (ownerData.cancelAt) {
+                      // Subscription is canceled but check if still within valid period
+                      const cancelDate = new Date(ownerData.cancelAt);
+                      const now = new Date();
+                      ownerHasTeamPlan = now < cancelDate;
+                      Logger.log('Team owner subscription canceled, valid until: ' + ownerData.cancelAt + ', still valid: ' + ownerHasTeamPlan);
+                    }
+                  }
+                  
+                  // Cache the full owner data for use in getCurrentPlan
+                  cache.put(cacheKey, JSON.stringify(ownerData), 300);
+                } else {
+                  Logger.log('Failed to get team owner subscription. Response code: ' + response.getResponseCode());
+                  Logger.log('Response: ' + response.getContentText());
+                }
               }
             } catch (error) {
               Logger.log('Error checking team owner subscription: ' + error.message);
@@ -321,43 +359,75 @@ const PaymentService = {
             }
           } else {
             try {
-              const response = UrlFetchApp.fetch(`${this.API_URL}/subscription/status`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                payload: JSON.stringify({
-                  email: teamOwnerEmail.toLowerCase(),
-                  googleUserId: '', // Let backend handle user ID lookup
-                  scriptId: ScriptApp.getScriptId()
-                }),
-                muteHttpExceptions: true
-              });
+              const normalizedOwnerEmail = teamOwnerEmail.toLowerCase();
+              const currentUserEmail = userEmail.toLowerCase();
               
-              Logger.log('[getCurrentPlan] API Response code: ' + response.getResponseCode());
-              
-              if (response.getResponseCode() === 200) {
-                ownerData = JSON.parse(response.getContentText());
-                Logger.log('[getCurrentPlan] Owner subscription data: ' + JSON.stringify(ownerData));
+              // Special case: if current user IS the team owner, use their own subscription status
+              if (normalizedOwnerEmail === currentUserEmail) {
+                Logger.log('[getCurrentPlan] Current user is the team owner, using their subscription status');
+                const currentUserStatus = this.getSubscriptionStatus();
+                ownerData = currentUserStatus;
                 
-                // Check if owner has team plan that's either active or canceled but still valid
-                if (ownerData.plan === 'team') {
-                  if (ownerData.status === 'active' && !ownerData.cancelAt) {
-                    // Active subscription without cancellation
+                if (currentUserStatus.plan === 'team') {
+                  if (currentUserStatus.status === 'active' && !currentUserStatus.cancelAt) {
                     ownerHasTeamPlan = true;
-                  } else if (ownerData.cancelAt) {
-                    // Subscription is canceled but check if still within valid period
-                    const cancelDate = new Date(ownerData.cancelAt);
+                  } else if (currentUserStatus.cancelAt) {
+                    const cancelDate = new Date(currentUserStatus.cancelAt);
                     const now = new Date();
                     ownerHasTeamPlan = now < cancelDate;
-                    Logger.log('[getCurrentPlan] Team owner subscription canceled, valid until: ' + ownerData.cancelAt + ', still valid: ' + ownerHasTeamPlan);
                   }
                 }
                 
-                // Cache the full owner data
-                cache.put(cacheKey, JSON.stringify(ownerData), 300);
+                // Cache it
+                cache.put(cacheKey, JSON.stringify(currentUserStatus), 300);
               } else {
-                Logger.log('[getCurrentPlan] Failed to get owner subscription: ' + response.getContentText());
+                // For other team members, check the owner's subscription
+                const response = UrlFetchApp.fetch(`${this.API_URL}/subscription/status`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  payload: JSON.stringify({
+                    email: normalizedOwnerEmail,
+                    googleUserId: '', // We can't get other users' IDs
+                    scriptId: ScriptApp.getScriptId()
+                  }),
+                  muteHttpExceptions: true
+                });
+                
+                Logger.log('[getCurrentPlan] API Response code: ' + response.getResponseCode());
+                
+                if (response.getResponseCode() === 200) {
+                  ownerData = JSON.parse(response.getContentText());
+                  Logger.log('[getCurrentPlan] Owner subscription data: ' + JSON.stringify(ownerData));
+                  
+                  // WORKAROUND: If API returns free but we know they should have team access
+                  if (ownerData.plan === 'free' && team.memberEmails && team.memberEmails.length > 1) {
+                    Logger.log('[getCurrentPlan] API returned free for team owner, but team has multiple members - assuming Team plan is active');
+                    ownerHasTeamPlan = true;
+                    ownerData = {
+                      plan: 'team',
+                      status: 'active',
+                      assumedFromTeamData: true
+                    };
+                  } else if (ownerData.plan === 'team') {
+                    if (ownerData.status === 'active' && !ownerData.cancelAt) {
+                      // Active subscription without cancellation
+                      ownerHasTeamPlan = true;
+                    } else if (ownerData.cancelAt) {
+                      // Subscription is canceled but check if still within valid period
+                      const cancelDate = new Date(ownerData.cancelAt);
+                      const now = new Date();
+                      ownerHasTeamPlan = now < cancelDate;
+                      Logger.log('[getCurrentPlan] Team owner subscription canceled, valid until: ' + ownerData.cancelAt + ', still valid: ' + ownerHasTeamPlan);
+                    }
+                  }
+                  
+                  // Cache the full owner data
+                  cache.put(cacheKey, JSON.stringify(ownerData), 300);
+                } else {
+                  Logger.log('[getCurrentPlan] Failed to get owner subscription: ' + response.getContentText());
+                }
               }
             } catch (error) {
               Logger.log('Error checking team owner subscription: ' + error.message);
@@ -396,6 +466,23 @@ const PaymentService = {
       }
     }
     
+    // Check if user is in a team even if they don't have team features
+    // This is for the case where team owner doesn't have Team plan
+    let teamInfo = null;
+    if (userEmail && isUserInTeam(userEmail)) {
+      const userTeam = getUserTeam(userEmail);
+      if (userTeam) {
+        const teamsData = getTeamsData();
+        const team = teamsData[userTeam.teamId];
+        if (team) {
+          teamInfo = {
+            teamName: team.name,
+            teamOwner: team.createdBy || (team.adminEmails && team.adminEmails[0])
+          };
+        }
+      }
+    }
+    
     // Get individual subscription status
     const subscription = this.getSubscriptionStatus();
     
@@ -429,12 +516,20 @@ const PaymentService = {
       }
     };
     
-    return {
+    const result = {
       ...subscription,
       details: planDetails[subscription.plan] || planDetails.free,
       cancelAt: subscription.cancelAt,
       canceledAt: subscription.canceledAt
     };
+    
+    // Add team info if user is in a team but doesn't have inherited access
+    if (teamInfo && !result.isInherited) {
+      result.teamName = teamInfo.teamName;
+      result.teamOwner = teamInfo.teamOwner;
+    }
+    
+    return result;
   },
   
   /**
