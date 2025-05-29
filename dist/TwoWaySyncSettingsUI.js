@@ -216,7 +216,6 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
       headerCell.setValue('Sync Status')
         .setBackground('#E8F0FE')
         .setFontWeight('bold')
-        .setNote('This column tracks changes for two-way sync with Pipedrive');
 
       // Style the entire status column with a light background and border
       const fullStatusColumn = activeSheet.getRange(1, columnIndex, Math.max(activeSheet.getLastRow(), 2), 1);
@@ -260,17 +259,7 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
           activeSheet.getRange(2, columnIndex, newStatusValues.length, 1).setValues(newStatusValues);
         }
 
-        // Add data validation for status values
-        const rule = SpreadsheetApp.newDataValidation()
-          .requireValueInList(['Not modified', 'Modified', 'Synced', 'Error'], true)
-          .build();
-
-        // Apply validation to each data row
-        for (let i = 0; i < newStatusValues.length; i++) {
-          if (newStatusValues[i][0] !== '') { // Only add validation to rows with status
-            activeSheet.getRange(i + 2, columnIndex).setDataValidation(rule);
-          }
-        }
+        // Skip data validation - removed to avoid formatting issues
 
         // Set up conditional formatting
         const rules = activeSheet.getConditionalFormatRules();

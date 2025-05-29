@@ -1600,14 +1600,7 @@ function onEdit(e) {
           // Apply correct formatting
           syncStatusCell.setBackground("#F8F9FA").setFontColor("#000000");
 
-          // Re-apply data validation
-          const rule = SpreadsheetApp.newDataValidation()
-            .requireValueInList(
-              ["Not modified", "Modified", "Synced", "Error"],
-              true
-            )
-            .build();
-          syncStatusCell.setDataValidation(rule);
+          // Skip data validation - removed to avoid formatting issues
 
           releaseLock(executionId, lockKey);
           return;
@@ -1653,14 +1646,7 @@ function onEdit(e) {
         } catch (saveError) {
         }
 
-        // Re-apply data validation to ensure consistent dropdown options
-        const rule = SpreadsheetApp.newDataValidation()
-          .requireValueInList(
-            ["Not modified", "Modified", "Synced", "Error"],
-            true
-          )
-          .build();
-        syncStatusCell.setDataValidation(rule);
+        // Skip data validation - removed to avoid formatting issues
 
         // Make sure the styling is consistent
         syncStatusCell.setBackground("#FCE8E6").setFontColor("#D93025");
@@ -1839,14 +1825,7 @@ function onEdit(e) {
               } catch (lockError) {
               }
 
-              // Re-apply data validation
-              const rule = SpreadsheetApp.newDataValidation()
-                .requireValueInList(
-                  ["Not modified", "Modified", "Synced", "Error"],
-                  true
-                )
-                .build();
-              syncStatusCell.setDataValidation(rule);
+              // Skip data validation - removed to avoid formatting issues
 
               // Reset formatting
               syncStatusCell.setBackground("#F8F9FA").setFontColor("#000000");
@@ -1975,14 +1954,7 @@ function onEdit(e) {
               } catch (lockError) {
               }
 
-              // Re-apply data validation
-              const rule = SpreadsheetApp.newDataValidation()
-                .requireValueInList(
-                  ["Not modified", "Modified", "Synced", "Error"],
-                  true
-                )
-                .build();
-              syncStatusCell.setDataValidation(rule);
+              // Skip data validation - removed to avoid formatting issues
 
               // Reset formatting
               syncStatusCell.setBackground("#F8F9FA").setFontColor("#000000");
@@ -2041,14 +2013,7 @@ function onEdit(e) {
               } catch (lockError) {
               }
 
-              // Re-apply data validation
-              const rule = SpreadsheetApp.newDataValidation()
-                .requireValueInList(
-                  ["Not modified", "Modified", "Synced", "Error"],
-                  true
-                )
-                .build();
-              syncStatusCell.setDataValidation(rule);
+              // Skip data validation - removed to avoid formatting issues
 
               // Reset formatting
               syncStatusCell.setBackground("#F8F9FA").setFontColor("#000000");
@@ -2188,14 +2153,7 @@ function onEdit(e) {
               } catch (lockError) {
               }
 
-              // Re-apply data validation
-              const rule = SpreadsheetApp.newDataValidation()
-                .requireValueInList(
-                  ["Not modified", "Modified", "Synced", "Error"],
-                  true
-                )
-                .build();
-              syncStatusCell.setDataValidation(rule);
+              // Skip data validation - removed to avoid formatting issues
 
               // Reset formatting
               syncStatusCell.setBackground("#F8F9FA").setFontColor("#000000");
@@ -2993,7 +2951,8 @@ async function pushChangesToPipedrive(
         const updateData = {
           id: rowId,
           data: {},
-        };
+          sheetRowIndex: i + 1, // Store the actual row index in the sheet (1-based for getRange)
+        };        
 
         // Add special fields container for API v2
         // Note: Leads also need custom_fields as they inherit custom fields from deals
@@ -3437,14 +3396,6 @@ async function pushChangesToPipedrive(
               simplifiedPayload.custom_fields = simpleCustomFields;
             }
 
-            // DISABLED: Don't use simplified payload - it strips important fields like email/phone
-            // Uncomment the following lines only for debugging custom field issues
-            // payloadToSend = simplifiedPayload;
-            // Logger.log(
-            //   `Using simplified payload for debugging: ${JSON.stringify(
-            //     payloadToSend
-            //   )}`
-            // );
           }
 
           // Handle user_id.email format - convert to user_id if possible
@@ -3469,8 +3420,6 @@ async function pushChangesToPipedrive(
           // Handle org_id field - convert organization name to ID if needed
           if (payloadToSend.org_id && typeof payloadToSend.org_id === 'string' && isNaN(payloadToSend.org_id)) {
             
-            // For now, we'll remove it to avoid the error
-            // TODO: Implement organization name to ID lookup
             delete payloadToSend.org_id;
           }
           
@@ -4699,7 +4648,14 @@ async function pushChangesToPipedrive(
           successCount++;
 
           // Update the cell status to "Synced"
-          const row = rowIndex + 2; // +2 for header row and 0-based index
+          const row = rowData.sheetRowIndex; // Use the stored sheet row index
+          
+          // Validate that we have a valid row index
+          if (!row || row < 1) {
+            console.error(`Invalid row index for ID ${rowData.id}: ${row}`);
+            continue;
+          }
+                    
           const statusCell = activeSheet.getRange(
             row,
             syncStatusColumnIndex + 1
@@ -4733,11 +4689,11 @@ async function pushChangesToPipedrive(
           failures.push({
             id: rowData.id,
             error: errorMessage,
-            row: rowIndex + 2,
+            row: rowData.sheetRowIndex,
           });
 
           // Update cell status to "Error"
-          const row = rowIndex + 2;
+          const row = rowData.sheetRowIndex; // Use the stored sheet row index
           const statusCell = activeSheet.getRange(
             row,
             syncStatusColumnIndex + 1
@@ -4752,18 +4708,18 @@ async function pushChangesToPipedrive(
         failures.push({
           id: modifiedRows[rowIndex].id,
           error: error.message,
-          row: rowIndex + 2,
+          row: modifiedRows[rowIndex].sheetRowIndex,
         });
 
         // Update cell status to "Error"
-        const row = rowIndex + 2;
+        const row = modifiedRows[rowIndex].sheetRowIndex; // Use the stored sheet row index
         const statusCell = activeSheet.getRange(row, syncStatusColumnIndex + 1);
         statusCell.setValue("Error");
         statusCell.setBackground("#FCE8E6").setFontColor("#D93025");
       }
     }
 
-    // Show completion message
+    // Show completion message with diagnostic info
     if (failureCount > 0) {
       SpreadsheetApp.getActiveSpreadsheet().toast(
         `Completed with ${successCount} success(es) and ${failureCount} failure(s)`,
