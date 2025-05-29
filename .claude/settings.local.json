@@ -24,7 +24,8 @@
       "Bash(then echo \"$file has syntax error\")",
       "Bash(fi)",
       "Bash(./fix-orphaned-logs.sh:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(mkdir:*)"
     ],
     "deny": []
   }
