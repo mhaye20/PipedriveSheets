@@ -1,10 +1,10 @@
 /**
- * API functions that Google Apps Script will call directly.
+ * API functions that Google™ Apps Script will call directly.
  * These functions can use the bundled code through the global AppLib variable.
  */
 
 /**
- * Configure Pipedrive client with custom Axios adapter for Google Apps Script
+ * Configure Pipedrive client with custom Axios adapter for Google™ Apps Script
  * This resolves the "no suitable adapter" error
  */
 function setupPipedriveClient() {
@@ -18,7 +18,7 @@ function setupPipedriveClient() {
     
     // Configure axios to use our custom adapter
     pipedriveLib.v1.axios.defaults.adapter = gasAdapter;
-    Logger.log('Configured Pipedrive client with custom Google Apps Script adapter');
+    Logger.log('Configured Pipedrive client with custom Google™ Apps Script adapter');
     return true;
   }
   
@@ -27,7 +27,7 @@ function setupPipedriveClient() {
     // Set up global axios if it exists
     if (typeof axios !== 'undefined') {
       if (AppLib.applyGASAdapterToAxios(axios)) {
-        Logger.log('Configured global axios with custom Google Apps Script adapter');
+        Logger.log('Configured global axios with custom Google™ Apps Script adapter');
         return true;
       }
     }
@@ -95,7 +95,7 @@ function setupPipedriveClient() {
  * This is needed for the Pipedrive npm package which uses these classes internally
  */
 function installPolyfills() {
-  // In Google Apps Script, the global object is 'this' at the top level
+  // In Google™ Apps Script, the global object is 'this' at the top level
   // Fallback to 'this' or {} if global is not defined
   const globalObj = typeof globalThis !== 'undefined' ? globalThis : 
                     typeof global !== 'undefined' ? global : 
@@ -124,7 +124,7 @@ function installPolyfills() {
 
 /**
  * Get the bundled Pipedrive npm package library
- * This function can be called from any Google Apps Script file
+ * This function can be called from any Google™ Apps Script file
  * @returns {Object} The Pipedrive npm package
  */
 function getPipedriveNpmLibrary() {
@@ -161,7 +161,7 @@ function getNpm() {
 }
 
 /**
- * Required for Google Apps Script to run as a web app
+ * Required for Google™ Apps Script to run as a web app
  */
 function doGet(e) {
   return HtmlService.createHtmlOutput('App is running!');
@@ -265,11 +265,11 @@ function inspectApiClientAxios(apiClient) {
   return hasAxios;
 }
 
-// These functions are globally available to all Google Apps Script files
-// In Google Apps Script, functions are exported by simply defining them
+// These functions are globally available to all Google™ Apps Script files
+// In Google™ Apps Script, functions are exported by simply defining them
 // No need to explicitly export them with 'global'
 
-// The following functions will be automatically available in Google Apps Script:
+// The following functions will be automatically available in Google™ Apps Script:
 // - setupPipedriveClient
 // - installPolyfills  
 // - getPipedriveNpmLibrary

@@ -1,8 +1,8 @@
 /**
- * Pipedrive to Google Sheets Integration
+ * Pipedrive to Google Sheets™ Integration
  * 
  * This script connects to Pipedrive API and fetches data based on filters
- * to populate a Google Sheet with the requested fields.
+ * to populate a Google Sheet™ with the requested fields.
  * 
  * Version: 2.0.0
  * Author: Your Name

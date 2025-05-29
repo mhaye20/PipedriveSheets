@@ -1,7 +1,7 @@
 // Import the polyfill for older JavaScript features
 import '@babel/polyfill';
 
-// Simpler URL polyfill for Google Apps Script (no DOM dependencies)
+// Simpler URL polyfill for Google™ Apps Script (no DOM dependencies)
 class URLPolyfill {
   constructor(url, base) {
     // Simple implementation that handles the basics
@@ -65,7 +65,7 @@ class URLPolyfill {
   }
 }
 
-// Set URL polyfill on global object for Google Apps Script
+// Set URL polyfill on global object for Google™ Apps Script
 if (typeof URL === 'undefined') {
   // Try multiple global object references
   if (typeof globalThis !== 'undefined') {
@@ -161,7 +161,7 @@ class URLSearchParamsPolyfill {
   }
 }
 
-// Set URLSearchParams polyfill on global object for Google Apps Script
+// Set URLSearchParams polyfill on global object for Google™ Apps Script
 if (typeof URLSearchParams === 'undefined') {
   // Try multiple global object references
   if (typeof globalThis !== 'undefined') {
@@ -177,7 +177,7 @@ if (typeof URLSearchParams === 'undefined') {
   URLSearchParams = URLSearchParamsPolyfill;
 }
 
-// Axios adapter for Google Apps Script
+// Axios adapter for Google™ Apps Script
 function createGASAxiosAdapter() {
   // Return a function that implements the Axios adapter interface
   return function gasAdapter(config) {
@@ -446,7 +446,7 @@ try {
 }
 
 /**
- * Get URL polyfill for Google Apps Script
+ * Get URL polyfill for Google™ Apps Script
  * @returns {Class} URL polyfill class
  */
 function getURLPolyfill() {
@@ -454,7 +454,7 @@ function getURLPolyfill() {
 }
 
 /**
- * Get URLSearchParams polyfill for Google Apps Script
+ * Get URLSearchParams polyfill for Google™ Apps Script
  * @returns {Class} URLSearchParams polyfill class
  */
 function getURLSearchParamsPolyfill() {
@@ -462,7 +462,7 @@ function getURLSearchParamsPolyfill() {
 }
 
 /**
- * Get Axios adapter for Google Apps Script
+ * Get Axios adapter for Google™ Apps Script
  * @returns {Function} The adapter function
  */
 function getGASAxiosAdapter() {
@@ -499,7 +499,7 @@ function applyGASAdapterToAxios(axiosInstance) {
 
 /**
  * Accessor function to get the Pipedrive npm package
- * This can be called from any Google Apps Script file
+ * This can be called from any Google™ Apps Script file
  */
 function getPipedriveLib() {
   return pipedrive;
@@ -515,7 +515,7 @@ function initializePipedrive(apiToken) {
     // Create the Pipedrive client
     const client = new pipedrive.Pipedrive(apiToken);
     
-    // Intercept and modify APIs to work with Google Apps Script
+    // Intercept and modify APIs to work with Google™ Apps Script
     const customAdapter = createGASAxiosAdapter();
     
     // First apply adapter to the main client
@@ -584,7 +584,7 @@ function getNpmPackages() {
 }
 
 /**
- * Creates a properly configured DealsApi instance for Google Apps Script
+ * Creates a properly configured DealsApi instance for Google™ Apps Script
  * Use this for updating deals to avoid URL and payload issues
  * @param {string} apiToken - Your Pipedrive API token
  * @param {string} basePath - Optional base path for the API

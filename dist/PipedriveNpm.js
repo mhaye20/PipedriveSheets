@@ -1,10 +1,10 @@
 /**
  * PipedriveNpm.js
- * Helper module for working with the Pipedrive npm package in Google Apps Script
+ * Helper module for working with the Pipedrive npm package in Google™ Apps Script
  */
 
 /**
- * Initialize Pipedrive API client with all necessary fixes for Google Apps Script
+ * Initialize Pipedrive API client with all necessary fixes for Google™ Apps Script
  * @param {string} apiToken - The OAuth token for Pipedrive
  * @param {string} basePath - The API base path (optional)
  * @returns {Object} API client with proper configuration
@@ -58,7 +58,7 @@ function initializePipedriveClient(apiToken, basePath = null) {
 }
 
 /**
- * Creates an API client with fixed methods for Google Apps Script
+ * Creates an API client with fixed methods for Google™ Apps Script
  * @param {string} apiName - The name of the API client class
  * @param {Object} pipedriveLib - The Pipedrive library object
  * @param {Object} config - The API configuration
@@ -112,7 +112,7 @@ function createFixedApiClient(apiName, pipedriveLib, config) {
 }
 
 /**
- * Fix the update method of an API client to work with Google Apps Script
+ * Fix the update method of an API client to work with Google™ Apps Script
  * @param {Object} apiClient - The API client to fix
  * @param {string} methodName - The name of the update method
  * @param {string} entityPath - The API path for the entity type
@@ -208,7 +208,7 @@ function sanitizePayload(payload) {
 }
 
 /**
- * Create a custom Google Apps Script adapter for axios
+ * Create a custom Google™ Apps Script adapter for axios
  * @returns {Function} Adapter function
  */
 function createGASAdapter() {
@@ -299,7 +299,7 @@ function createGASAdapter() {
 }
 
 /**
- * Setup URL and URLSearchParams polyfills for Google Apps Script
+ * Setup URL and URLSearchParams polyfills for Google™ Apps Script
  */
 function setupPolyfills() {
   try {

@@ -1,6 +1,6 @@
 /**
  * PaymentService - Handles Stripe integration and license validation
- * This runs in Google Apps Script environment
+ * This runs in Google™ Apps Script environment
  */
 
 const PaymentService = {

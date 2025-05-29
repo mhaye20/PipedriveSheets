@@ -234,7 +234,7 @@ function doGet(e) {
           + '</head>'
           + '<body>'
           + '<h1 class="success">✓ Successfully Connected!</h1>'
-          + '<p>You have successfully connected your Pipedrive account. You can close this window and return to Google Sheets.</p>'
+          + '<p>You have successfully connected your Pipedrive account. You can close this window and return to Google Sheets™.</p>'
           + '<button onclick="window.close()">Close Window</button>'
           + '</body>'
           + '</html>'

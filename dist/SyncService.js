@@ -1,7 +1,7 @@
 /**
  * Sync Service Code
  *
- * This module handles the synchronization between Pipedrive and Google Sheets:
+ * This module handles the synchronization between Pipedrive and Google Sheets™:
  * - Fetching data from Pipedrive and writing to sheets
  * - Tracking modifications and pushing changes back to Pipedrive
  * - Managing synSchronization status and scheduling
@@ -2612,7 +2612,7 @@ function getPhoneNumberFromField(data, key) {
 }
 
 /**
- * Main function to sync deals from a Pipedrive filter to the Google Sheet
+ * Main function to sync deals from a Pipedrive filter to the Google Sheet™
  * @param {string} filterId - The filter ID to use
  * @param {boolean} skipPush - Whether to skip pushing changes back to Pipedrive
  * @param {string} sheetName - The name of the sheet to sync to
@@ -2622,7 +2622,7 @@ function syncDealsFromFilter(filterId, skipPush = false, sheetName = null) {
 }
 
 /**
- * Main function to sync persons from a Pipedrive filter to the Google Sheet
+ * Main function to sync persons from a Pipedrive filter to the Google Sheet™
  * @param {string} filterId - The filter ID to use
  * @param {boolean} skipPush - Whether to skip pushing changes back to Pipedrive
  * @param {string} sheetName - The name of the sheet to sync to
@@ -2632,7 +2632,7 @@ function syncPersonsFromFilter(filterId, skipPush = false, sheetName = null) {
 }
 
 /**
- * Main function to sync organizations from a Pipedrive filter to the Google Sheet
+ * Main function to sync organizations from a Pipedrive filter to the Google Sheet™
  * @param {string} filterId - The filter ID to use
  * @param {boolean} skipPush - Whether to skip pushing changes back to Pipedrive
  * @param {string} sheetName - The name of the sheet to sync to
@@ -2651,7 +2651,7 @@ function syncOrganizationsFromFilter(
 }
 
 /**
- * Main function to sync activities from a Pipedrive filter to the Google Sheet
+ * Main function to sync activities from a Pipedrive filter to the Google Sheet™
  * @param {string} filterId - The filter ID to use
  * @param {boolean} skipPush - Whether to skip pushing changes back to Pipedrive
  * @param {string} sheetName - The name of the sheet to sync to
@@ -2670,7 +2670,7 @@ function syncActivitiesFromFilter(
 }
 
 /**
- * Main function to sync leads from a Pipedrive filter to the Google Sheet
+ * Main function to sync leads from a Pipedrive filter to the Google Sheet™
  * @param {string} filterId - The filter ID to use
  * @param {boolean} skipPush - Whether to skip pushing changes back to Pipedrive
  * @param {string} sheetName - The name of the sheet to sync to
@@ -2680,7 +2680,7 @@ function syncLeadsFromFilter(filterId, skipPush = false, sheetName = null) {
 }
 
 /**
- * Main function to sync products from a Pipedrive filter to the Google Sheet
+ * Main function to sync products from a Pipedrive filter to the Google Sheet™
  * @param {string} filterId - The filter ID to use
  * @param {boolean} skipPush - Whether to skip pushing changes back to Pipedrive
  * @param {string} sheetName - The name of the sheet to sync to
