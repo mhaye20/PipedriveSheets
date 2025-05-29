@@ -193,6 +193,11 @@
         margin-top: 0;
         color: var(--primary-color);
       }
+      
+      .feature-card.early-version {
+        background-color: #f0f7ff;
+        border-color: var(--primary-color);
+      }
     </style>
   </head>
   <body>
@@ -209,6 +214,13 @@
       </div>
       
       <div id="help" class="tab-content active">
+        <div class="feature-card early-version">
+          <h4>Heads Up: This Is an Early Version</h4>
+          <p>PipedriveSheets is just getting started, and your feedback means a lot!</p>
+          <p>If you run into any issues or have ideas for improvement, feel free to email me at <a href="mailto:support@pipedrivesheets.com">support@pipedrivesheets.com</a>. I’m doing my best to respond quickly and make sure everything runs smoothly—your input really helps make the add-on better for everyone.</p>
+          <p>Thanks for being part of the journey!</p>
+        </div>
+        
         <div class="section">
           <h4>Getting Started</h4>
           <ol>
@@ -218,6 +230,7 @@
           </ol>
         </div>
         
+        <? if (userPlan === 'team' || userPlan === 'team_inherited') { ?>
         <div class="feature-card">
           <h4>Team Features</h4>
           <p>Use the <b>Team Management</b> option to create or join a team. Team members can share:</p>
@@ -227,7 +240,9 @@
             <li>Access to synchronized data</li>
           </ul>
         </div>
+        <? } ?>
         
+        <? if (userPlan === 'pro_monthly' || userPlan === 'pro_annual' || userPlan === 'team' || userPlan === 'team_inherited') { ?>
         <div class="feature-card">
           <h4>Two-Way Sync</h4>
           <p>Enable <b>Two-Way Sync</b> to push your changes back to Pipedrive:</p>
@@ -237,6 +252,7 @@
             <li>Click <b>Push Changes to Pipedrive</b> to update your Pipedrive data</li>
           </ol>
         </div>
+        <? } ?>
       </div>
       
       <div id="about" class="tab-content">
@@ -256,7 +272,7 @@
         <div class="section">
           <h4>Support</h4>
           <p>For support or suggestions, please contact:</p>
-          <p><a href="mailto:connect@mikehaye.com">connect@mikehaye</a></p>
+          <p><a href="mailto:support@pipedrivesheets.com">support@pipedrivesheets.com</a></p>
         </div>
       </div>
       

@@ -8,7 +8,8 @@
       "Bash(npm run deploy:*)",
       "Bash(clasp push:*)",
       "Bash(rg:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(find:*)"
     ],
     "deny": []
   }

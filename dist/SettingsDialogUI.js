@@ -178,6 +178,14 @@ SettingsDialogUI.showHelp = function() {
         Logger.log('Error parsing version history: ' + e.message);
       }
     }
+    
+    // Get current user plan
+    let currentPlan = { plan: 'free', details: { name: 'Free' } };
+    try {
+      currentPlan = PaymentService.getCurrentPlan();
+    } catch (e) {
+      Logger.log('Error getting current plan: ' + e.message);
+    }
 
     // Create the HTML template
     const template = HtmlService.createTemplateFromFile('Help');
@@ -185,6 +193,8 @@ SettingsDialogUI.showHelp = function() {
     // Pass data to template
     template.currentVersion = currentVersion;
     template.versionHistory = versionHistory;
+    template.userPlan = currentPlan.plan;
+    template.planDetails = currentPlan.details;
     
     // Create and show dialog
     const html = template.evaluate()
