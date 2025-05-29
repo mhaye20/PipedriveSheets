@@ -36,14 +36,12 @@ function processFieldTypes(fields, fieldDefinitions, entityType) {
       if (fieldDef.field_type === 'date' && value) {
         if (typeof value === 'string' && value.includes('T')) {
           value = value.split('T')[0];
-          Logger.log(`Formatted date field ${key}: ${fields[key]} -> ${value}`);
         }
       }
       
       // Phone fields - ensure they are strings
       else if (fieldDef.field_type === 'phone') {
         value = String(value);
-        Logger.log(`Converted phone field ${key} to string: ${value}`);
       }
       
       // Time fields - ensure proper HH:MM:SS format
@@ -53,7 +51,6 @@ function processFieldTypes(fields, fieldDefinitions, entityType) {
           const timePart = value.split('T')[1];
           if (timePart) {
             value = timePart.split('.')[0]; // Remove milliseconds
-            Logger.log(`Formatted time field ${key}: ${fields[key]} -> ${value}`);
           }
         }
       }
@@ -61,7 +58,6 @@ function processFieldTypes(fields, fieldDefinitions, entityType) {
       // Monetary fields - ensure they are numbers
       else if (fieldDef.field_type === 'monetary' && typeof value === 'string') {
         value = parseFloat(value) || 0;
-        Logger.log(`Converted monetary field ${key} to number: ${value}`);
       }
     }
     
@@ -69,7 +65,6 @@ function processFieldTypes(fields, fieldDefinitions, entityType) {
     if ((key === 'is_archived' || key === 'was_seen' || key === 'active_flag' || key === 'done') && 
         typeof value === 'string') {
       value = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
-      Logger.log(`Converted boolean field ${key}: ${fields[key]} -> ${value}`);
     }
     
     // Handle visibility field conversion
@@ -85,7 +80,6 @@ function processFieldTypes(fields, fieldDefinitions, entityType) {
       const mappedValue = visibilityMap[value.toLowerCase()];
       if (mappedValue) {
         value = mappedValue;
-        Logger.log(`Converted visibility field: ${fields[key]} -> ${value}`);
       }
     }
     
@@ -118,7 +112,6 @@ function setSyncRunning(isRunning) {
  */
 function syncFromPipedrive() {
   try {
-    Logger.log("Starting syncFromPipedrive function");
     
     // Check subscription status before syncing
     const plan = PaymentService.getCurrentPlan();
@@ -141,7 +134,6 @@ function syncFromPipedrive() {
     // Get active sheet info
     const sheet = SpreadsheetApp.getActiveSheet();
     const sheetName = sheet.getName();
-    Logger.log(`Active sheet: ${sheetName}`);
 
     // IMPORTANT: Detect any column shifts that may have occurred since last sync
     detectColumnShifts();
@@ -177,13 +169,11 @@ function syncFromPipedrive() {
     );
 
     if (response !== ui.Button.OK) {
-      Logger.log("User cancelled sync operation");
       return;
     }
 
     // Prevent multiple syncs running at once
     if (isSyncRunning()) {
-      Logger.log("Sync already running, showing alert");
       ui.alert(
         "A sync operation is already running. Please wait for it to complete."
       );
@@ -197,13 +187,9 @@ function syncFromPipedrive() {
     const entityType = scriptProperties.getProperty(entityTypeKey);
     const filterId = scriptProperties.getProperty(filterIdKey);
 
-    Logger.log(
-      `Syncing sheet ${sheetName}, entity type: ${entityType}, filter ID: ${filterId}`
-    );
 
     // Check for required settings
     if (!entityType) {
-      Logger.log("No entity type set for this sheet");
       SpreadsheetApp.getUi().alert(
         "No Pipedrive entity type set for this sheet. Please configure your filter settings first."
       );
@@ -223,11 +209,8 @@ function syncFromPipedrive() {
     syncPipedriveDataToSheet(entityType, false, sheetName, filterId);
 
     // Show completion message
-    Logger.log("Sync completed successfully");
     SpreadsheetApp.getUi().alert("Sync completed successfully!");
   } catch (error) {
-    Logger.log(`Error in syncFromPipedrive: ${error.message}`);
-    Logger.log(`Stack trace: ${error.stack}`);
 
     // Update sync status
     updateSyncStatus("3", "error", `Error: ${error.message}`, 0);
@@ -254,9 +237,6 @@ function syncPipedriveDataToSheet(
   filterId = null
 ) {
   try {
-    Logger.log(
-      `Starting syncPipedriveDataToSheet - Entity Type: ${entityType}, Skip Push: ${skipPush}, Sheet Name: ${sheetName}, Filter ID: ${filterId}`
-    );
 
     // Get sheet name if not provided
     sheetName = sheetName || SpreadsheetApp.getActiveSheet().getName();
@@ -268,7 +248,6 @@ function syncPipedriveDataToSheet(
     if (!filterId) {
       const filterIdKey = `FILTER_ID_${sheetName}`;
       filterId = scriptProperties.getProperty(filterIdKey);
-      Logger.log(`Using stored filter ID: ${filterId} from key ${filterIdKey}`);
     }
 
     // Show UI that we are retrieving data
@@ -278,19 +257,14 @@ function syncPipedriveDataToSheet(
     const twoWaySyncEnabledKey = `TWOWAY_SYNC_ENABLED_${sheetName}`;
     const twoWaySyncEnabled =
       scriptProperties.getProperty(twoWaySyncEnabledKey) === "true";
-    Logger.log(`Two-way sync enabled: ${twoWaySyncEnabled}`);
 
     // Key for tracking column
     const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
 
     // If two-way sync is enabled and we're not skipping push, automatically push changes
     if (!skipPush && twoWaySyncEnabled) {
-      Logger.log(
-        "Two-way sync is enabled, automatically pushing changes before syncing"
-      );
       // Push changes to Pipedrive first without showing additional dialogs
       pushChangesToPipedrive(true, true); // true for scheduled sync, true for suppress warning
-      Logger.log("Changes pushed, continuing with sync");
     }
 
     // Get data from Pipedrive based on entity type
@@ -304,7 +278,6 @@ function syncPipedriveDataToSheet(
       20
     );
 
-    Logger.log(`Retrieving data for entity type: ${entityType}`);
 
     // Use appropriate function based on entity type
     switch (entityType) {
@@ -330,7 +303,6 @@ function syncPipedriveDataToSheet(
         throw new Error(`Unknown entity type: ${entityType}`);
     }
 
-    Logger.log(`Retrieved ${items.length} items from Pipedrive`);
     
     // Check row limits based on subscription plan
     try {
@@ -344,39 +316,28 @@ function syncPipedriveDataToSheet(
 
     // Log first item structure for debugging
     if (items.length > 0) {
-      Logger.log("Sample item (first item) from retrieved data:");
-      Logger.log(JSON.stringify(items[0], null, 2));
 
       // Specifically log email and phone fields if they exist
       if (items[0].email) {
-        Logger.log("Email field structure:");
-        Logger.log(JSON.stringify(items[0].email, null, 2));
       }
 
       if (items[0].phone) {
-        Logger.log("Phone field structure:");
-        Logger.log(JSON.stringify(items[0].phone, null, 2));
       }
 
       // Log address fields for organizations
       if (entityType === ENTITY_TYPES.ORGANIZATIONS && items[0].address) {
-        Logger.log("Address field structure:");
-        Logger.log(JSON.stringify(items[0].address, null, 2));
       }
     }
 
     // Build comprehensive entity mappings for all linked fields
-    Logger.log("Building comprehensive entity mappings for linked fields...");
     const entityMappings = buildEntityMappings(items, entityType);
     
-    Logger.log(`Built mappings: ${Object.keys(entityMappings.personIdToName).length} persons, ${Object.keys(entityMappings.orgIdToName).length} orgs, ${Object.keys(entityMappings.dealIdToTitle).length} deals, ${Object.keys(entityMappings.userIdToName).length} users`);
     
     // Backwards compatibility - keep personIdToNameMap for existing code
     const personIdToNameMap = entityMappings.personIdToName;
     
     // Special handling for address fields in organizations
     if (entityType === ENTITY_TYPES.ORGANIZATIONS) {
-      Logger.log("Processing organization address fields...");
       for (let i = 0; i < items.length; i++) {
         const org = items[i];
 
@@ -420,12 +381,8 @@ function syncPipedriveDataToSheet(
             }
 
             // Log the extracted address components
-            Logger.log(
-              `Extracted address components for organization ${org.id || i}:`
-            );
             for (const key in org) {
               if (key.startsWith("address.")) {
-                Logger.log(`  ${key}: ${org[key]}`);
               }
             }
           }
@@ -452,22 +409,13 @@ function syncPipedriveDataToSheet(
     let optionMappings = {};
 
     try {
-      Logger.log("Getting field option mappings...");
       optionMappings = getFieldOptionMappingsForEntity(entityType);
-      Logger.log(
-        `Retrieved option mappings for fields: ${Object.keys(
-          optionMappings
-        ).join(", ")}`
-      );
 
       // Sample logging of one option mapping if available
       const sampleField = Object.keys(optionMappings)[0];
       if (sampleField) {
-        Logger.log(`Sample option mapping for field ${sampleField}:`);
-        Logger.log(JSON.stringify(optionMappings[sampleField], null, 2));
       }
     } catch (e) {
-      Logger.log(`Error getting field options: ${e.message}`);
     }
 
     // Start writing to sheet
@@ -482,9 +430,6 @@ function syncPipedriveDataToSheet(
     }
 
     // Get column preferences
-    Logger.log(
-      `Getting column preferences for ${entityType} in sheet "${sheetName}"`
-    );
     let columns = SyncService.getTeamAwareColumnPreferences(
       entityType,
       sheetName
@@ -492,9 +437,6 @@ function syncPipedriveDataToSheet(
 
     if (columns.length === 0) {
       // If no column preferences, use default columns
-      Logger.log(
-        `No column preferences found, using defaults for ${entityType}`
-      );
 
       if (DEFAULT_COLUMNS[entityType]) {
         DEFAULT_COLUMNS[entityType].forEach((key) => {
@@ -512,9 +454,7 @@ function syncPipedriveDataToSheet(
         });
       }
 
-      Logger.log(`Using ${columns.length} default columns`);
     } else {
-      Logger.log(`Using ${columns.length} saved columns from preferences`);
     }
 
     // Create header row from column names
@@ -532,11 +472,6 @@ function syncPipedriveDataToSheet(
     });
 
     // DEBUG: Log the headers created directly from column preferences
-    Logger.log(
-      `DEBUG: Initial headers created from preferences (before makeHeadersUnique): ${JSON.stringify(
-        headers
-      )}`
-    );
 
     // Use the makeHeadersUnique function to ensure header uniqueness
     const uniqueHeaders = makeHeadersUnique(headers, columns);
@@ -546,11 +481,6 @@ function syncPipedriveDataToSheet(
       (header) => header && header.trim()
     );
 
-    Logger.log(
-      `Created ${finalHeaders.length} unique headers: ${finalHeaders.join(
-        ", "
-      )}`
-    );
 
     // Options for writing data
     const options = {
@@ -567,10 +497,8 @@ function syncPipedriveDataToSheet(
     // Store original data for undo detection when two-way sync is enabled
     if (twoWaySyncEnabled) {
       try {
-        Logger.log("Storing original Pipedrive data for undo detection");
         storeOriginalData(items, options);
       } catch (storageError) {
-        Logger.log(`Error storing original data: ${storageError.message}`);
         // Continue with sync even if storage fails
       }
     }
@@ -591,18 +519,12 @@ function syncPipedriveDataToSheet(
           SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
 
         if (sheet && currentStatusColumn) {
-          Logger.log(
-            `Running comprehensive cleanup of previous Sync Status columns. Current column: ${currentStatusColumn}`
-          );
           cleanupPreviousSyncStatusColumn(sheet, currentStatusColumn);
 
           // Also perform a complete cell-by-cell scan for any sync status validation that might have been missed
           scanAllCellsForSyncStatusValidation(sheet);
         }
       } catch (cleanupError) {
-        Logger.log(
-          `Error during final Sync Status column cleanup: ${cleanupError.message}`
-        );
         // Continue with sync even if cleanup has issues
       }
     }
@@ -617,9 +539,6 @@ function syncPipedriveDataToSheet(
     // Ensure we have a valid header-to-field mapping for future pushChangesToPipedrive calls
     ensureHeaderFieldMapping(sheetName, entityType);
 
-    Logger.log(
-      `Successfully synced ${items.length} items from Pipedrive to sheet "${sheetName}"`
-    );
 
     // Log sync activity for team members
     try {
@@ -634,11 +553,9 @@ function syncPipedriveDataToSheet(
             sheetName: sheetName,
             itemCount: items.length
           });
-          Logger.log(`Logged sync activity for team ${userTeam.teamId}`);
         }
       }
     } catch (activityError) {
-      Logger.log(`Error logging team activity: ${activityError.message}`);
       // Don't fail the sync if activity logging fails
     }
 
@@ -657,8 +574,6 @@ function syncPipedriveDataToSheet(
 
     return true;
   } catch (error) {
-    Logger.log(`Error in syncPipedriveDataToSheet: ${error.message}`);
-    Logger.log(`Stack trace: ${error.stack}`);
 
     // Update sync status
     updateSyncStatus("3", "error", `Error: ${error.message}`, 0);
@@ -704,21 +619,12 @@ function writeDataToSheet(items, options) {
       if (sheet.getLastRow() > 0 && sheet.getLastColumn() > 0) {
         sheet.getDataRange().clearDataValidations();
       }
-      Logger.log(`Cleared sheet ${sheetName} to ensure clean sync`);
     }
 
     // CRITICAL: Debug what headers we're getting from Pipedrive
-    Logger.log(
-      `Incoming Pipedrive headers (${
-        options.headerRow ? options.headerRow.length : 0
-      }): ${JSON.stringify(options.headerRow)}`
-    );
 
     // Get headers from options - ALWAYS make a copy to avoid modifying the original
     const headers = options.headerRow ? [...options.headerRow] : [];
-    Logger.log(
-      `Working with headers (${headers.length}): ${JSON.stringify(headers)}`
-    );
 
     // Check if two-way sync is enabled
     const twoWaySyncEnabled = options.twoWaySyncEnabled || false;
@@ -742,12 +648,10 @@ function writeDataToSheet(items, options) {
     if (twoWaySyncEnabled) {
       headers.push("Sync Status");
       syncStatusColumn = headers.length;
-      Logger.log(`Added Sync Status column at position: ${syncStatusColumn}`);
 
       // Store the new position for future reference
       const colLetter = columnToLetter(syncStatusColumn);
       scriptProperties.setProperty(twoWaySyncTrackingColumnKey, colLetter);
-      Logger.log(`Set Sync Status column tracking to position ${colLetter}`);
     }
 
     // Ensure all headers are unique and properly descriptive
@@ -835,7 +739,6 @@ function writeDataToSheet(items, options) {
       try {
         sheet.autoResizeColumns(1, uniqueHeaders.length);
       } catch (e) {
-        Logger.log(`Error auto-resizing columns: ${e.message}`);
       }
     }
     
@@ -857,9 +760,7 @@ function writeDataToSheet(items, options) {
         sheet.getRange(timestampRow, 1, 1, 2).setFontWeight('bold');
         sheet.getRange(timestampRow, 1, 1, 2).setBackground('#f1f3f4'); // Light gray background
         
-        Logger.log(`Added sync timestamp at row ${timestampRow}`);
       } catch (e) {
-        Logger.log(`Error adding timestamp: ${e.message}`);
       }
     }
 
@@ -867,9 +768,6 @@ function writeDataToSheet(items, options) {
     try {
       ensureHeaderFieldMapping(sheetName, options.entityType);
     } catch (mappingError) {
-      Logger.log(
-        `Error creating header-to-field mapping: ${mappingError.message}`
-      );
     }
 
     // Load saved Sync Status values if needed
@@ -879,9 +777,6 @@ function writeDataToSheet(items, options) {
         const savedStatusData = getSavedSyncStatusData(sheetName);
 
         if (savedStatusData && Object.keys(savedStatusData).length > 0) {
-          Logger.log(
-            `Loaded ${Object.keys(savedStatusData).length} stored status values`
-          );
 
           // Get the ID column (always first column)
           const idColumnIdx = 0;
@@ -929,13 +824,11 @@ function writeDataToSheet(items, options) {
           }
         }
       } catch (e) {
-        Logger.log(`Error loading sync status values: ${e.message}`);
       }
     }
 
     return true;
   } catch (error) {
-    Logger.log(`Error in writeDataToSheet: ${error.message}`);
     return false;
   }
 }
@@ -1034,9 +927,6 @@ function makeHeadersUnique(headers, columns) {
     }
   });
 
-  Logger.log(
-    `Created ${resultHeaders.length} unique headers from ${headers.length} original headers`
-  );
   return resultHeaders;
 }
 
@@ -1118,7 +1008,6 @@ function updateSyncStatus(phase, status, detail, progress) {
 
     return syncStatus;
   } catch (e) {
-    Logger.log(`Error updating sync status: ${e.message}`);
     // Still show a toast message as backup
     SpreadsheetApp.getActiveSpreadsheet().toast(
       detail || "Processing...",
@@ -1182,8 +1071,6 @@ function showSyncStatus(sheetName) {
     // Return true to indicate success
     return true;
   } catch (error) {
-    Logger.log(`Error showing sync status: ${error.message}`);
-    Logger.log(`Stack trace: ${error.stack}`);
 
     // Show a fallback toast message instead
     SpreadsheetApp.getActiveSpreadsheet().toast(
@@ -1334,7 +1221,6 @@ function getSyncStatus() {
 
     return response;
   } catch (e) {
-    Logger.log(`Error getting sync status: ${e.message}`);
     return null;
   }
 }
@@ -1371,9 +1257,7 @@ function setupOnEditTrigger() {
       .forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet())
       .onEdit()
       .create();
-    Logger.log("onEdit trigger created");
   } catch (e) {
-    Logger.log(`Error setting up onEdit trigger: ${e.message}`);
   }
 }
 
@@ -1390,14 +1274,11 @@ function removeOnEditTrigger() {
       const trigger = triggers[i];
       if (trigger.getHandlerFunction() === "onEdit") {
         ScriptApp.deleteTrigger(trigger);
-        Logger.log("onEdit trigger deleted");
         return;
       }
     }
 
-    Logger.log("No onEdit trigger found to delete");
   } catch (e) {
-    Logger.log(`Error removing onEdit trigger: ${e.message}`);
   }
 }
 
@@ -1443,12 +1324,10 @@ function onEdit(e) {
 
         // If the lock is less than 5 seconds old, exit
         if (now - lockData.timestamp < 5000) {
-          Logger.log(`Exiting due to active lock: ${currentLock}`);
           return;
         }
 
         // Lock is old, we can override it
-        Logger.log(`Override old lock from ${lockData.timestamp}`);
       }
 
       // Set a new lock
@@ -1462,7 +1341,6 @@ function onEdit(e) {
         })
       );
     } catch (lockError) {
-      Logger.log(`Error setting lock: ${lockError.message}`);
       // Continue execution even if lock fails
     }
 
@@ -1480,7 +1358,6 @@ function onEdit(e) {
 
     // Exit if no Sync Status column found
     if (syncStatusColIndex === -1) {
-      Logger.log(`No Sync Status column found for sheet ${sheetName}`);
       releaseLock(executionId, lockKey);
       return;
     }
@@ -1492,11 +1369,6 @@ function onEdit(e) {
 
     // Convert to 1-based for sheet functions
     const syncStatusColPos = syncStatusColIndex + 1;
-    Logger.log(
-      `Using Sync Status column at position ${syncStatusColPos} (${columnToLetter(
-        syncStatusColPos
-      )})`
-    );
 
     // Check if the edit is in the Sync Status column itself (to avoid loops)
     if (column === syncStatusColPos) {
@@ -1556,7 +1428,6 @@ function onEdit(e) {
             originalValues: {},
           };
     } catch (parseError) {
-      Logger.log(`Error parsing cell state: ${parseError.message}`);
       cellState = {
         status: null,
         lastChanged: 0,
@@ -1573,9 +1444,6 @@ function onEdit(e) {
       now - cellState.lastChanged < 5000 &&
       cellState.status === currentStatus
     ) {
-      Logger.log(
-        `Cell was recently changed to "${currentStatus}", skipping update`
-      );
       releaseLock(executionId, lockKey);
       return;
     }
@@ -1589,7 +1457,6 @@ function onEdit(e) {
       const originalDataJson = scriptProperties.getProperty(originalDataKey);
       originalData = originalDataJson ? JSON.parse(originalDataJson) : {};
     } catch (parseError) {
-      Logger.log(`Error parsing original data: ${parseError.message}`);
       originalData = {};
     }
 
@@ -1597,21 +1464,11 @@ function onEdit(e) {
     const rowKey = id.toString();
 
     // Log for debugging
-    Logger.log(
-      `onEdit triggered - Row: ${row}, Column: ${column}, Status: ${currentStatus}`
-    );
-    Logger.log(
-      `Row ID: ${id}, Cell Value: ${e.value}, Old Value: ${e.oldValue}`
-    );
 
     // Get the column header name for the edited column
     const headerName = headers[column - 1]; // Adjust for 0-based array
 
     // Enhanced debug logging
-    Logger.log(
-      `UNDO_DEBUG: Cell edit in ${sheetName} - Header: "${headerName}", Row: ${row}`
-    );
-    Logger.log(`UNDO_DEBUG: Current status: "${currentStatus}"`);
 
     // If this row is already Modified, check if we should undo the status
     if (currentStatus === "Modified" && originalData[rowKey]) {
@@ -1619,9 +1476,6 @@ function onEdit(e) {
       const originalValue = originalData[rowKey][headerName];
       const currentValue = e.value;
 
-      Logger.log(
-        `UNDO_DEBUG: Comparing original value "${originalValue}" to current value "${currentValue}" for field "${headerName}"`
-      );
 
       // First try direct comparison for exact matches
       let valuesMatch = originalValue === currentValue;
@@ -1638,16 +1492,10 @@ function onEdit(e) {
             : String(currentValue).trim();
         valuesMatch = origString === currString;
 
-        Logger.log(
-          `UNDO_DEBUG: String comparison - Original:"${origString}" vs Current:"${currString}", Match: ${valuesMatch}`
-        );
       }
 
       // If the values match (original = current), check if all other values in the row match their originals
       if (valuesMatch) {
-        Logger.log(
-          `UNDO_DEBUG: Current value matches original for field "${headerName}", checking other fields...`
-        );
 
         // Get the current row values
         const rowValues = sheet
@@ -1668,9 +1516,6 @@ function onEdit(e) {
           // Find the column index for this field
           const fieldIndex = headers.indexOf(field);
           if (fieldIndex === -1) {
-            Logger.log(
-              `UNDO_DEBUG: Field "${field}" not found in headers, skipping`
-            );
             continue;
           }
 
@@ -1703,9 +1548,6 @@ function onEdit(e) {
               const epsilon = 0.0001;
               if (Math.abs(origNum - currNum) < epsilon) {
                 fieldMatch = true;
-                Logger.log(
-                  `UNDO_DEBUG: Number comparison succeeded: ${origNum} ≈ ${currNum}`
-                );
               }
             }
 
@@ -1723,37 +1565,22 @@ function onEdit(e) {
                 if (!isNaN(origDate.getTime()) && !isNaN(currDate.getTime())) {
                   // Compare dates
                   fieldMatch = origDate.getTime() === currDate.getTime();
-                  Logger.log(
-                    `UNDO_DEBUG: Date comparison: ${origDate} vs ${currDate}, Match: ${fieldMatch}`
-                  );
                 }
               } catch (e) {
-                Logger.log(
-                  `UNDO_DEBUG: Error in date comparison: ${e.message}`
-                );
               }
             }
           }
 
-          Logger.log(
-            `UNDO_DEBUG: Field "${field}" - Original:"${origValue}" vs Current:"${currValue}", Match: ${fieldMatch}`
-          );
 
           // If any field doesn't match, set flag to false and break
           if (!fieldMatch) {
             allMatch = false;
-            Logger.log(
-              `UNDO_DEBUG: Field "${field}" doesn't match original, keeping "Modified" status`
-            );
             break;
           }
         }
 
         // If all fields match their original values, set status back to "Not Modified"
         if (allMatch) {
-          Logger.log(
-            `UNDO_DEBUG: All fields match original values, reverting status to "Not Modified"`
-          );
 
           // Mark as not modified
           syncStatusCell.setValue("Not modified");
@@ -1768,7 +1595,6 @@ function onEdit(e) {
               JSON.stringify(cellState)
             );
           } catch (saveError) {
-            Logger.log(`Error saving cell state: ${saveError.message}`);
           }
 
           // Apply correct formatting
@@ -1804,10 +1630,6 @@ function onEdit(e) {
         originalData[rowKey][headerName] = oldValue;
 
         // Log detailed information about the stored original value
-        Logger.log(`EDIT_DEBUG: Storing original value for ${headerName}:`);
-        Logger.log(
-          `EDIT_DEBUG: Value: "${oldValue}", Type: ${typeof oldValue}`
-        );
 
         // Save updated original data
         try {
@@ -1815,18 +1637,11 @@ function onEdit(e) {
             originalDataKey,
             JSON.stringify(originalData)
           );
-          Logger.log(
-            `EDIT_DEBUG: Successfully saved original data for row ${row}`
-          );
         } catch (saveError) {
-          Logger.log(`Error saving original data: ${saveError.message}`);
         }
 
         // Mark as modified (with special prevention of change-back)
         syncStatusCell.setValue("Modified");
-        Logger.log(
-          `Changed status to Modified for row ${row}, column ${column}, header ${headerName}`
-        );
 
         // Save new cell state to prevent toggling back
         cellState.status = "Modified";
@@ -1836,7 +1651,6 @@ function onEdit(e) {
         try {
           scriptProperties.setProperty(cellStateKey, JSON.stringify(cellState));
         } catch (saveError) {
-          Logger.log(`Error saving cell state: ${saveError.message}`);
         }
 
         // Re-apply data validation to ensure consistent dropdown options
@@ -1861,19 +1675,6 @@ function onEdit(e) {
         const originalValue = originalData[rowKey][headerName];
         const currentValue = e.value;
 
-        Logger.log(
-          `UNDO_DEBUG: === COMPARING VALUES FOR FIELD: ${headerName} ===`
-        );
-        Logger.log(
-          `UNDO_DEBUG: Original value: ${JSON.stringify(
-            originalValue
-          )} (type: ${typeof originalValue})`
-        );
-        Logger.log(
-          `UNDO_DEBUG: Current value: ${JSON.stringify(
-            currentValue
-          )} (type: ${typeof currentValue})`
-        );
 
         // Improved equality check - try to normalize values for comparison regardless of type
         let originalString =
@@ -1924,9 +1725,6 @@ function onEdit(e) {
             currentString = currUsername + "@" + currDomain;
           }
 
-          Logger.log(
-            `UNDO_DEBUG: Normalized emails for comparison - Original: "${originalString}", Current: "${currentString}"`
-          );
         }
         // Special handling for name fields - normalize common typos
         else if (headerName.toLowerCase().includes("name")) {
@@ -1935,16 +1733,10 @@ function onEdit(e) {
             // Check if one string is the same as the other with an extra character at the end
             if (originalString.length === currentString.length + 1) {
               if (originalString.startsWith(currentString)) {
-                Logger.log(
-                  `UNDO_DEBUG: Name has extra char at end of original: "${originalString}" vs "${currentString}"`
-                );
                 originalString = currentString;
               }
             } else if (currentString.length === originalString.length + 1) {
               if (currentString.startsWith(originalString)) {
-                Logger.log(
-                  `UNDO_DEBUG: Name has extra char at end of current: "${currentString}" vs "${originalString}"`
-                );
                 currentString = originalString;
               }
             }
@@ -1961,9 +1753,6 @@ function onEdit(e) {
 
               // If the difference is near the end
               if (diffIndex > 0 && diffIndex >= originalString.length - 2) {
-                Logger.log(
-                  `UNDO_DEBUG: Name has character mismatch near end: "${originalString}" vs "${currentString}"`
-                );
                 // Normalize by taking the shorter version up to the differing character
                 const normalizedName = originalString.substring(0, diffIndex);
                 originalString = normalizedName;
@@ -1972,9 +1761,6 @@ function onEdit(e) {
             }
           }
 
-          Logger.log(
-            `UNDO_DEBUG: Normalized names for comparison - Original: "${originalString}", Current: "${currentString}"`
-          );
         }
 
         // For numeric values, try to normalize scientific notation and number formats
@@ -1994,21 +1780,12 @@ function onEdit(e) {
             ) {
               originalString = Math.floor(origNum).toString();
               currentString = Math.floor(currNum).toString();
-              Logger.log(
-                `UNDO_DEBUG: Normalized as integers: "${originalString}" vs "${currentString}"`
-              );
             } else {
               // Compare with fixed decimal places for floating point numbers
               originalString = origNum.toString();
               currentString = currNum.toString();
-              Logger.log(
-                `UNDO_DEBUG: Normalized as floats: "${originalString}" vs "${currentString}"`
-              );
             }
           } catch (numError) {
-            Logger.log(
-              `UNDO_DEBUG: Error normalizing numbers: ${numError.message}`
-            );
           }
         }
 
@@ -2018,20 +1795,11 @@ function onEdit(e) {
           typeof originalValue === "object" &&
           originalValue.__isStructural
         ) {
-          Logger.log(
-            `DEBUG: Found structural field with key ${originalValue.__key}`
-          );
 
           // Simple direct comparison before complex checks
           if (originalString === currentString) {
-            Logger.log(
-              `UNDO_DEBUG: Direct string comparison match for structural field: "${originalString}" = "${currentString}"`
-            );
 
             // Check if all edited values in the row now match original values
-            Logger.log(
-              `UNDO_DEBUG: Checking if all fields in row match original values`
-            );
             const allMatch = checkAllValuesMatchOriginal(
               sheet,
               row,
@@ -2039,14 +1807,10 @@ function onEdit(e) {
               originalData[rowKey]
             );
 
-            Logger.log(`UNDO_DEBUG: All values match original: ${allMatch}`);
 
             if (allMatch) {
               // All values in row match original - reset to Not modified
               syncStatusCell.setValue("Not modified");
-              Logger.log(
-                `UNDO_DEBUG: Reset to Not modified for row ${row} - all values match original after edit`
-              );
 
               // Save new cell state with strong protection against toggling back
               cellState.status = "Not modified";
@@ -2059,7 +1823,6 @@ function onEdit(e) {
                   JSON.stringify(cellState)
                 );
               } catch (saveError) {
-                Logger.log(`Error saving cell state: ${saveError.message}`);
               }
 
               // Create a temporary lock to prevent changes for 10 seconds
@@ -2074,9 +1837,6 @@ function onEdit(e) {
                   })
                 );
               } catch (lockError) {
-                Logger.log(
-                  `Error setting no-change lock: ${lockError.message}`
-                );
               }
 
               // Re-apply data validation
@@ -2112,9 +1872,6 @@ function onEdit(e) {
 
             // If it's a label-based path (e.g., phone.mobile)
             if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
-              Logger.log(
-                `DEBUG: Processing labeled ${structureType} field with label ${parts[1]}`
-              );
               dataObj[structureType].push({
                 label: parts[1],
                 value: currentValue,
@@ -2123,9 +1880,6 @@ function onEdit(e) {
             // If it's an array index path (e.g., phone.0.value)
             else if (parts.length === 3 && parts[2] === "value") {
               const idx = parseInt(parts[1]);
-              Logger.log(
-                `DEBUG: Processing indexed ${structureType} field at position ${idx}`
-              );
               while (dataObj[structureType].length <= idx) {
                 dataObj[structureType].push({});
               }
@@ -2138,13 +1892,9 @@ function onEdit(e) {
 
             if (parts.length === 2) {
               // Simple custom field
-              Logger.log(`DEBUG: Processing simple custom field ${parts[1]}`);
               dataObj.custom_fields[parts[1]] = currentValue;
             } else if (parts.length > 2) {
               // Nested custom field like address or currency
-              Logger.log(
-                `DEBUG: Processing complex custom field ${parts[1]}.${parts[2]}`
-              );
               dataObj.custom_fields[parts[1]] = {};
 
               // Handle complex types
@@ -2159,9 +1909,6 @@ function onEdit(e) {
             }
           } else {
             // Other nested fields not covered above
-            Logger.log(
-              `DEBUG: Processing general nested field with key: ${key}`
-            );
 
             // Build a generic nested structure
             let current = dataObj;
@@ -2182,20 +1929,13 @@ function onEdit(e) {
           const normalizedOriginal = originalValue.__normalized || "";
           const normalizedCurrent = getNormalizedFieldValue(dataObj, key);
 
-          Logger.log(
-            `DEBUG: Structural comparison - Original: "${normalizedOriginal}", Current: "${normalizedCurrent}"`
-          );
 
           // Check if values match
           const valuesMatch = normalizedOriginal === normalizedCurrent;
-          Logger.log(`DEBUG: Structural values match: ${valuesMatch}`);
 
           // If values match, check all fields
           if (valuesMatch) {
             // Check if all edited values in the row now match original values
-            Logger.log(
-              `DEBUG: Checking if all fields in row match original values`
-            );
             const allMatch = checkAllValuesMatchOriginal(
               sheet,
               row,
@@ -2203,14 +1943,10 @@ function onEdit(e) {
               originalData[rowKey]
             );
 
-            Logger.log(`DEBUG: All values match original: ${allMatch}`);
 
             if (allMatch) {
               // All values in row match original - reset to Not modified
               syncStatusCell.setValue("Not modified");
-              Logger.log(
-                `DEBUG: Reset to Not modified for row ${row} - all values match original`
-              );
 
               // Save new cell state with strong protection against toggling back
               cellState.status = "Not modified";
@@ -2223,7 +1959,6 @@ function onEdit(e) {
                   JSON.stringify(cellState)
                 );
               } catch (saveError) {
-                Logger.log(`Error saving cell state: ${saveError.message}`);
               }
 
               // Create a temporary lock to prevent changes for 10 seconds
@@ -2238,9 +1973,6 @@ function onEdit(e) {
                   })
                 );
               } catch (lockError) {
-                Logger.log(
-                  `Error setting no-change lock: ${lockError.message}`
-                );
               }
 
               // Re-apply data validation
@@ -2264,19 +1996,12 @@ function onEdit(e) {
             (originalValue === null || originalValue === "") &&
             (currentValue === null || currentValue === "")
           ) {
-            Logger.log(`DEBUG: Both values are empty, treating as match`);
           }
 
           // Simple direct comparison before complex checks
           if (originalString === currentString) {
-            Logger.log(
-              `UNDO_DEBUG: Direct string comparison match for regular field: "${originalString}" = "${currentString}"`
-            );
 
             // Check if all edited values in the row now match original values
-            Logger.log(
-              `UNDO_DEBUG: Checking if all fields in row match original values`
-            );
             const allMatch = checkAllValuesMatchOriginal(
               sheet,
               row,
@@ -2284,14 +2009,10 @@ function onEdit(e) {
               originalData[rowKey]
             );
 
-            Logger.log(`UNDO_DEBUG: All values match original: ${allMatch}`);
 
             if (allMatch) {
               // All values in row match original - reset to Not modified
               syncStatusCell.setValue("Not modified");
-              Logger.log(
-                `UNDO_DEBUG: Reset to Not modified for row ${row} - all values match original`
-              );
 
               // Save new cell state with strong protection against toggling back
               cellState.status = "Not modified";
@@ -2304,7 +2025,6 @@ function onEdit(e) {
                   JSON.stringify(cellState)
                 );
               } catch (saveError) {
-                Logger.log(`Error saving cell state: ${saveError.message}`);
               }
 
               // Create a temporary lock to prevent changes for 10 seconds
@@ -2319,9 +2039,6 @@ function onEdit(e) {
                   })
                 );
               } catch (lockError) {
-                Logger.log(
-                  `Error setting no-change lock: ${lockError.message}`
-                );
               }
 
               // Re-apply data validation
@@ -2350,7 +2067,6 @@ function onEdit(e) {
           if (headerName.includes(".")) {
             // Handle nested structure
             const parts = headerName.split(".");
-            Logger.log(`DEBUG: Building nested structure with parts: ${parts}`);
 
             if (["phone", "email"].includes(parts[0])) {
               // Handle phone/email fields
@@ -2358,9 +2074,6 @@ function onEdit(e) {
 
               // If it's a label-based path (e.g., phone.mobile)
               if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
-                Logger.log(
-                  `DEBUG: Adding label-based ${parts[0]} field with label ${parts[1]}`
-                );
                 dataObj[parts[0]].push({
                   label: parts[1],
                   value: currentValue,
@@ -2369,9 +2082,6 @@ function onEdit(e) {
               // If it's an array index path (e.g., phone.0.value)
               else if (parts.length === 3 && parts[2] === "value") {
                 const idx = parseInt(parts[1]);
-                Logger.log(
-                  `DEBUG: Adding array-index ${parts[0]} field at index ${idx}`
-                );
                 while (dataObj[parts[0]].length <= idx) {
                   dataObj[parts[0]].push({});
                 }
@@ -2380,18 +2090,13 @@ function onEdit(e) {
             }
             // Custom fields
             else if (parts[0] === "custom_fields") {
-              Logger.log(`DEBUG: Adding custom_fields structure`);
               dataObj.custom_fields = {};
 
               if (parts.length === 2) {
                 // Simple custom field
-                Logger.log(`DEBUG: Adding simple custom field ${parts[1]}`);
                 dataObj.custom_fields[parts[1]] = currentValue;
               } else if (parts.length > 2) {
                 // Nested custom field like address or currency
-                Logger.log(
-                  `DEBUG: Adding complex custom field ${parts[1]} with subfield ${parts[2]}`
-                );
                 dataObj.custom_fields[parts[1]] = {};
 
                 // Handle complex types
@@ -2406,7 +2111,6 @@ function onEdit(e) {
               }
             } else {
               // Other nested fields not covered above
-              Logger.log(`DEBUG: Unhandled nested field type: ${parts[0]}`);
 
               // Build a generic nested structure
               let current = dataObj;
@@ -2418,22 +2122,13 @@ function onEdit(e) {
               }
               current[parts[parts.length - 1]] = currentValue;
 
-              Logger.log(
-                `DEBUG: Created generic nested structure: ${JSON.stringify(
-                  dataObj
-                )}`
-              );
             }
           } else {
             // Regular top-level field
-            Logger.log(`DEBUG: Adding top-level field ${headerName}`);
             dataObj[headerName] = currentValue;
           }
 
           // Dump the constructed data object
-          Logger.log(
-            `DEBUG: Constructed data object: ${JSON.stringify(dataObj)}`
-          );
 
           // Use the generalized field value normalization for comparison
           const normalizedOriginal = getNormalizedFieldValue(
@@ -2447,22 +2142,13 @@ function onEdit(e) {
             headerName
           );
 
-          Logger.log(
-            `DEBUG: Original type: ${typeof originalValue}, Current type: ${typeof currentValue}`
-          );
-          Logger.log(`DEBUG: Normalized Original: "${normalizedOriginal}"`);
-          Logger.log(`DEBUG: Normalized Current: "${normalizedCurrent}"`);
 
           // Check if values match
           const valuesMatch = normalizedOriginal === normalizedCurrent;
-          Logger.log(`DEBUG: Values match: ${valuesMatch}`);
 
           // If values match, check all fields
           if (valuesMatch) {
             // Check if all edited values in the row now match original values
-            Logger.log(
-              `DEBUG: Checking if all fields in row match original values`
-            );
             const allMatch = checkAllValuesMatchOriginal(
               sheet,
               row,
@@ -2470,14 +2156,10 @@ function onEdit(e) {
               originalData[rowKey]
             );
 
-            Logger.log(`DEBUG: All values match original: ${allMatch}`);
 
             if (allMatch) {
               // All values in row match original - reset to Not modified
               syncStatusCell.setValue("Not modified");
-              Logger.log(
-                `DEBUG: Reset to Not modified for row ${row} - all values match original`
-              );
 
               // Save new cell state with strong protection against toggling back
               cellState.status = "Not modified";
@@ -2490,7 +2172,6 @@ function onEdit(e) {
                   JSON.stringify(cellState)
                 );
               } catch (saveError) {
-                Logger.log(`Error saving cell state: ${saveError.message}`);
               }
 
               // Create a temporary lock to prevent changes for 10 seconds
@@ -2505,9 +2186,6 @@ function onEdit(e) {
                   })
                 );
               } catch (lockError) {
-                Logger.log(
-                  `Error setting no-change lock: ${lockError.message}`
-                );
               }
 
               // Re-apply data validation
@@ -2532,9 +2210,6 @@ function onEdit(e) {
 
         if (!originalData[rowKey][headerName]) {
           originalData[rowKey][headerName] = e.oldValue;
-          Logger.log(
-            `Stored original value "${e.oldValue}" for ${rowKey}.${headerName}`
-          );
 
           // Save updated original data
           try {
@@ -2543,7 +2218,6 @@ function onEdit(e) {
               JSON.stringify(originalData)
             );
           } catch (saveError) {
-            Logger.log(`Error saving original data: ${saveError.message}`);
           }
         }
       }
@@ -2553,8 +2227,6 @@ function onEdit(e) {
     releaseLock(executionId, lockKey);
   } catch (error) {
     // Silent fail for onEdit triggers
-    Logger.log(`Error in onEdit trigger: ${error.message}`);
-    Logger.log(`Stack trace: ${error.stack}`);
   }
 }
 
@@ -2574,11 +2246,9 @@ function releaseLock(executionId, lockKey) {
       // Only release if this execution set the lock
       if (lockData.id === executionId) {
         scriptProperties.deleteProperty(lockKey);
-        Logger.log(`Released lock: ${executionId}`);
       }
     }
   } catch (error) {
-    Logger.log(`Error releasing lock: ${error.message}`);
   }
 }
 
@@ -2594,12 +2264,9 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
   try {
     // If no original values stored, can't verify
     if (!originalValues || Object.keys(originalValues).length === 0) {
-      Logger.log("No original values stored to compare against");
       return false;
     }
 
-    Logger.log(`Checking if all values match original for row ${row}`);
-    Logger.log(`Original values: ${JSON.stringify(originalValues)}`);
 
     // Get current values for the entire row
     const rowValues = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
@@ -2698,11 +2365,6 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
     });
 
     // Debug log
-    Logger.log(
-      `Checking ${
-        Object.keys(originalValues).length
-      } fields for original value match`
-    );
 
     // Check each column that has a stored original value
     let matchCount = 0;
@@ -2717,16 +2379,12 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
       // Find the column index for this header
       const colIndex = headerIndices[headerName];
       if (colIndex === undefined) {
-        Logger.log(
-          `Header "${headerName}" not found in current headers - columns may have been reorganized`
-        );
 
         // Even if the header is not found, we'll try to compare by field name
         // This handles cases where the column position changed but the header name is the same
         let foundMatch = false;
         for (let i = 0; i < headers.length; i++) {
           if (headers[i] === headerName) {
-            Logger.log(`Found header "${headerName}" at position ${i + 1}`);
             foundMatch = true;
 
             const originalValue = originalValues[headerName];
@@ -2742,15 +2400,10 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
                 ? ""
                 : String(currentValue).trim();
 
-            Logger.log(
-              `Comparing values for "${headerName}": Original="${originalString}", Current="${currentString}"`
-            );
 
             if (originalString === currentString) {
-              Logger.log(`Match found for "${headerName}"`);
               matchCount++;
             } else {
-              Logger.log(`Mismatch found for "${headerName}"`);
               mismatchCount++;
               return false; // Early exit on mismatch
             }
@@ -2761,9 +2414,6 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
 
         if (!foundMatch) {
           // The header is truly missing, we can't compare
-          Logger.log(
-            `Warning: Header "${headerName}" is completely missing from the sheet`
-          );
         }
         continue;
       }
@@ -2776,9 +2426,6 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
         (originalValue === null || originalValue === "") &&
         (currentValue === null || currentValue === "")
       ) {
-        Logger.log(
-          `Both values are empty for ${headerName}, treating as match`
-        );
         matchCount++;
         continue; // Both empty, consider a match
       }
@@ -2789,9 +2436,6 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
         typeof originalValue === "object" &&
         originalValue.__isStructural
       ) {
-        Logger.log(
-          `Found structural field ${headerName} with key ${originalValue.__key}`
-        );
 
         // Use the pre-computed normalized value for comparison
         const normalizedOriginal = originalValue.__normalized || "";
@@ -2800,13 +2444,9 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
           originalValue.__key
         );
 
-        Logger.log(
-          `Structural field comparison for ${headerName}: Original="${normalizedOriginal}", Current="${normalizedCurrent}"`
-        );
 
         // If the normalized values don't match, return false
         if (normalizedOriginal !== normalizedCurrent) {
-          Logger.log(`Structural field mismatch found for ${headerName}`);
           mismatchCount++;
           return false;
         }
@@ -2825,13 +2465,9 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
       );
       const normalizedCurrent = getNormalizedFieldValue(dataObj, headerName);
 
-      Logger.log(
-        `Field comparison for ${headerName}: Original="${normalizedOriginal}", Current="${normalizedCurrent}"`
-      );
 
       // If the normalized values don't match, return false
       if (normalizedOriginal !== normalizedCurrent) {
-        Logger.log(`Mismatch found for ${headerName}`);
         mismatchCount++;
         return false;
       }
@@ -2840,12 +2476,8 @@ function checkAllValuesMatchOriginal(sheet, row, headers, originalValues) {
     }
 
     // If we reach here, all values with stored originals match
-    Logger.log(
-      `Comparison complete: ${matchCount} matches, ${mismatchCount} mismatches`
-    );
     return mismatchCount === 0 && matchCount > 0;
   } catch (error) {
-    Logger.log(`Error in checkAllValuesMatchOriginal: ${error.message}`);
     return false;
   }
 }
@@ -2893,7 +2525,6 @@ function normalizePhoneNumber(value) {
 
     return normalizeDigitsOnly(value);
   } catch (e) {
-    Logger.log(`Error normalizing phone number: ${e.message}`);
     return String(value); // Return as string in case of error
   }
 }
@@ -2935,7 +2566,6 @@ function normalizeDigitsOnly(value) {
     // Remove all non-digit characters
     return strValue.replace(/\D/g, "");
   } catch (e) {
-    Logger.log(`Error in normalizeDigitsOnly: ${e.message}`);
     return String(value);
   }
 }
@@ -3014,13 +2644,11 @@ function getPhoneNumberFromField(data, key) {
       const value = getValueByPath(data, key);
       return normalizePhoneNumber(value);
     } catch (e) {
-      Logger.log(`Error getting phone value by path: ${e.message}`);
     }
 
     // If all else fails, return empty string
     return "";
   } catch (e) {
-    Logger.log(`Error in getPhoneNumberFromField: ${e.message}`);
     return "";
   }
 }
@@ -3173,14 +2801,12 @@ async function pushChangesToPipedrive(
     }
 
     // Log entity type for debugging
-    Logger.log(`Entity type for sheet ${activeSheetName}: ${entityType}`);
 
     // Make sure we have an OAuth token that is still valid
     try {
       // Get the current OAuth token - no need for tokenManager
       const accessToken = ScriptApp.getOAuthToken();
       if (!accessToken) {
-        Logger.log("No valid OAuth token available");
         if (!isScheduledSync) {
           SpreadsheetApp.getUi().alert(
             "Authentication Error",
@@ -3190,9 +2816,7 @@ async function pushChangesToPipedrive(
         }
         return;
       }
-      Logger.log("OAuth token is available");
     } catch (tokenError) {
-      Logger.log(`Error with token: ${tokenError.message}`);
       if (!isScheduledSync) {
         SpreadsheetApp.getUi().alert(
           "Authentication Error",
@@ -3219,27 +2843,17 @@ async function pushChangesToPipedrive(
     ) {
       try {
         enhancedDealsApi = AppLib.getUpdatedDealsApi(accessToken, apiBasePath);
-        Logger.log(
-          "Successfully created enhanced DealsApi for better update handling"
-        );
       } catch (dealsApiErr) {
-        Logger.log(
-          `Error creating enhanced DealsApi: ${dealsApiErr.message}. Will use standard API client.`
-        );
       }
     }
 
     // Log the configuration object
-    Logger.log(
-      `Created API configuration with basePath: ${apiConfig.basePath}`
-    );
 
     // Initialize Pipedrive client using the npm package
     let apiClient;
     try {
       // Get the Pipedrive library through AppLib
       const pipedriveLib = AppLib.getPipedriveLib();
-      Logger.log(`Retrieved Pipedrive library: ${typeof pipedriveLib}`);
 
       // Log the structure to understand what's available
       logObjectStructure(pipedriveLib, "pipedriveLib");
@@ -3256,13 +2870,7 @@ async function pushChangesToPipedrive(
       ) {
         try {
           apiClient = AppLib.getUpdatedDealsApi(accessToken, apiBasePath);
-          Logger.log(
-            "Successfully created enhanced DealsApi for better update handling"
-          );
         } catch (dealsApiErr) {
-          Logger.log(
-            `Error creating enhanced DealsApi: ${dealsApiErr.message}. Will use standard API client.`
-          );
           apiClient = new pipedriveV1.DealsApi(apiConfig);
         }
       } else {
@@ -3297,7 +2905,6 @@ async function pushChangesToPipedrive(
         }
       }
     } catch (libError) {
-      Logger.log(`Error initializing Pipedrive library: ${libError.message}`);
       throw libError;
     }
 
@@ -3306,13 +2913,11 @@ async function pushChangesToPipedrive(
       // First try to use the new dedicated function
       if (typeof configureApiClientAdapter === "function") {
         const configured = configureApiClientAdapter(apiClient);
-        Logger.log(`API client adapter configuration result: ${configured}`);
 
         // If the configuration function exists but failed, try direct configuration
         if (!configured && apiClient && apiClient.axios) {
           const gasAdapter = AppLib.getGASAxiosAdapter();
           apiClient.axios.defaults.adapter = gasAdapter;
-          Logger.log("Directly configured API client with custom adapter");
         }
 
         // Inspect the client to verify configuration
@@ -3323,14 +2928,8 @@ async function pushChangesToPipedrive(
       // Fallback for direct configuration if the functions don't exist
       else if (apiClient && apiClient.axios && AppLib.getGASAxiosAdapter) {
         apiClient.axios.defaults.adapter = AppLib.getGASAxiosAdapter();
-        Logger.log(
-          "Directly configured API client with custom adapter (fallback)"
-        );
       }
     } catch (adapterError) {
-      Logger.log(
-        `Error configuring API client adapter: ${adapterError.toString()}`
-      );
       // Continue anyway, we'll handle errors during API calls
     }
 
@@ -3483,27 +3082,21 @@ async function pushChangesToPipedrive(
                 const minutes = value.getMinutes();
                 const seconds = value.getSeconds();
                 processedValue = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-                Logger.log(`Converted time-only Date object to time string: ${value} -> ${processedValue}`);
               }
             }
             
             // CRITICAL: Ensure we never store objects for time fields
             // If processedValue is an object with a 'value' property, extract just the value
             if (typeof processedValue === 'object' && processedValue !== null && processedValue.value !== undefined) {
-              Logger.log(`WARNING: Time field ${fieldKey} was an object, extracting value property: ${processedValue.value}`);
               processedValue = processedValue.value;
             }
             
             updateData.data.custom_fields[fieldKey] = processedValue;
             
             // Log field detection with value
-            Logger.log(`CUSTOM FIELD DETECTED: ${header} -> ${fieldKey} = ${processedValue} (type: ${typeof processedValue})`);
 
             // Log time range field detection
             if (fieldKey.endsWith("_until")) {
-              Logger.log(
-                `DETECTED TIME RANGE END FIELD: ${header} -> ${fieldKey} = ${processedValue}`
-              );
             }
           }
           // Handle all other fields
@@ -3520,7 +3113,6 @@ async function pushChangesToPipedrive(
                 const minutes = value.getMinutes();
                 const seconds = value.getSeconds();
                 processedValue = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-                Logger.log(`Converted time-only Date object to time string for field ${fieldKey}: ${value} -> ${processedValue}`);
               }
             }
             
@@ -3593,11 +3185,6 @@ async function pushChangesToPipedrive(
         updateData.phoneData = phoneData;
 
         // Log the complete updateData to see what fields we have
-        Logger.log(
-          `ROW ${i} UPDATE DATA custom_fields: ${JSON.stringify(
-            updateData.data.custom_fields
-          )}`
-        );
 
         // Check for time range fields that might be missing their pair
         for (const fieldKey in updateData.data.custom_fields) {
@@ -3619,14 +3206,10 @@ async function pushChangesToPipedrive(
                       const minutes = endValue.getMinutes();
                       const seconds = endValue.getSeconds();
                       endValue = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-                      Logger.log(`Converted time-only Date object to time string for end field: ${row[k]} -> ${endValue}`);
                     }
                   }
                   
                   updateData.data.custom_fields[untilKey] = endValue;
-                  Logger.log(
-                    `ADDED MISSING TIME RANGE END: ${untilKey} = ${endValue}`
-                  );
                   break;
                 }
               }
@@ -3679,11 +3262,6 @@ async function pushChangesToPipedrive(
     for (let rowIndex = 0; rowIndex < modifiedRows.length; rowIndex++) {
       try {
         const rowData = modifiedRows[rowIndex];
-        Logger.log(
-          `Processing row ${rowIndex + 1}/${modifiedRows.length} with ID ${
-            rowData.id
-          }`
-        );
 
         // Final processed payload ready to send
         let payloadToSend = rowData.data; // This would be the final processed data in your original code
@@ -3692,9 +3270,6 @@ async function pushChangesToPipedrive(
         const fieldDefinitions = getFieldDefinitionsMap(entityType);
 
         // Enhanced logging to debug time range fields
-        Logger.log(`=== TIME RANGE DEBUG START for row ${rowIndex + 1} ===`);
-        Logger.log(`Row data keys: ${Object.keys(rowData.data).join(", ")}`);
-        Logger.log(`Full row data: ${JSON.stringify(rowData.data)}`);
 
         // Check for any fields that might be time range fields
         const potentialTimeRangeFields = [];
@@ -3706,7 +3281,6 @@ async function pushChangesToPipedrive(
             (value.includes(":") || value.includes("1899-12-30"))
           ) {
             potentialTimeRangeFields.push({ key, value });
-            Logger.log(`Potential time field found: ${key} = ${value}`);
           }
         }
 
@@ -3717,7 +3291,6 @@ async function pushChangesToPipedrive(
         const untilHeaders = headers.filter(
           (h) => h && h.toString().toLowerCase().includes("end time")
         );
-        Logger.log(`Headers with 'end time': ${untilHeaders.join(", ")}`);
 
         // Check headerToFieldKeyMap for time range pairs
         const timeRangePairs = {};
@@ -3725,36 +3298,23 @@ async function pushChangesToPipedrive(
           if (fieldKey && fieldKey.endsWith("_until")) {
             const baseFieldKey = fieldKey.replace(/_until$/, "");
             timeRangePairs[baseFieldKey] = fieldKey;
-            Logger.log(
-              `Time range pair from header mapping: ${baseFieldKey} -> ${fieldKey} (header: ${header})`
-            );
 
             // Check if we have data for this end time field
             if (rowData.data[header]) {
-              Logger.log(
-                `End time data found for ${header}: ${rowData.data[header]}`
-              );
               // Ensure this is included in the payload
               if (!payloadToSend[fieldKey]) {
                 payloadToSend[fieldKey] = rowData.data[header];
-                Logger.log(
-                  `Added missing end time field: ${fieldKey} = ${rowData.data[header]}`
-                );
               }
               if (!payloadToSend.custom_fields) {
                 payloadToSend.custom_fields = {};
               }
               if (!payloadToSend.custom_fields[fieldKey]) {
                 payloadToSend.custom_fields[fieldKey] = rowData.data[header];
-                Logger.log(
-                  `Added missing end time to custom_fields: ${fieldKey} = ${rowData.data[header]}`
-                );
               }
             }
           }
         }
 
-        Logger.log(`=== TIME RANGE DEBUG END ===`);
 
         if (fieldDefinitions && Object.keys(fieldDefinitions).length > 0) {
           payloadToSend = processDateTimeFields(
@@ -3763,9 +3323,6 @@ async function pushChangesToPipedrive(
             fieldDefinitions,
             headerToFieldKeyMap
           );
-          Logger.log(
-            `Date/time fields processed in payload for row ${rowIndex + 1}`
-          );
 
           // Now ensure time range fields are properly handled
           payloadToSend = ensureTimeRangeFieldsForPipedrive(
@@ -3773,26 +3330,17 @@ async function pushChangesToPipedrive(
             rowData.data,
             headerToFieldKeyMap
           );
-          Logger.log(
-            `Time range fields ensured in payload for row ${rowIndex + 1}`
-          );
 
           // Add detailed logging of any time range fields in the final payload
           Object.keys(payloadToSend).forEach((key) => {
             if (key.endsWith("_until")) {
               const baseKey = key.replace(/_until$/, "");
-              Logger.log(
-                `TIME RANGE FIELD IN FINAL PAYLOAD: ${baseKey}=${payloadToSend[baseKey]}, ${key}=${payloadToSend[key]}`
-              );
             }
           });
           if (payloadToSend.custom_fields) {
             Object.keys(payloadToSend.custom_fields).forEach((key) => {
               if (key.endsWith("_until")) {
                 const baseKey = key.replace(/_until$/, "");
-                Logger.log(
-                  `TIME RANGE FIELD IN CUSTOM_FIELDS: ${baseKey}=${payloadToSend.custom_fields[baseKey]}, ${key}=${payloadToSend.custom_fields[key]}`
-                );
               }
             });
           }
@@ -3804,31 +3352,14 @@ async function pushChangesToPipedrive(
         let success = false;
 
         try {
-          Logger.log(
-            `Sending update to Pipedrive using npm client for ${entityType} ID: ${rowData.id}`
-          );
-          Logger.log(`Using API client with basePath: ${apiClient.basePath}`);
 
           // Extract key data from the payload for logging
           const payloadKeys = Object.keys(payloadToSend);
-          Logger.log(
-            `Payload contains the following fields: ${payloadKeys.join(", ")}`
-          );
 
           // Deep inspect custom fields for debugging
           if (payloadToSend.custom_fields) {
-            Logger.log(
-              `Custom fields payload: ${JSON.stringify(
-                payloadToSend.custom_fields
-              )}`
-            );
             // Check each custom field has correct format
             Object.keys(payloadToSend.custom_fields).forEach((fieldKey) => {
-              Logger.log(
-                `Custom field ${fieldKey}: ${JSON.stringify(
-                  payloadToSend.custom_fields[fieldKey]
-                )}`
-              );
             });
           }
 
@@ -3855,9 +3386,6 @@ async function pushChangesToPipedrive(
                 // Ensure it has a value property
                 if (!value.value || value.value === "") {
                   value.value = "Address";
-                  Logger.log(
-                    `Added missing 'value' property to address field ${fieldKey}`
-                  );
                 }
               }
 
@@ -3868,9 +3396,6 @@ async function pushChangesToPipedrive(
             // Replace the existing custom_fields with the properly formatted version
             // For Pipedrive API v1, we keep them in the custom_fields object
             payloadToSend.custom_fields = customFields;
-            Logger.log(
-              `Reorganized custom fields in the proper format for Pipedrive API`
-            );
 
             // Try a simpler approach - only include standard fields and a couple of custom fields
             const simplifiedPayload = {
@@ -3932,25 +3457,21 @@ async function pushChangesToPipedrive(
                 const userId = lookupUserIdByEmail(userEmail);
                 if (userId) {
                   payloadToSend.user_id = userId;
-                  Logger.log(`Converted user email to user_id: ${userId}`);
                 }
               }
               // Remove the original email field
               delete payloadToSend["user_id.email"];
             } catch (e) {
-              Logger.log(`Error looking up user ID by email: ${e.message}`);
               delete payloadToSend["user_id.email"];
             }
           }
 
           // Handle org_id field - convert organization name to ID if needed
           if (payloadToSend.org_id && typeof payloadToSend.org_id === 'string' && isNaN(payloadToSend.org_id)) {
-            Logger.log(`org_id appears to be a name: "${payloadToSend.org_id}", needs conversion to ID`);
             
             // For now, we'll remove it to avoid the error
             // TODO: Implement organization name to ID lookup
             delete payloadToSend.org_id;
-            Logger.log('Removed org_id field as it contains name instead of ID');
           }
           
           // Convert option labels to IDs for all fields with options (for Persons, Organizations, Deals, and Leads)
@@ -3984,10 +3505,8 @@ async function pushChangesToPipedrive(
                       const optionId = optionLabelToId[fieldValue.toLowerCase()];
                       if (optionId !== undefined) {
                         targetObject[fieldKey] = optionId;
-                        Logger.log(`Converted option label "${fieldValue}" to ID: ${optionId} for field ${fieldKey}`);
                       } else {
                         // Label not found, could be a new option - keep as string for now
-                        Logger.log(`Option label "${fieldValue}" not found for field ${fieldKey}, keeping as string`);
                       }
                     }
                   }
@@ -4016,17 +3535,14 @@ async function pushChangesToPipedrive(
                         const optionId = optionLabelToId[val.toLowerCase()];
                         if (optionId !== undefined) {
                           processedOptions.push(optionId);
-                          Logger.log(`Converted option label "${val}" to ID: ${optionId} for set field ${fieldKey}`);
                         } else {
                           // Label not found, could be a new option
-                          Logger.log(`Option label "${val}" not found for set field ${fieldKey}, skipping`);
                         }
                       }
                     });
                     
                     if (processedOptions.length > 0) {
                       targetObject[fieldKey] = processedOptions;
-                      Logger.log(`Final set field ${fieldKey} values: ${JSON.stringify(processedOptions)}`);
                     }
                   }
                 }
@@ -4048,7 +3564,6 @@ async function pushChangesToPipedrive(
                 }
               }
             } catch (e) {
-              Logger.log(`Error processing option labels for custom fields: ${e.message}`);
               // Keep original values if conversion fails
             }
           }
@@ -4084,9 +3599,7 @@ async function pushChangesToPipedrive(
                     const labelId = labelNameToId[part.toLowerCase()];
                     if (labelId) {
                       processedLabels.push(labelId);
-                      Logger.log(`Converted label name "${part}" to ID: ${labelId}`);
                     } else {
-                      Logger.log(`Warning: Could not find label ID for name "${part}"`);
                     }
                   }
                 });
@@ -4102,9 +3615,7 @@ async function pushChangesToPipedrive(
                       const labelId = labelNameToId[item.toLowerCase()];
                       if (labelId) {
                         processedLabels.push(labelId);
-                        Logger.log(`Converted label name "${item}" to ID: ${labelId}`);
                       } else {
-                        Logger.log(`Warning: Could not find label ID for name "${item}"`);
                       }
                     }
                   } else {
@@ -4115,12 +3626,10 @@ async function pushChangesToPipedrive(
               
               if (processedLabels.length > 0) {
                 payloadToSend.label_ids = processedLabels;
-                Logger.log(`Final label_ids for push: ${JSON.stringify(payloadToSend.label_ids)}`);
               } else {
                 delete payloadToSend.label_ids;
               }
             } catch (e) {
-              Logger.log(`Error processing lead labels: ${e.message}`);
               // Keep original value if conversion fails
             }
           }
@@ -4132,12 +3641,10 @@ async function pushChangesToPipedrive(
               const labelString = payloadToSend.label_ids.replace(/[\[\]]/g, '');
               if (labelString) {
                 payloadToSend.label_ids = labelString.split(',').map(id => parseInt(id.trim()));
-                Logger.log(`Converted label_ids from string to array: ${JSON.stringify(payloadToSend.label_ids)}`);
               } else {
                 delete payloadToSend.label_ids;
               }
             } catch (e) {
-              Logger.log(`Error parsing label_ids: ${e.message}`);
               delete payloadToSend.label_ids;
             }
           }
@@ -4161,12 +3668,10 @@ async function pushChangesToPipedrive(
           readOnlyFields.forEach((field) => {
             if (payloadToSend[field] !== undefined) {
               delete payloadToSend[field];
-              Logger.log(`Removed read-only field: ${field}`);
             }
           });
 
           // Log the final modified payload
-          Logger.log(`Final API payload: ${JSON.stringify(payloadToSend)}`);
 
           // Show some key parameters for the API call
           const requestParams = {
@@ -4177,9 +3682,6 @@ async function pushChangesToPipedrive(
               ? accessToken.substring(0, 5) + "..."
               : "undefined",
           };
-          Logger.log(
-            `API request parameters: ${JSON.stringify(requestParams)}`
-          );
 
           switch (entityType) {
             case "deals":
@@ -4242,15 +3744,7 @@ async function pushChangesToPipedrive(
                       try {
                         currentAddress =
                           getCurrentAddressData("deals", rowData.id, key) || {};
-                        Logger.log(
-                          `Fetched original address object for merging: ${JSON.stringify(
-                            currentAddress
-                          )}`
-                        );
                       } catch (e) {
-                        Logger.log(
-                          `Error fetching original address object: ${e.message}`
-                        );
                       }
 
                       // Merge updated components into the original address object
@@ -4319,90 +3813,66 @@ async function pushChangesToPipedrive(
                         finalPayload[`${key}_formatted_address`] =
                           mergedAddress.formatted_address;
 
-                      Logger.log(
-                        `Merged and rebuilt address for ${key}: ${JSON.stringify(
-                          finalPayload.custom_fields[key]
-                        )}`
-                      );
                     } else {
                       // For all other custom fields, add them directly to the final payload
                       finalPayload[key] = value;
                     }
                   });
                   
-                  Logger.log(`Processed ${Object.keys(processedCustomFields).length} custom fields with type conversions`);
                 }
 
                 // Handle linked field name-to-ID conversions for deals
                 // Handle person_id field - convert person name to ID if provided as string
                 if (finalPayload.person_id && typeof finalPayload.person_id === 'string' && isNaN(finalPayload.person_id)) {
-                  Logger.log(`Converting person name "${finalPayload.person_id}" to person ID`);
                   const nameToIdMap = searchEntitiesByName('persons', [finalPayload.person_id]);
                   if (nameToIdMap[finalPayload.person_id]) {
                     finalPayload.person_id = nameToIdMap[finalPayload.person_id];
-                    Logger.log(`Converted person name to ID: ${finalPayload.person_id}`);
                   } else {
-                    Logger.log(`Warning: Could not find person ID for name "${finalPayload.person_id}"`);
                     delete finalPayload.person_id;
                   }
                 }
                 
                 // Handle org_id field - convert organization name to ID if provided as string
                 if (finalPayload.org_id && typeof finalPayload.org_id === 'string' && isNaN(finalPayload.org_id)) {
-                  Logger.log(`Converting organization name "${finalPayload.org_id}" to organization ID`);
                   const nameToIdMap = searchEntitiesByName('organizations', [finalPayload.org_id]);
                   if (nameToIdMap[finalPayload.org_id]) {
                     finalPayload.org_id = nameToIdMap[finalPayload.org_id];
-                    Logger.log(`Converted organization name to ID: ${finalPayload.org_id}`);
                   } else {
-                    Logger.log(`Warning: Could not find organization ID for name "${finalPayload.org_id}"`);
                     delete finalPayload.org_id;
                   }
                 }
                 
                 // Handle owner_id field - convert user name to ID if provided as string  
                 if (finalPayload.owner_id && typeof finalPayload.owner_id === 'string' && isNaN(finalPayload.owner_id)) {
-                  Logger.log(`Converting user name "${finalPayload.owner_id}" to user ID`);
                   const nameToIdMap = searchEntitiesByName('users', [finalPayload.owner_id]);
                   if (nameToIdMap[finalPayload.owner_id]) {
                     finalPayload.owner_id = nameToIdMap[finalPayload.owner_id];
-                    Logger.log(`Converted user name to ID: ${finalPayload.owner_id}`);
                   } else {
-                    Logger.log(`Warning: Could not find user ID for name "${finalPayload.owner_id}"`);
                     delete finalPayload.owner_id;
                   }
                 }
                 
                 // Handle stage_id field - convert stage name to ID if provided as string
                 if (finalPayload.stage_id && typeof finalPayload.stage_id === 'string' && isNaN(finalPayload.stage_id)) {
-                  Logger.log(`Converting stage name "${finalPayload.stage_id}" to stage ID`);
                   const nameToIdMap = searchEntitiesByName('stages', [finalPayload.stage_id]);
                   if (nameToIdMap[finalPayload.stage_id]) {
                     finalPayload.stage_id = nameToIdMap[finalPayload.stage_id];
-                    Logger.log(`Converted stage name to ID: ${finalPayload.stage_id}`);
                   } else {
-                    Logger.log(`Warning: Could not find stage ID for name "${finalPayload.stage_id}"`);
                     delete finalPayload.stage_id;
                   }
                 }
                 
                 // Handle pipeline_id field - convert pipeline name to ID if provided as string
                 if (finalPayload.pipeline_id && typeof finalPayload.pipeline_id === 'string' && isNaN(finalPayload.pipeline_id)) {
-                  Logger.log(`Converting pipeline name "${finalPayload.pipeline_id}" to pipeline ID`);
                   const nameToIdMap = searchEntitiesByName('pipelines', [finalPayload.pipeline_id]);
                   if (nameToIdMap[finalPayload.pipeline_id]) {
                     finalPayload.pipeline_id = nameToIdMap[finalPayload.pipeline_id];
-                    Logger.log(`Converted pipeline name to ID: ${finalPayload.pipeline_id}`);
                   } else {
-                    Logger.log(`Warning: Could not find pipeline ID for name "${finalPayload.pipeline_id}"`);
                     delete finalPayload.pipeline_id;
                   }
                 }
 
                 // Log the final payload
-                Logger.log(
-                  `Final payload for API call: ${JSON.stringify(finalPayload)}`
-                );
 
                 // Special handling for time range fields
                 if (
@@ -4411,9 +3881,6 @@ async function pushChangesToPipedrive(
                     key.endsWith("_until")
                   )
                 ) {
-                  Logger.log(
-                    `Found time range fields in finalPayload - ensuring proper formats`
-                  );
 
                   // First, build a map of time range pairs
                   const timeRangePairs = {};
@@ -4424,9 +3891,6 @@ async function pushChangesToPipedrive(
                       if (key.endsWith("_until")) {
                         const baseKey = key.replace(/_until$/, "");
                         timeRangePairs[baseKey] = key;
-                        Logger.log(
-                          `Found time range pair in custom_fields: ${baseKey} -> ${key}`
-                        );
                       }
                     });
                   }
@@ -4436,9 +3900,6 @@ async function pushChangesToPipedrive(
                     if (key.endsWith("_until")) {
                       const baseKey = key.replace(/_until$/, "");
                       timeRangePairs[baseKey] = key;
-                      Logger.log(
-                        `Found time range pair at root: ${baseKey} -> ${key}`
-                      );
                     }
                   });
 
@@ -4466,9 +3927,6 @@ async function pushChangesToPipedrive(
                       endValue = finalPayload.custom_fields[untilKey];
                     }
 
-                    Logger.log(
-                      `Time range values: ${baseKey}=${startValue}, ${untilKey}=${endValue}`
-                    );
 
                     // Now make sure both values are in both places
                     if (startValue) {
@@ -4483,9 +3941,6 @@ async function pushChangesToPipedrive(
                       if (!finalPayload.custom_fields)
                         finalPayload.custom_fields = {};
                       finalPayload.custom_fields[untilKey] = endValue;
-                      Logger.log(
-                        `CRITICAL: Ensuring end time in ROOT payload: ${untilKey}=${endValue}`
-                      );
                     }
                   }
                 }
@@ -4495,24 +3950,15 @@ async function pushChangesToPipedrive(
                   finalPayload.__preserveTimeRangePairs &&
                   finalPayload.__timeRangePairs
                 ) {
-                  Logger.log(
-                    `CRITICAL: Restoring preserved time range pairs to final payload`
-                  );
 
                   for (const baseKey in finalPayload.__timeRangePairs) {
                     const pair = finalPayload.__timeRangePairs[baseKey];
                     // Ensure both start and end values are in the root payload
                     if (pair.startValue) {
                       finalPayload[pair.startKey] = pair.startValue;
-                      Logger.log(
-                        `CRITICAL: Restoring start time to root payload: ${pair.startKey}=${pair.startValue}`
-                      );
                     }
                     if (pair.endValue) {
                       finalPayload[pair.endKey] = pair.endValue;
-                      Logger.log(
-                        `CRITICAL: Restoring end time to root payload: ${pair.endKey}=${pair.endValue}`
-                      );
                     }
                   }
 
@@ -4538,12 +3984,6 @@ async function pushChangesToPipedrive(
                       startValue: finalPayload[baseKey],
                       endValue: finalPayload[key],
                     };
-                    Logger.log(
-                      `Time range field detected at root level: ${baseKey} -> ${key}`
-                    );
-                    Logger.log(
-                      `Start value: ${finalPayload[baseKey]}, End value: ${finalPayload[key]}`
-                    );
                   }
                 }
 
@@ -4561,9 +4001,6 @@ async function pushChangesToPipedrive(
                         ) {
                           timeRangePairs[baseKey].startValue =
                             finalPayload.custom_fields[baseKey];
-                          Logger.log(
-                            `Updated start value from custom_fields: ${baseKey} = ${finalPayload.custom_fields[baseKey]}`
-                          );
                         }
                         if (
                           !timeRangePairs[baseKey].endValue &&
@@ -4571,9 +4008,6 @@ async function pushChangesToPipedrive(
                         ) {
                           timeRangePairs[baseKey].endValue =
                             finalPayload.custom_fields[key];
-                          Logger.log(
-                            `Updated end value from custom_fields: ${key} = ${finalPayload.custom_fields[key]}`
-                          );
                         }
                       } else {
                         // This is a new time range pair
@@ -4584,12 +4018,6 @@ async function pushChangesToPipedrive(
                           startValue: finalPayload.custom_fields[baseKey],
                           endValue: finalPayload.custom_fields[key],
                         };
-                        Logger.log(
-                          `Time range field detected in custom_fields: ${baseKey} -> ${key}`
-                        );
-                        Logger.log(
-                          `Start value: ${finalPayload.custom_fields[baseKey]}, End value: ${finalPayload.custom_fields[key]}`
-                        );
                       }
                     }
                   }
@@ -4622,17 +4050,11 @@ async function pushChangesToPipedrive(
                             finalPayload[endKey] ||
                             (finalPayload.custom_fields &&
                               finalPayload.custom_fields[endKey]);
-                          Logger.log(
-                            `Non-standard time range field detected: ${key} -> ${endKey}, value: ${endValue}`
-                          );
                           break;
                         }
                       }
 
                       if (timeRangeFieldsDetected) {
-                        Logger.log(
-                          `Potential time field detected: ${key} with value: ${finalPayload[key]}`
-                        );
                         break;
                       }
                     }
@@ -4660,9 +4082,6 @@ async function pushChangesToPipedrive(
                         finalPayload.custom_fields = {};
                       finalPayload.custom_fields[pair.endKey] = pair.endValue;
 
-                      Logger.log(
-                        `Added missing end time: ${pair.endKey} = ${pair.endValue}`
-                      );
                     }
 
                     if (!pair.startValue && pair.endValue) {
@@ -4676,24 +4095,13 @@ async function pushChangesToPipedrive(
                       finalPayload.custom_fields[pair.startKey] =
                         pair.startValue;
 
-                      Logger.log(
-                        `Added missing start time: ${pair.startKey} = ${pair.startValue}`
-                      );
                     }
                   }
 
-                  Logger.log(
-                    `Time range fields detected (${
-                      Object.keys(timeRangePairs).length
-                    } pairs) - will use direct API`
-                  );
                 }
 
                 // Use direct API for deals with time range fields
                 if (timeRangeFieldsDetected) {
-                  Logger.log(
-                    `Using updateDealDirect for deal with time range fields`
-                  );
                   try {
                     // Get the field definitions map for deals
                     const fieldDefinitions = getFieldDefinitionsMap(entityType);
@@ -4710,15 +4118,6 @@ async function pushChangesToPipedrive(
                     // Process the response similar to your existing code
                     responseCode = directResponse.responseCode || 200;
                     const directResponseText = JSON.stringify(directResponse);
-                    Logger.log(
-                      `Direct API call response code from updateDealDirect: ${responseCode}`
-                    );
-                    Logger.log(
-                      `Direct API response from updateDealDirect: ${directResponseText.substring(
-                        0,
-                        500
-                      )}`
-                    );
 
                     // Parse the response
                     responseBody = directResponse;
@@ -4727,9 +4126,6 @@ async function pushChangesToPipedrive(
                     // Skip the regular API call
                     break;
                   } catch (dealError) {
-                    Logger.log(
-                      `Deal update with updateDealDirect failed: ${dealError.message}`
-                    );
                     responseBody = {
                       error: dealError.message,
                     };
@@ -4761,7 +4157,6 @@ async function pushChangesToPipedrive(
                 responseBody = JSON.parse(responseText);
                 success = responseBody && responseBody.success === true;
               } catch (dealError) {
-                Logger.log(`Deal update failed: ${dealError.message}`);
                 responseBody = {
                   error: dealError.message,
                 };
@@ -4783,7 +4178,6 @@ async function pushChangesToPipedrive(
                 const subdomain = scriptProperties.getProperty("PIPEDRIVE_SUBDOMAIN") || "api";
                 
                 // Use direct API call to avoid URL constructor issue
-                Logger.log("Using direct API call for persons update to avoid URL constructor issue");
                 
                 // Get field definitions for processing
                 const fieldDefinitions = getFieldDefinitionsMap(entityType);
@@ -4813,38 +4207,30 @@ async function pushChangesToPipedrive(
                     finalPayload[key] = processedCustomFields[key];
                   });
                   
-                  Logger.log(`Moved ${Object.keys(processedCustomFields).length} custom fields to top level`);
                 }
                 
                 // Handle linked field name-to-ID conversions for persons
                 // Handle org_id field - convert organization name to ID if provided as string
                 if (finalPayload.org_id && typeof finalPayload.org_id === 'string' && isNaN(finalPayload.org_id)) {
-                  Logger.log(`Converting organization name "${finalPayload.org_id}" to organization ID`);
                   const nameToIdMap = searchEntitiesByName('organizations', [finalPayload.org_id]);
                   if (nameToIdMap[finalPayload.org_id]) {
                     finalPayload.org_id = nameToIdMap[finalPayload.org_id];
-                    Logger.log(`Converted organization name to ID: ${finalPayload.org_id}`);
                   } else {
-                    Logger.log(`Warning: Could not find organization ID for name "${finalPayload.org_id}"`);
                     delete finalPayload.org_id;
                   }
                 }
                 
                 // Handle owner_id field - convert user name to ID if provided as string
                 if (finalPayload.owner_id && typeof finalPayload.owner_id === 'string' && isNaN(finalPayload.owner_id)) {
-                  Logger.log(`Converting user name "${finalPayload.owner_id}" to user ID`);
                   const nameToIdMap = searchEntitiesByName('users', [finalPayload.owner_id]);
                   if (nameToIdMap[finalPayload.owner_id]) {
                     finalPayload.owner_id = nameToIdMap[finalPayload.owner_id];
-                    Logger.log(`Converted user name to ID: ${finalPayload.owner_id}`);
                   } else {
-                    Logger.log(`Warning: Could not find user ID for name "${finalPayload.owner_id}"`);
                     delete finalPayload.owner_id;
                   }
                 }
                 
                 // Log the final payload
-                Logger.log(`Final payload for persons API call: ${JSON.stringify(finalPayload)}`);
                 
                 // Construct URL and options
                 const apiUrl = `https://${subdomain}.pipedrive.com/v1/persons/${Number(rowData.id)}`;
@@ -4858,8 +4244,6 @@ async function pushChangesToPipedrive(
                   muteHttpExceptions: true,
                 };
                 
-                Logger.log(`Direct API URL: ${apiUrl}`);
-                Logger.log(`Direct API payload: ${JSON.stringify(finalPayload)}`);
                 
                 // Make the request
                 const response = UrlFetchApp.fetch(apiUrl, options);
@@ -4870,9 +4254,7 @@ async function pushChangesToPipedrive(
                 responseBody = JSON.parse(responseText);
                 success = responseBody && responseBody.success === true;
                 
-                Logger.log(`Direct API call response for person: ${JSON.stringify(responseBody)}`);
               } catch (personError) {
-                Logger.log(`Person update failed: ${personError.message}`);
                 responseBody = {
                   error: personError.message,
                 };
@@ -4897,7 +4279,6 @@ async function pushChangesToPipedrive(
                 const fieldDefinitions = getFieldDefinitionsMap(entityType);
                 
                 // Use direct API call to avoid URL constructor issue
-                Logger.log("Using direct API call for organizations update to avoid URL constructor issue");
                 
                 // Prepare final payload - move custom fields to top level for API v1
                 const finalPayload = {};
@@ -4924,25 +4305,20 @@ async function pushChangesToPipedrive(
                     finalPayload[key] = processedCustomFields[key];
                   });
                   
-                  Logger.log(`Moved ${Object.keys(processedCustomFields).length} custom fields to top level`);
                 }
                 
                 // Handle linked field name-to-ID conversions for organizations
                 // Handle owner_id field - convert user name to ID if provided as string
                 if (finalPayload.owner_id && typeof finalPayload.owner_id === 'string' && isNaN(finalPayload.owner_id)) {
-                  Logger.log(`Converting user name "${finalPayload.owner_id}" to user ID`);
                   const nameToIdMap = searchEntitiesByName('users', [finalPayload.owner_id]);
                   if (nameToIdMap[finalPayload.owner_id]) {
                     finalPayload.owner_id = nameToIdMap[finalPayload.owner_id];
-                    Logger.log(`Converted user name to ID: ${finalPayload.owner_id}`);
                   } else {
-                    Logger.log(`Warning: Could not find user ID for name "${finalPayload.owner_id}"`);
                     delete finalPayload.owner_id;
                   }
                 }
                 
                 // Log the final payload
-                Logger.log(`Final payload for organizations API call: ${JSON.stringify(finalPayload)}`);
                 
                 // Construct URL and options
                 const apiUrl = `https://${subdomain}.pipedrive.com/v1/organizations/${Number(rowData.id)}`;
@@ -4956,8 +4332,6 @@ async function pushChangesToPipedrive(
                   muteHttpExceptions: true,
                 };
                 
-                Logger.log(`Direct API URL: ${apiUrl}`);
-                Logger.log(`Direct API payload: ${JSON.stringify(finalPayload)}`);
                 
                 // Make the request
                 const response = UrlFetchApp.fetch(apiUrl, options);
@@ -4968,9 +4342,7 @@ async function pushChangesToPipedrive(
                 responseBody = JSON.parse(responseText);
                 success = responseBody && responseBody.success === true;
                 
-                Logger.log(`Direct API call response for organization: ${JSON.stringify(responseBody)}`);
               } catch (orgError) {
-                Logger.log(`Organization update failed: ${orgError.message}`);
                 responseBody = {
                   error: orgError.message,
                 };
@@ -4992,7 +4364,6 @@ async function pushChangesToPipedrive(
                 const subdomain = scriptProperties.getProperty("PIPEDRIVE_SUBDOMAIN") || "api";
                 
                 // Use direct API call to avoid URL constructor issue
-                Logger.log("Using direct API call for activities update to avoid URL constructor issue");
                 
                 // Get field definitions for processing
                 const fieldDefinitions = getFieldDefinitionsMap(entityType);
@@ -5019,7 +4390,6 @@ async function pushChangesToPipedrive(
                     const parsed = JSON.parse(finalPayload.participants);
                     if (Array.isArray(parsed)) {
                       finalPayload.participants = parsed;
-                      Logger.log(`Parsed participants field from JSON string to array: ${JSON.stringify(parsed)}`);
                     }
                   } catch (e) {
                     // If not JSON, check if it's comma-separated values
@@ -5035,10 +4405,8 @@ async function pushChangesToPipedrive(
                           person_id: parseInt(id),
                           primary_flag: index === 0 // First one is primary
                         }));
-                        Logger.log(`Converted comma-separated person IDs to array: ${JSON.stringify(finalPayload.participants)}`);
                       } else {
                         // Values contain names - need to look up person IDs
-                        Logger.log(`Participants contain names, looking up person IDs for: ${participantValues.join(', ')}`);
                         
                         // Search for person IDs by name
                         const nameToIdMap = searchPersonsByName(participantValues);
@@ -5054,65 +4422,50 @@ async function pushChangesToPipedrive(
                               person_id: personId,
                               primary_flag: i === 0 // First one is primary
                             });
-                            Logger.log(`Found person ID ${personId} for name "${name}"`);
                           } else {
-                            Logger.log(`Warning: Could not find person ID for name "${name}"`);
                           }
                         }
                         
                         if (participants.length > 0) {
                           finalPayload.participants = participants;
-                          Logger.log(`Converted participant names to array: ${JSON.stringify(finalPayload.participants)}`);
                         } else {
-                          Logger.log(`No valid participants found, removing field`);
                           delete finalPayload.participants;
                         }
                       }
                     } else {
-                      Logger.log(`Invalid participants value: ${finalPayload.participants}`);
                       delete finalPayload.participants;
                     }
                   }
                 }
                 
                 // Handle other linked fields for activities
-                Logger.log(`Processing linked fields for activities...`);
                 
                 // Handle person_id field
                 if (finalPayload.person_id && typeof finalPayload.person_id === 'string' && isNaN(finalPayload.person_id)) {
-                  Logger.log(`Converting person name "${finalPayload.person_id}" to person ID`);
                   const nameToIdMap = searchEntitiesByName('persons', [finalPayload.person_id]);
                   if (nameToIdMap[finalPayload.person_id]) {
                     finalPayload.person_id = nameToIdMap[finalPayload.person_id];
-                    Logger.log(`Converted person name to ID: ${finalPayload.person_id}`);
                   } else {
-                    Logger.log(`Warning: Could not find person ID for name "${finalPayload.person_id}"`);
                     delete finalPayload.person_id;
                   }
                 }
                 
                 // Handle org_id field
                 if (finalPayload.org_id && typeof finalPayload.org_id === 'string' && isNaN(finalPayload.org_id)) {
-                  Logger.log(`Converting organization name "${finalPayload.org_id}" to org ID`);
                   const nameToIdMap = searchEntitiesByName('organizations', [finalPayload.org_id]);
                   if (nameToIdMap[finalPayload.org_id]) {
                     finalPayload.org_id = nameToIdMap[finalPayload.org_id];
-                    Logger.log(`Converted organization name to ID: ${finalPayload.org_id}`);
                   } else {
-                    Logger.log(`Warning: Could not find organization ID for name "${finalPayload.org_id}"`);
                     delete finalPayload.org_id;
                   }
                 }
                 
                 // Handle deal_id field
                 if (finalPayload.deal_id && typeof finalPayload.deal_id === 'string' && isNaN(finalPayload.deal_id)) {
-                  Logger.log(`Converting deal title "${finalPayload.deal_id}" to deal ID`);
                   const nameToIdMap = searchEntitiesByName('deals', [finalPayload.deal_id]);
                   if (nameToIdMap[finalPayload.deal_id]) {
                     finalPayload.deal_id = nameToIdMap[finalPayload.deal_id];
-                    Logger.log(`Converted deal title to ID: ${finalPayload.deal_id}`);
                   } else {
-                    Logger.log(`Warning: Could not find deal ID for title "${finalPayload.deal_id}"`);
                     delete finalPayload.deal_id;
                   }
                 }
@@ -5127,11 +4480,9 @@ async function pushChangesToPipedrive(
                     finalPayload[key] = processedCustomFields[key];
                   });
                   
-                  Logger.log(`Moved ${Object.keys(processedCustomFields).length} custom fields to top level`);
                 }
                 
                 // Log the final payload
-                Logger.log(`Final payload for activities API call: ${JSON.stringify(finalPayload)}`);
                 
                 // Construct URL and options
                 const apiUrl = `https://${subdomain}.pipedrive.com/v1/activities/${Number(rowData.id)}`;
@@ -5145,8 +4496,6 @@ async function pushChangesToPipedrive(
                   muteHttpExceptions: true,
                 };
                 
-                Logger.log(`Direct API URL: ${apiUrl}`);
-                Logger.log(`Direct API payload: ${JSON.stringify(finalPayload)}`);
                 
                 // Make the request
                 const response = UrlFetchApp.fetch(apiUrl, options);
@@ -5157,9 +4506,7 @@ async function pushChangesToPipedrive(
                 responseBody = JSON.parse(responseText);
                 success = responseBody && responseBody.success === true;
                 
-                Logger.log(`Direct API call response for activity: ${JSON.stringify(responseBody)}`);
               } catch (activityError) {
-                Logger.log(`Activity update failed: ${activityError.message}`);
                 responseBody = {
                   error: activityError.message,
                 };
@@ -5181,7 +4528,6 @@ async function pushChangesToPipedrive(
                 const subdomain = scriptProperties.getProperty("PIPEDRIVE_SUBDOMAIN") || "api";
                 
                 // Use direct API call for leads
-                Logger.log("Using direct API call for leads update");
                 
                 // Prepare final payload - move custom fields to top level for API v1
                 const finalPayload = {};
@@ -5232,24 +4578,20 @@ async function pushChangesToPipedrive(
                       // Convert ISO date string to YYYY-MM-DD format
                       if (typeof value === 'string' && value.includes('T')) {
                         value = value.split('T')[0];
-                        Logger.log(`Formatted date field ${key}: ${payloadToSend.custom_fields[key]} -> ${value}`);
                       }
                     }
                     
                     // Check if this is a phone field and ensure it's a string
                     if (fieldDef && fieldDef.field_type === 'phone' && value !== null && value !== undefined) {
                       value = String(value);
-                      Logger.log(`Converted phone field ${key} to string: ${value}`);
                     }
                     
                     // For Pipedrive API v1, custom fields should be at top level
                     finalPayload[key] = value;
                   });
-                  Logger.log(`Moved ${Object.keys(payloadToSend.custom_fields).length} custom fields to top level`);
                 }
                 
                 // Log the final payload
-                Logger.log(`Final payload for leads API call: ${JSON.stringify(finalPayload)}`);
                 
                 // Construct URL and options - leads use PATCH method
                 const apiUrl = `https://${subdomain}.pipedrive.com/v1/leads/${String(rowData.id)}`;
@@ -5263,8 +4605,6 @@ async function pushChangesToPipedrive(
                   muteHttpExceptions: true,
                 };
                 
-                Logger.log(`Direct API URL: ${apiUrl}`);
-                Logger.log(`Direct API payload: ${JSON.stringify(finalPayload)}`);
                 
                 // Make the request
                 const response = UrlFetchApp.fetch(apiUrl, options);
@@ -5275,9 +4615,7 @@ async function pushChangesToPipedrive(
                 responseBody = JSON.parse(responseText);
                 success = responseBody && responseBody.success === true;
                 
-                Logger.log(`Direct API call response for lead: ${JSON.stringify(responseBody)}`);
               } catch (leadError) {
-                Logger.log(`Lead update failed: ${leadError.message}`);
                 responseBody = {
                   error: leadError.message,
                 };
@@ -5303,11 +4641,9 @@ async function pushChangesToPipedrive(
                 try {
                   fieldDefinitions = getEntityFields('products');
                 } catch (fieldErr) {
-                  Logger.log(`Could not get field definitions for products: ${fieldErr.message}`);
                 }
                 
                 // Use direct API call to avoid URL constructor issue
-                Logger.log("Using direct API call for products update to avoid URL constructor issue");
                 
                 const directResponse = updateProductDirect(
                   rowData.id,
@@ -5322,9 +4658,7 @@ async function pushChangesToPipedrive(
                 responseBody = directResponse;
                 success = responseBody && responseBody.success === true;
                 
-                Logger.log(`Direct API call response for product: ${JSON.stringify(responseBody)}`);
               } catch (prodError) {
-                Logger.log(`Product update failed: ${prodError.message}`);
                 responseBody = {
                   error: prodError.message,
                 };
@@ -5346,25 +4680,16 @@ async function pushChangesToPipedrive(
             responseBody = apiError.response.data || {
               error: "API error with response",
             };
-            Logger.log(
-              `API error with response: ${JSON.stringify(
-                apiError.response.data
-              )}`
-            );
-            Logger.log(`Status: ${apiError.response.status}`);
           } else if (apiError.request) {
             // The request was made but no response was received
             responseBody = {
               error: "No response from server",
             };
-            Logger.log(`API error with no response: ${apiError.message}`);
           } else {
             // Something happened in setting up the request that triggered an Error
             responseBody = {
               error: apiError.message,
             };
-            Logger.log(`API setup error: ${apiError.message}`);
-            Logger.log(`Stack trace: ${apiError.stack}`);
           }
         }
 
@@ -5372,9 +4697,6 @@ async function pushChangesToPipedrive(
         if (success) {
           // Update was successful
           successCount++;
-          Logger.log(
-            `Successfully updated row ${rowIndex + 1} with ID ${rowData.id}`
-          );
 
           // Update the cell status to "Synced"
           const row = rowIndex + 2; // +2 for header row and 0-based index
@@ -5406,11 +4728,6 @@ async function pushChangesToPipedrive(
             errorMessage = errorData.join("; ");
           }
 
-          Logger.log(
-            `Error updating row ${rowIndex + 1} with ID ${
-              rowData.id
-            }: ${errorMessage}`
-          );
 
           // Store failure details
           failures.push({
@@ -5431,9 +4748,6 @@ async function pushChangesToPipedrive(
       } catch (error) {
         // Handle exceptions
         failureCount++;
-        Logger.log(
-          `Exception processing row ${rowIndex + 1}: ${error.message}`
-        );
 
         failures.push({
           id: modifiedRows[rowIndex].id,
@@ -5490,8 +4804,6 @@ async function pushChangesToPipedrive(
     };
   } catch (error) {
     // Handle overall function errors
-    Logger.log(`Error in pushChangesToPipedrive: ${error.message}`);
-    Logger.log(`Stack trace: ${error.stack}`);
 
     if (!isScheduledSync) {
       SpreadsheetApp.getUi().alert(
@@ -5518,7 +4830,6 @@ async function pushChangesToPipedrive(
 function filterReadOnlyFields(data, entityType) {
   if (!data) return data;
 
-  Logger.log(`Starting field filtering for entity type: ${entityType}`);
   const filteredData = {};
 
   // Copy custom_fields to the filtered data if it exists
@@ -5527,11 +4838,6 @@ function filterReadOnlyFields(data, entityType) {
 
     // Format custom fields to match Pipedrive API requirements
     formatCustomFields(filteredData.custom_fields);
-    Logger.log(
-      `Formatted ${
-        Object.keys(filteredData.custom_fields).length
-      } custom fields`
-    );
   }
 
   // List of read-only fields by entity type according to Pipedrive API documentation
@@ -5647,7 +4953,6 @@ function filterReadOnlyFields(data, entityType) {
 
     // Skip fields that are in the read-only list
     if (readOnlyFields.includes(key)) {
-      Logger.log(`Filtering out read-only field: ${key}`);
       continue;
     }
 
@@ -5655,7 +4960,6 @@ function filterReadOnlyFields(data, entityType) {
     let isReadOnly = false;
     for (const pattern of readOnlyPatterns) {
       if (pattern.test(key)) {
-        Logger.log(`Filtering out read-only field: ${key}`);
         isReadOnly = true;
         break;
       }
@@ -5667,9 +4971,7 @@ function filterReadOnlyFields(data, entityType) {
       const formattedDate = formatDateField(data[key]);
       if (formattedDate) {
         filteredData[key] = formattedDate;
-        Logger.log(`Formatted won_time field to: ${filteredData[key]}`);
       } else {
-        Logger.log(`Skipping invalid won_time: ${data[key]}`);
         continue;
       }
     }
@@ -5713,7 +5015,6 @@ function filterReadOnlyFields(data, entityType) {
   for (const field of timeFields) {
     if (filteredData[field]) {
       filteredData[field] = formatDateTimeField(filteredData[field]);
-      Logger.log(`Formatted ${field} field to: ${filteredData[field]}`);
     }
   }
 
@@ -5731,9 +5032,6 @@ function filterReadOnlyFields(data, entityType) {
     ? Object.keys(filteredData.custom_fields).length
     : 0;
 
-  Logger.log(
-    `Filtered data payload from ${originalFieldCount} fields to ${topLevelFieldCount} top-level fields plus ${customFieldCount} custom fields`
-  );
 
   // CRITICAL: Ensure all fields are properly formatted before sending to API
   // Apply final formatting to the entire data structure
@@ -5745,13 +5043,7 @@ function filterReadOnlyFields(data, entityType) {
     const isoDateTime = formatDateTimeField(formattedData.won_time);
     if (isoDateTime) {
       formattedData.won_time = isoDateTime;
-      Logger.log(
-        `Final won_time format set to ISO datetime: ${formattedData.won_time}`
-      );
     } else {
-      Logger.log(
-        `Invalid won_time format after processing: ${formattedData.won_time} - removing field`
-      );
       delete formattedData.won_time;
     }
   }
@@ -5761,9 +5053,6 @@ function filterReadOnlyFields(data, entityType) {
     const isoDateTime = formatDateTimeField(formattedData.lost_time);
     if (isoDateTime) {
       formattedData.lost_time = isoDateTime;
-      Logger.log(
-        `Final lost_time format set to ISO datetime: ${formattedData.lost_time}`
-      );
     } else {
       delete formattedData.lost_time;
     }
@@ -5773,9 +5062,6 @@ function filterReadOnlyFields(data, entityType) {
     const isoDateTime = formatDateTimeField(formattedData.close_time);
     if (isoDateTime) {
       formattedData.close_time = isoDateTime;
-      Logger.log(
-        `Final close_time format set to ISO datetime: ${formattedData.close_time}`
-      );
     } else {
       delete formattedData.close_time;
     }
@@ -5817,12 +5103,8 @@ function filterReadOnlyFields(data, entityType) {
             const formattedDate = formatDateField(value);
             if (formattedDate) {
               formattedData.custom_fields[fieldId] = formattedDate;
-              Logger.log(
-                `Fixed date field ${fieldId} format to ${formattedDate}`
-              );
             } else {
               delete formattedData.custom_fields[fieldId];
-              Logger.log(`Removed invalid date field ${fieldId}`);
             }
           }
         }
@@ -5835,9 +5117,6 @@ function filterReadOnlyFields(data, entityType) {
             Array.isArray(value)
           ) {
             delete formattedData.custom_fields[fieldId];
-            Logger.log(
-              `Removed invalid date range field ${fieldId} - not an object`
-            );
           } else {
             // Ensure each property is properly formatted
             const rangeObj = {
@@ -5860,7 +5139,6 @@ function filterReadOnlyFields(data, entityType) {
             }
 
             formattedData.custom_fields[fieldId] = rangeObj;
-            Logger.log(`Fixed date range field ${fieldId}`);
           }
         }
 
@@ -5892,14 +5170,8 @@ function filterReadOnlyFields(data, entityType) {
               });
 
               formattedData.custom_fields[fieldId] = optionsArray;
-              Logger.log(
-                `Fixed multi options field ${fieldId} to array with ${optionsArray.length} items`
-              );
             } catch (e) {
               delete formattedData.custom_fields[fieldId];
-              Logger.log(
-                `Removed invalid multi options field ${fieldId}: ${e.message}`
-              );
             }
           }
         }
@@ -5910,23 +5182,13 @@ function filterReadOnlyFields(data, entityType) {
             try {
               if (typeof value === "string" && !isNaN(Number(value))) {
                 formattedData.custom_fields[fieldId] = Number(value);
-                Logger.log(
-                  `Fixed organization field ${fieldId} to number: ${formattedData.custom_fields[fieldId]}`
-                );
               } else if (typeof value === "object" && value.id) {
                 formattedData.custom_fields[fieldId] = Number(value.id);
-                Logger.log(
-                  `Fixed organization field ${fieldId} to extract ID: ${formattedData.custom_fields[fieldId]}`
-                );
               } else {
                 delete formattedData.custom_fields[fieldId];
-                Logger.log(`Removed invalid organization field ${fieldId}`);
               }
             } catch (e) {
               delete formattedData.custom_fields[fieldId];
-              Logger.log(
-                `Removed invalid organization field ${fieldId}: ${e.message}`
-              );
             }
           }
         }
@@ -5936,14 +5198,8 @@ function filterReadOnlyFields(data, entityType) {
           if (typeof value !== "string") {
             try {
               formattedData.custom_fields[fieldId] = String(value);
-              Logger.log(
-                `Fixed phone field ${fieldId} to string: ${formattedData.custom_fields[fieldId]}`
-              );
             } catch (e) {
               delete formattedData.custom_fields[fieldId];
-              Logger.log(
-                `Removed invalid phone field ${fieldId}: ${e.message}`
-              );
             }
           }
         }
@@ -5972,9 +5228,6 @@ function filterReadOnlyFields(data, entityType) {
               hour,
               minute,
             };
-            Logger.log(
-              `EMERGENCY FIX: Forced time object format for field ${fieldId}`
-            );
           }
         }
 
@@ -5995,9 +5248,6 @@ function filterReadOnlyFields(data, entityType) {
                 minute: 0,
               },
             };
-            Logger.log(
-              `EMERGENCY FIX: Forced time range object format for field ${fieldId}`
-            );
           } else {
             // Ensure start and end properties exist and are properly formatted
             if (!value.start || typeof value.start !== "object") {
@@ -6029,17 +5279,11 @@ function filterReadOnlyFields(data, entityType) {
             } else {
               delete filteredData.custom_fields[fieldId];
             }
-            Logger.log(
-              `EMERGENCY FIX: Forced number format for user field ${fieldId}`
-            );
           }
         }
       } catch (e) {
         // If all else fails, remove the field
         delete formattedData.custom_fields[fieldId];
-        Logger.log(
-          `EMERGENCY FIX: Removed problematic field ${fieldId} due to error: ${e.message}`
-        );
       }
     }
   }
@@ -6061,7 +5305,6 @@ function filterReadOnlyFields(data, entityType) {
           } else {
             data.phone = String(data.phone);
           }
-          Logger.log(`Formatted phone field for person`);
         }
 
         // Handle email field - ensure it's a string
@@ -6076,10 +5319,8 @@ function filterReadOnlyFields(data, entityType) {
           } else {
             data.email = String(data.email);
           }
-          Logger.log(`Formatted email field for person`);
         }
       } catch (e) {
-        Logger.log(`Error formatting person-specific fields: ${e.message}`);
       }
       break;
 
@@ -6101,12 +5342,8 @@ function filterReadOnlyFields(data, entityType) {
               data.address = String(data.address);
             }
           }
-          Logger.log(`Formatted address as string: ${data.address}`);
         }
       } catch (e) {
-        Logger.log(
-          `Error formatting organization-specific fields: ${e.message}`
-        );
       }
       break;
   }
@@ -6122,11 +5359,9 @@ function filterReadOnlyFields(data, entityType) {
  */
 function ensureCriticalFieldFormats(data, entityType) {
   if (!data) {
-    Logger.log("No data provided to ensureCriticalFieldFormats");
     return data;
   }
 
-  Logger.log("Formatting " + entityType + " data for Pipedrive API");
 
   // Handle deal-specific fields
   if (entityType === "deals") {
@@ -6135,10 +5370,8 @@ function ensureCriticalFieldFormats(data, entityType) {
       var formattedDate = formatDateField(data.won_time);
       if (formattedDate) {
         data.won_time = formattedDate;
-        Logger.log("Formatted won_time: " + data.won_time);
       } else {
         delete data.won_time;
-        Logger.log("Removed invalid won_time field");
       }
     }
 
@@ -6147,10 +5380,8 @@ function ensureCriticalFieldFormats(data, entityType) {
       var formattedDate = formatDateField(data.lost_time);
       if (formattedDate) {
         data.lost_time = formattedDate;
-        Logger.log("Formatted lost_time: " + data.lost_time);
       } else {
         delete data.lost_time;
-        Logger.log("Removed invalid lost_time field");
       }
     }
 
@@ -6159,12 +5390,8 @@ function ensureCriticalFieldFormats(data, entityType) {
       var formattedDate = formatDateField(data.expected_close_date);
       if (formattedDate) {
         data.expected_close_date = formattedDate;
-        Logger.log(
-          "Formatted expected_close_date: " + data.expected_close_date
-        );
       } else {
         delete data.expected_close_date;
-        Logger.log("Removed invalid expected_close_date field");
       }
     }
 
@@ -6173,10 +5400,8 @@ function ensureCriticalFieldFormats(data, entityType) {
       var formattedDate = formatDateField(data.close_time);
       if (formattedDate) {
         data.close_time = formattedDate;
-        Logger.log("Formatted close_time: " + data.close_time);
       } else {
         delete data.close_time;
-        Logger.log("Removed invalid close_time field");
       }
     }
   }
@@ -6194,10 +5419,8 @@ function ensureCriticalFieldFormats(data, entityType) {
       var formattedDate = formatDateField(data[field]);
       if (formattedDate) {
         data[field] = formattedDate;
-        Logger.log("Formatted " + field + ": " + data[field]);
       } else {
         delete data[field];
-        Logger.log("Removed invalid " + field + " field");
       }
     }
   }
@@ -6229,12 +5452,8 @@ function ensureCriticalFieldFormats(data, entityType) {
         var formattedDate = formatDateField(fieldValue);
         if (formattedDate) {
           data.custom_fields[fieldId] = formattedDate;
-          Logger.log(
-            "Formatted date custom field " + fieldId + " to: " + formattedDate
-          );
         } else {
           delete data.custom_fields[fieldId];
-          Logger.log("Removed invalid date field " + fieldId);
         }
       }
 
@@ -6257,13 +5476,11 @@ function ensureCriticalFieldFormats(data, entityType) {
         }
 
         data.custom_fields[fieldId] = optionsArray;
-        Logger.log("Formatted multi options field " + fieldId);
       }
 
       // PHONE FIELDS
       else if (fieldId.includes("phone")) {
         data.custom_fields[fieldId] = String(fieldValue);
-        Logger.log("Formatted phone field " + fieldId);
       }
     }
   }
@@ -6281,7 +5498,6 @@ function ensureCriticalFieldFormats(data, entityType) {
       } else {
         data.phone = String(data.phone);
       }
-      Logger.log("Formatted phone field for person");
     }
 
     // Handle email field
@@ -6295,7 +5511,6 @@ function ensureCriticalFieldFormats(data, entityType) {
       } else {
         data.email = String(data.email);
       }
-      Logger.log("Formatted email field for person");
     }
   } else if (entityType === "organizations" || entityType === "organization") {
     // Handle address field
@@ -6313,7 +5528,6 @@ function ensureCriticalFieldFormats(data, entityType) {
           data.address = String(data.address);
         }
       }
-      Logger.log("Formatted address as string: " + data.address);
     }
   }
 
@@ -6327,7 +5541,6 @@ function ensureCriticalFieldFormats(data, entityType) {
 function formatCustomFields(customFields) {
   if (!customFields) return;
 
-  Logger.log("Formatting custom fields - start");
   let processedCount = 0;
 
   // Loop through each field
@@ -6339,7 +5552,6 @@ function formatCustomFields(customFields) {
     // Skip null/undefined/empty values
     if (value === null || value === undefined || value === "") {
       delete customFields[fieldId];
-      Logger.log("Removed empty field: " + fieldId);
       continue;
     }
 
@@ -6375,20 +5587,12 @@ function formatCustomFields(customFields) {
             start: start,
             end: end,
           };
-          Logger.log(
-            "Formatted daterange field: " +
-              fieldId +
-              " = " +
-              JSON.stringify(customFields[fieldId])
-          );
         } else {
           delete customFields[fieldId];
-          Logger.log("Removed invalid daterange field: " + fieldId);
         }
         processedCount++;
         continue;
       } catch (e) {
-        Logger.log("Error formatting daterange field: " + e);
         delete customFields[fieldId];
         continue;
       }
@@ -6399,10 +5603,8 @@ function formatCustomFields(customFields) {
       var formattedDate = formatDateField(value);
       if (formattedDate) {
         customFields[fieldId] = formattedDate;
-        Logger.log("Formatted date field: " + fieldId);
       } else {
         delete customFields[fieldId];
-        Logger.log("Removed invalid date field: " + fieldId);
       }
       processedCount++;
       continue;
@@ -6414,12 +5616,6 @@ function formatCustomFields(customFields) {
       fieldId.includes("multi") ||
       (typeof value === "string" && value.includes(","))
     ) {
-      Logger.log(
-        "Processing multi-option field: " +
-          fieldId +
-          " with value: " +
-          JSON.stringify(value)
-      );
 
       try {
         // Convert to array if it's not already
@@ -6450,14 +5646,11 @@ function formatCustomFields(customFields) {
           // Otherwise, try to find the option ID from the field definitions
           // This would require additional API logic to look up option IDs by label
           // For now, just log a warning and return the original value
-          Logger.log("Warning: Could not convert option to number: " + option);
           return option;
         });
 
         customFields[fieldId] = optionsArray;
-        Logger.log("Fixed multi-options field to array of numbers: " + fieldId);
       } catch (e) {
-        Logger.log("Error processing multi-option field: " + e);
         delete customFields[fieldId];
       }
       processedCount++;
@@ -6476,7 +5669,6 @@ function formatCustomFields(customFields) {
         if (/^\d{1,2}:\d{2}$/.test(value)) {
           // Already in correct format
           customFields[fieldId] = value;
-          Logger.log("Time field already in correct format: " + fieldId);
         }
         // Try to format from other common formats
         else {
@@ -6525,14 +5717,11 @@ function formatCustomFields(customFields) {
 
           if (timeValue) {
             customFields[fieldId] = timeValue;
-            Logger.log("Formatted time field: " + fieldId + " to " + timeValue);
           } else {
             delete customFields[fieldId];
-            Logger.log("Removed invalid time field: " + fieldId);
           }
         }
       } catch (e) {
-        Logger.log("Error formatting time field: " + e);
         delete customFields[fieldId];
       }
       processedCount++;
@@ -6548,10 +5737,8 @@ function formatCustomFields(customFields) {
       // Just need the ID for API
       if (value.id) {
         customFields[fieldId] = value.id;
-        Logger.log("Extracted ID from organization field: " + fieldId);
       } else {
         delete customFields[fieldId];
-        Logger.log("Removed invalid organization field: " + fieldId);
       }
       processedCount++;
       continue;
@@ -6566,7 +5753,6 @@ function formatCustomFields(customFields) {
     ) {
       // Pipedrive expects just the phone number
       customFields[fieldId] = value.value;
-      Logger.log("Extracted number from phone field: " + fieldId);
       processedCount++;
       continue;
     }
@@ -6576,12 +5762,10 @@ function formatCustomFields(customFields) {
       // If it has a value property, use that
       if (value.value !== undefined) {
         customFields[fieldId] = value.value;
-        Logger.log("Extracted value from object field: " + fieldId);
       }
       // If it's empty, remove it
       else if (Object.keys(value).length === 0) {
         delete customFields[fieldId];
-        Logger.log("Removed empty object field: " + fieldId);
       }
       // Otherwise keep it as is
       processedCount++;
@@ -6591,7 +5775,6 @@ function formatCustomFields(customFields) {
     processedCount++;
   }
 
-  Logger.log(`Formatted ${processedCount} custom fields - complete`);
 }
 
 // Helper function to pad numbers with leading zeros
@@ -6679,10 +5862,8 @@ function formatDateField(dateValue) {
       }
     }
 
-    Logger.log(`Could not format date value: ${dateValue}`);
     return null;
   } catch (e) {
-    Logger.log(`Error in formatDateField: ${e.message}`);
     return null;
   }
 }
@@ -6747,10 +5928,8 @@ function formatDateTimeField(dateValue) {
       return date.toISOString();
     }
 
-    Logger.log(`Could not convert to datetime: ${dateValue}`);
     return null;
   } catch (e) {
-    Logger.log(`Error in formatDateTimeField: ${e.message}`);
     return null;
   }
 }
@@ -6873,7 +6052,6 @@ function detectColumnShifts() {
 
     // If we have multiple "Sync Status" columns, clean up all but the rightmost one
     if (syncStatusColumns.length > 1) {
-      Logger.log(`Found ${syncStatusColumns.length} Sync Status columns`);
       // Keep only the rightmost column
       const rightmostIndex = Math.max(...syncStatusColumns);
 
@@ -6881,9 +6059,6 @@ function detectColumnShifts() {
       for (const colIndex of syncStatusColumns) {
         if (colIndex !== rightmostIndex) {
           const colLetter = columnToLetter(colIndex + 1);
-          Logger.log(
-            `Cleaning up duplicate Sync Status column at ${colLetter}`
-          );
           cleanupColumnFormatting(sheet, colLetter);
         }
       }
@@ -6906,15 +6081,9 @@ function detectColumnShifts() {
 
       // If there's a mismatch, columns might have shifted
       if (currentColLetter && actualColLetter !== currentColLetter) {
-        Logger.log(
-          `Column shift detected: was ${currentColLetter}, now ${actualColLetter}`
-        );
 
         // If the actual position is less than the recorded position, columns were removed
         if (actualSyncStatusIndex < previousPos) {
-          Logger.log(
-            `Columns were likely removed (${previousPos} → ${actualSyncStatusIndex})`
-          );
 
           // Clean ALL columns to be safe
           for (let i = 0; i < sheet.getLastColumn(); i++) {
@@ -6937,7 +6106,6 @@ function detectColumnShifts() {
       }
     }
   } catch (error) {
-    Logger.log(`Error in detectColumnShifts: ${error.message}`);
   }
 }
 
@@ -6949,9 +6117,6 @@ function detectColumnShifts() {
  */
 function cleanupColumnFormatting(sheet, columnLetter, isCurrentColumn = false) {
   try {
-    Logger.log(
-      `Cleaning up column ${columnLetter} (isCurrentColumn: ${isCurrentColumn})`
-    );
 
     // Convert column letter to index
     const columnIndex = letterToColumn(columnLetter);
@@ -6965,7 +6130,6 @@ function cleanupColumnFormatting(sheet, columnLetter, isCurrentColumn = false) {
       const headerValue = headerCell.getValue();
       const note = headerCell.getNote();
 
-      Logger.log(`Checking header in column ${columnLetter}: "${headerValue}"`);
 
       // Check if this column has 'Sync Status' header or sync-related note
       if (
@@ -6977,7 +6141,6 @@ function cleanupColumnFormatting(sheet, columnLetter, isCurrentColumn = false) {
             note.includes("track") ||
             note.includes("Pipedrive")))
       ) {
-        Logger.log(`Clearing Sync Status header in column ${columnLetter}`);
         headerCell.setValue("");
         headerCell.clearNote();
         headerCell.clearFormat();
@@ -7020,28 +6183,19 @@ function cleanupColumnFormatting(sheet, columnLetter, isCurrentColumn = false) {
         sheet
           .getRange(2, columnIndex + 1, values.length, 1)
           .setValues(newValues);
-        Logger.log(
-          `Cleared ${cleanedCount} sync status values in column ${columnLetter}`
-        );
 
         // Remove conditional formatting for this column
         removeConditionalFormattingForColumn(sheet, columnIndex);
       }
     }
 
-    Logger.log(`Cleanup of column ${columnLetter} complete`);
   } catch (error) {
-    Logger.log(`Error in cleanupColumnFormatting: ${error.message}`);
-    Logger.log(`Stack trace: ${error.stack}`);
   }
 }
 
 // Function to identify and clean up previous Sync Status columns
 function cleanupPreviousSyncStatusColumn(sheet, currentSyncColumn) {
   try {
-    Logger.log(
-      `Looking for previous Sync Status columns to clean up (current: ${currentSyncColumn})`
-    );
 
     // Show a toast to let users know that post-processing is happening
     // This helps users understand that data is already written but cleanup is still in progress
@@ -7064,7 +6218,6 @@ function cleanupPreviousSyncStatusColumn(sheet, currentSyncColumn) {
 
     // Clean up the known previous column first if it exists and is different from current
     if (previousSyncColumn && previousSyncColumn !== currentSyncColumn) {
-      Logger.log(`Previous Sync Status column found at ${previousSyncColumn}`);
 
       try {
         // Convert letter to column index
@@ -7105,9 +6258,6 @@ function cleanupPreviousSyncStatusColumn(sheet, currentSyncColumn) {
 
           // Write the cleaned values back
           dataRange.setValues(newValues);
-          Logger.log(
-            `Cleaned status values from previous column ${previousSyncColumn}`
-          );
         }
 
         // Remove any sync-specific formatting or notes from the header
@@ -7117,13 +6267,7 @@ function cleanupPreviousSyncStatusColumn(sheet, currentSyncColumn) {
         headerCell.clearNote();
         // Do NOT call setValue() - let the main sync function set the header
 
-        Logger.log(
-          `Cleaned formatting from previous Sync Status column ${previousSyncColumn}`
-        );
       } catch (e) {
-        Logger.log(
-          `Error cleaning previous column ${previousSyncColumn}: ${e.message}`
-        );
       }
     }
 
@@ -7175,9 +6319,6 @@ function cleanupPreviousSyncStatusColumn(sheet, currentSyncColumn) {
 
         // If this column has sync status indicators, clean it
         if (isSyncStatusHeader || hasSyncStatusValues) {
-          Logger.log(
-            `Found additional Sync Status column at ${colLetter}, cleaning up...`
-          );
 
           // Clean any sync-specific formatting and validation but preserve the header cell
           if (sheet.getLastRow() > 1) {
@@ -7216,19 +6357,14 @@ function cleanupPreviousSyncStatusColumn(sheet, currentSyncColumn) {
           headerCell.clearNote();
           // Do NOT clear header text - let main sync function set it
 
-          Logger.log(`Cleaned sync status formatting from column ${colLetter}`);
         }
       } catch (e) {
-        Logger.log(`Error checking column ${colLetter}: ${e.message}`);
       }
     }
 
     // Clear the previous column tracking since we've cleaned it up
     scriptProperties.deleteProperty(previousSyncColumnKey);
-    Logger.log(`Cleanup of previous Sync Status columns complete`);
   } catch (error) {
-    Logger.log(`Error in cleanupPreviousSyncStatusColumn: ${error.message}`);
-    Logger.log(`Stack trace: ${error.stack}`);
   }
 }
 
@@ -7264,13 +6400,7 @@ function removeConditionalFormattingForColumn(sheet, columnIndex) {
 
     // Update the conditional formatting rules
     sheet.setConditionalFormatRules(newRules);
-    Logger.log(
-      `Removed conditional formatting rules for column ${columnToLetter(
-        columnIndex + 1
-      )}`
-    );
   } catch (error) {
-    Logger.log(`Error removing conditional formatting: ${error.message}`);
   }
 }
 
@@ -7316,7 +6446,6 @@ function formatDateTimeForPipedrive(value, fieldDefinition) {
 
     // Check if this is a time-only field (special format required)
     if (fieldDefinition && fieldDefinition.field_type === "time") {
-      Logger.log(`Processing time-only field with value: ${value}`);
 
       // If value is already in HH:MM:SS format, use it directly
       if (
@@ -7377,7 +6506,6 @@ function formatDateTimeForPipedrive(value, fieldDefinition) {
               seconds = String(dateObj.getSeconds()).padStart(2, "0");
             }
           } catch (e) {
-            Logger.log(`Could not parse time value: ${value}`);
             return null;
           }
         }
@@ -7385,7 +6513,6 @@ function formatDateTimeForPipedrive(value, fieldDefinition) {
 
       // If we couldn't extract time components, return null
       if (hours === undefined || minutes === undefined) {
-        Logger.log(`Could not extract time components from: ${value}`);
         return null;
       }
 
@@ -7413,14 +6540,12 @@ function formatDateTimeForPipedrive(value, fieldDefinition) {
       try {
         dateObj = new Date(value);
       } catch (e) {
-        Logger.log(`Error converting value to date: ${e.message}`);
         return null;
       }
     }
 
     // Check if the date is valid
     if (isNaN(dateObj.getTime())) {
-      Logger.log(`Invalid date value: ${value}`);
       return null;
     }
 
@@ -7445,7 +6570,6 @@ function formatDateTimeForPipedrive(value, fieldDefinition) {
       return dateObj.toISOString();
     }
   } catch (error) {
-    Logger.log(`Error formatting date/time: ${error.message}`);
     return null;
   }
 }
@@ -7463,9 +6587,6 @@ function ensureTimeRangeFieldsForPipedrive(
   headerToFieldKeyMap
 ) {
   try {
-    Logger.log(
-      "Ensuring time range fields are properly formatted for Pipedrive..."
-    );
 
     // Create a copy of the payload to avoid modification issues
     const updatedPayload = JSON.parse(JSON.stringify(payload));
@@ -7477,27 +6598,17 @@ function ensureTimeRangeFieldsForPipedrive(
 
     // CRITICAL: First check rowData for any end time fields that might not be in the payload
     if (rowData && headerToFieldKeyMap) {
-      Logger.log(`Checking rowData for missing time range end fields...`);
       for (const [header, value] of Object.entries(rowData)) {
         if (header && value && header.toLowerCase().includes("end time")) {
           const fieldKey = headerToFieldKeyMap[header];
           if (fieldKey && fieldKey.endsWith("_until")) {
-            Logger.log(
-              `Found end time in rowData: ${header} (${fieldKey}) = ${value}`
-            );
 
             // Add to payload if missing
             if (!updatedPayload[fieldKey]) {
               updatedPayload[fieldKey] = value;
-              Logger.log(
-                `Added missing end time to payload root: ${fieldKey} = ${value}`
-              );
             }
             if (!updatedPayload.custom_fields[fieldKey]) {
               updatedPayload.custom_fields[fieldKey] = value;
-              Logger.log(
-                `Added missing end time to custom_fields: ${fieldKey} = ${value}`
-              );
             }
 
             // Also ensure the base field exists
@@ -7508,15 +6619,9 @@ function ensureTimeRangeFieldsForPipedrive(
             if (baseHeader && rowData[baseHeader]) {
               if (!updatedPayload[baseKey]) {
                 updatedPayload[baseKey] = rowData[baseHeader];
-                Logger.log(
-                  `Added missing start time to payload root: ${baseKey} = ${rowData[baseHeader]}`
-                );
               }
               if (!updatedPayload.custom_fields[baseKey]) {
                 updatedPayload.custom_fields[baseKey] = rowData[baseHeader];
-                Logger.log(
-                  `Added missing start time to custom_fields: ${baseKey} = ${rowData[baseHeader]}`
-                );
               }
             }
           }
@@ -7537,9 +6642,6 @@ function ensureTimeRangeFieldsForPipedrive(
           startTime: updatedPayload[baseKey],
           endTime: updatedPayload[key],
         };
-        Logger.log(
-          `Found time range field at root level: ${baseKey} -> ${key}`
-        );
       }
     }
 
@@ -7564,9 +6666,6 @@ function ensureTimeRangeFieldsForPipedrive(
               endTime: updatedPayload.custom_fields[key],
             };
           }
-          Logger.log(
-            `Found time range field in custom_fields: ${baseKey} -> ${key}`
-          );
         }
       }
     }
@@ -7593,32 +6692,21 @@ function ensureTimeRangeFieldsForPipedrive(
         // Format as dates for date range fields
         startTimeFormatted = field.startTime ? formatDateField(field.startTime) : null;
         endTimeFormatted = field.endTime ? formatDateField(field.endTime) : null;
-        Logger.log(`Formatting as DATE RANGE for ${baseKey}: start=${startTimeFormatted}, end=${endTimeFormatted}`);
       } else {
         // Format as times for time range fields
         startTimeFormatted = field.startTime ? formatTimeValue(field.startTime) : null;
         endTimeFormatted = field.endTime ? formatTimeValue(field.endTime) : null;
-        Logger.log(`Formatting as TIME RANGE for ${baseKey}: start=${startTimeFormatted}, end=${endTimeFormatted}`);
       }
 
-      Logger.log(
-        `Time range field values: ${baseKey}=${startTimeFormatted}, ${untilKey}=${endTimeFormatted}`
-      );
 
       // If we have a start time but no end time, use the start time for both
       if (startTimeFormatted && !endTimeFormatted) {
         endTimeFormatted = startTimeFormatted;
-        Logger.log(
-          `Auto-setting end time to match start time: ${untilKey}=${endTimeFormatted}`
-        );
       }
 
       // If we have an end time but no start time, use the end time for both
       if (!startTimeFormatted && endTimeFormatted) {
         startTimeFormatted = endTimeFormatted;
-        Logger.log(
-          `Auto-setting start time to match end time: ${baseKey}=${startTimeFormatted}`
-        );
       }
 
       // Set values in both root and custom_fields if at least one time value exists
@@ -7635,16 +6723,11 @@ function ensureTimeRangeFieldsForPipedrive(
         updatedPayload.custom_fields[baseKey] = finalStartTime;
         updatedPayload.custom_fields[untilKey] = finalEndTime;
 
-        Logger.log(
-          `Set time range pair: ${baseKey}=${finalStartTime}, ${untilKey}=${finalEndTime}`
-        );
       }
     }
 
     return updatedPayload;
   } catch (error) {
-    Logger.log(`Error in ensureTimeRangeFieldsForPipedrive: ${error.message}`);
-    Logger.log(`Error stack: ${error.stack}`);
     return payload; // Return original payload if error occurs
   }
 }
@@ -7663,7 +6746,6 @@ function processDateTimeFields(
   headerToFieldKeyMap
 ) {
   try {
-    Logger.log("Processing date and time fields in payload...");
     const fieldKeys = Object.keys(payload);
 
     // Create reverse mapping for fieldKey to header
@@ -7691,9 +6773,6 @@ function processDateTimeFields(
             (payload.custom_fields && payload.custom_fields[baseFieldKey])
           ) {
             timeRangePairs[baseFieldKey] = fieldKey;
-            Logger.log(
-              `Identified time range pair ${source}: ${baseFieldKey} -> ${fieldKey}`
-            );
           }
         }
       }
@@ -7715,9 +6794,6 @@ function processDateTimeFields(
       const baseHeader = fieldKeyToHeader[baseKey];
       const untilHeader = fieldKeyToHeader[untilKey];
 
-      Logger.log(
-        `Processing time range pair: ${baseKey} -> ${untilKey} (headers: ${baseHeader} -> ${untilHeader})`
-      );
 
       // Get values from payload or rowData
       let startValue = payload[baseKey];
@@ -7726,14 +6802,10 @@ function processDateTimeFields(
       // If values not in payload, try to get from rowData
       if (!startValue && baseHeader && rowData[baseHeader]) {
         startValue = rowData[baseHeader];
-        Logger.log(
-          `Found start time in row data: ${baseHeader} = ${startValue}`
-        );
       }
 
       if (!endValue && untilHeader && rowData[untilHeader]) {
         endValue = rowData[untilHeader];
-        Logger.log(`Found end time in row data: ${untilHeader} = ${endValue}`);
       }
 
       // Update both values in payload and custom_fields
@@ -7743,17 +6815,11 @@ function processDateTimeFields(
         if (startValue) {
           payload[baseKey] = formatTimeValue(startValue);
           payload.custom_fields[baseKey] = formatTimeValue(startValue);
-          Logger.log(
-            `Set time range start in payload: ${baseKey} = ${payload[baseKey]}`
-          );
         }
 
         if (endValue) {
           payload[untilKey] = formatTimeValue(endValue);
           payload.custom_fields[untilKey] = formatTimeValue(endValue);
-          Logger.log(
-            `Set time range end in payload: ${untilKey} = ${payload[untilKey]}`
-          );
         }
 
         // Flag payload as having time range fields
@@ -7763,8 +6829,6 @@ function processDateTimeFields(
 
     return payload;
   } catch (error) {
-    Logger.log(`Error processing date/time fields: ${error.message}`);
-    Logger.log(`Error stack: ${error.stack}`);
     return payload;
   }
 }
@@ -7795,9 +6859,6 @@ function ensureTimeRangePairs(payload, rowData, headerFieldMap) {
             untilHeader: header,
             untilKey: fieldKey,
           };
-          Logger.log(
-            `Found time range pair: ${baseFieldKey} (${baseHeader}) -> ${fieldKey} (${header})`
-          );
           break;
         }
       }
@@ -7812,9 +6873,6 @@ function ensureTimeRangePairs(payload, rowData, headerFieldMap) {
     const startValue = rowData[pair.baseHeader];
     const endValue = rowData[pair.untilHeader];
 
-    Logger.log(
-      `Processing time range from sheet: ${baseKey} (start=${startValue}, end=${endValue})`
-    );
 
     // At least one value needs to be present for a time range
     if (startValue || endValue) {
@@ -7825,9 +6883,6 @@ function ensureTimeRangePairs(payload, rowData, headerFieldMap) {
       if (startValue) {
         payload[baseKey] = startValue;
         payload.custom_fields[baseKey] = startValue;
-        Logger.log(
-          `Added time range start to payload: ${baseKey} = ${startValue}`
-        );
       }
 
       // Add end time to payload if present - ALWAYS include end time if start time is present
@@ -7837,15 +6892,11 @@ function ensureTimeRangePairs(payload, rowData, headerFieldMap) {
         if (effectiveEndValue) {
           payload[pair.untilKey] = effectiveEndValue;
           payload.custom_fields[pair.untilKey] = effectiveEndValue;
-          Logger.log(
-            `Added time range end to payload: ${pair.untilKey} = ${effectiveEndValue}`
-          );
         }
       }
 
       // Flag that we have time range fields - this will ensure direct API is used
       payload.__hasTimeRangeFields = true;
-      Logger.log(`Marked payload as having time range fields`);
     }
   }
 
@@ -7866,7 +6917,6 @@ function findSyncStatusColumn(sheet, sheetName) {
       .getValues()[0];
     for (let i = 0; i < headers.length; i++) {
       if (headers[i] === "Sync Status") {
-        Logger.log(`Found Sync Status column by header name at index ${i}`);
         return i;
       }
     }
@@ -7879,9 +6929,6 @@ function findSyncStatusColumn(sheet, sheetName) {
     if (trackingColumn) {
       // Convert column letter to index (0-based)
       const index = letterToColumn(trackingColumn) - 1;
-      Logger.log(
-        `Found Sync Status column from properties at ${trackingColumn} (index: ${index})`
-      );
       return index;
     }
 
@@ -7905,19 +6952,14 @@ function findSyncStatusColumn(sheet, sheetName) {
         );
 
         if (containsSyncStatus) {
-          Logger.log(
-            `Found potential Sync Status column by values at index ${i}`
-          );
           return i;
         }
       }
     }
 
     // Not found
-    Logger.log(`Sync Status column not found in sheet ${sheetName}`);
     return -1;
   } catch (error) {
-    Logger.log(`Error in findSyncStatusColumn: ${error.message}`);
     return -1;
   }
 }
@@ -7936,7 +6978,6 @@ function debugTwoWaySyncOriginalValues(sheetName) {
         .getName();
     }
 
-    Logger.log(`DEBUG: Checking original values for sheet "${sheetName}"...`);
 
     // Get script properties
     const scriptProperties = PropertiesService.getScriptProperties();
@@ -7946,10 +6987,8 @@ function debugTwoWaySyncOriginalValues(sheetName) {
     const twoWaySyncEnabled =
       scriptProperties.getProperty(twoWaySyncEnabledKey) === "true";
 
-    Logger.log(`DEBUG: Two-way sync enabled: ${twoWaySyncEnabled}`);
 
     if (!twoWaySyncEnabled) {
-      Logger.log(`DEBUG: Two-way sync is not enabled for sheet "${sheetName}"`);
       return;
     }
 
@@ -7957,14 +6996,12 @@ function debugTwoWaySyncOriginalValues(sheetName) {
     const trackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
     const trackingColumn = scriptProperties.getProperty(trackingColumnKey);
 
-    Logger.log(`DEBUG: Tracking column: ${trackingColumn || "Not set"}`);
 
     // Get original data
     const originalDataKey = `ORIGINAL_DATA_${sheetName}`;
     const originalDataJson = scriptProperties.getProperty(originalDataKey);
 
     if (!originalDataJson) {
-      Logger.log(`DEBUG: No original data found for sheet "${sheetName}"`);
       return;
     }
 
@@ -7973,28 +7010,21 @@ function debugTwoWaySyncOriginalValues(sheetName) {
       const originalData = JSON.parse(originalDataJson);
       const rowCount = Object.keys(originalData).length;
 
-      Logger.log(`DEBUG: Found original data for ${rowCount} rows`);
 
       // Log details for each row
       for (const rowKey in originalData) {
         const rowData = originalData[rowKey];
         const fieldCount = Object.keys(rowData).length;
 
-        Logger.log(
-          `DEBUG: Row ${rowKey} has ${fieldCount} fields with original values:`
-        );
 
         // Log each field and its original value
         for (const field in rowData) {
           const value = rowData[field];
-          Logger.log(`DEBUG:   - ${field}: "${value}" (${typeof value})`);
         }
       }
     } catch (parseError) {
-      Logger.log(`DEBUG: Error parsing original data: ${parseError.message}`);
     }
   } catch (error) {
-    Logger.log(`Error in debugTwoWaySyncOriginalValues: ${error.message}`);
   }
 }
 
@@ -8008,7 +7038,6 @@ function debugTwoWaySyncOriginalValues(sheetName) {
 function getFieldValue(item, fieldKey) {
   // Add logging for address-related fields
   if (fieldKey && (fieldKey === "address" || fieldKey.startsWith("address."))) {
-    Logger.log(`Processing address field: ${fieldKey}`);
 
     // Log the full address structure if available
     if (
@@ -8016,21 +7045,15 @@ function getFieldValue(item, fieldKey) {
       item.address &&
       typeof item.address === "object"
     ) {
-      Logger.log(`Full address structure: ${JSON.stringify(item.address)}`);
     }
 
     // Special handling for address subfields
     if (fieldKey.startsWith("address.") && item.address) {
       const addressComponent = fieldKey.replace("address.", "");
-      Logger.log(`Extracting address component: ${addressComponent}`);
 
       if (item.address[addressComponent] !== undefined) {
-        Logger.log(
-          `Found value for ${addressComponent}: ${item.address[addressComponent]}`
-        );
         return item.address[addressComponent];
       } else {
-        Logger.log(`No value found for address component: ${addressComponent}`);
       }
     }
   }
@@ -8047,16 +7070,11 @@ function getFieldValue(item, fieldKey) {
       fieldKey.includes("_postal_code") ||
       fieldKey.includes("_country"))
   ) {
-    Logger.log(`Processing custom field address component: ${fieldKey}`);
 
     // Custom field address components are stored directly at the item's top level
     if (item[fieldKey] !== undefined) {
-      Logger.log(
-        `Found custom address component as direct field: ${fieldKey} = ${item[fieldKey]}`
-      );
       return item[fieldKey];
     } else {
-      Logger.log(`Custom address component not found: ${fieldKey}`);
     }
   }
 
@@ -8148,7 +7166,6 @@ function getFieldValue(item, fieldKey) {
       value = item[fieldKey];
     }
   } catch (error) {
-    Logger.log(`Error getting field value for ${fieldKey}: ${error.message}`);
     value = null;
   }
 
@@ -8232,16 +7249,12 @@ function validateIdField(data, fieldName) {
       isNaN(parseInt(data[fieldName])) ||
       !/^\d+$/.test(String(data[fieldName]))
     ) {
-      Logger.log(
-        `Warning: ${fieldName} "${data[fieldName]}" is not a valid integer. Removing from request.`
-      );
       // Remove the invalid field from the request to prevent API errors
       delete data[fieldName];
       return false;
     } else {
       // Convert to integer if it's a valid number
       data[fieldName] = parseInt(data[fieldName]);
-      Logger.log(`Using numeric ${fieldName}: ${data[fieldName]}`);
       return true;
     }
   }
@@ -8256,9 +7269,6 @@ function validateIdField(data, fieldName) {
  */
 SyncService.getTeamAwareColumnPreferences = function (entityType, sheetName) {
   try {
-    Logger.log(
-      `SYNC_DEBUG: Getting team-aware preferences for ${entityType} in ${sheetName}`
-    );
     const properties = PropertiesService.getScriptProperties();
     const userEmail = Session.getEffectiveUser().getEmail();
     let columnsJson = null;
@@ -8269,68 +7279,41 @@ SyncService.getTeamAwareColumnPreferences = function (entityType, sheetName) {
       const userTeam = getUserTeam(userEmail); // Assumes getUserTeam is available
       if (userTeam && userTeam.teamId) {
         const teamKey = `COLUMNS_${sheetName}_${entityType}_TEAM_${userTeam.teamId}`;
-        Logger.log(`SYNC_DEBUG: Trying team key: ${teamKey}`);
         columnsJson = properties.getProperty(teamKey);
         if (columnsJson) {
-          Logger.log(`SYNC_DEBUG: Found preferences using team key.`);
           usedKey = teamKey;
         } else {
-          Logger.log(`SYNC_DEBUG: No preferences found with team key.`);
         }
       } else {
-        Logger.log(`SYNC_DEBUG: User ${userEmail} not in a team.`);
       }
     } catch (teamError) {
-      Logger.log(`SYNC_DEBUG: Error checking team: ${teamError.message}`);
     }
 
     // 2. Try Personal Key if Team Key failed
     if (!columnsJson) {
       const personalKey = `COLUMNS_${sheetName}_${entityType}_${userEmail}`;
-      Logger.log(`SYNC_DEBUG: Trying personal key: ${personalKey}`);
       columnsJson = properties.getProperty(personalKey);
       if (columnsJson) {
-        Logger.log(`SYNC_DEBUG: Found preferences using personal key.`);
         usedKey = personalKey;
       } else {
-        Logger.log(`SYNC_DEBUG: No preferences found with personal key.`);
       }
     }
 
     // 3. Log raw JSON and attempt parse
     if (columnsJson) {
-      Logger.log(
-        `SYNC_DEBUG: Raw JSON retrieved with key "${usedKey}": ${columnsJson.substring(
-          0,
-          500
-        )}...`
-      );
       try {
         const savedColumns = JSON.parse(columnsJson);
-        Logger.log(
-          `SYNC_DEBUG: Parsed ${
-            savedColumns.length
-          } columns. First 3: ${JSON.stringify(savedColumns.slice(0, 3))}`
-        );
         // Log details of the first column to check for customName
         if (savedColumns.length > 0) {
-          Logger.log(
-            `SYNC_DEBUG: First column details: key=${savedColumns[0].key}, name=${savedColumns[0].name}, customName=${savedColumns[0].customName}`
-          );
         }
         return savedColumns;
       } catch (parseError) {
-        Logger.log(
-          `SYNC_DEBUG: Error parsing saved columns JSON: ${parseError.message}`
-        );
         return []; // Return empty on parse error
       }
     } else {
-      Logger.log(`SYNC_DEBUG: No preferences JSON found to parse.`);
       return []; // Return empty if no JSON found
     }
   } catch (error) {
-    Logger.log(`Error in getTeamAwareColumnPreferences: ${error.message}`);
     return []; // Return empty on general error
   }
 };
@@ -8351,9 +7334,6 @@ SyncService.saveTeamAwareColumnPreferences = function (
     // Call the function in UI.gs that handles saving to both storage locations
     return UI.saveTeamAwareColumnPreferences(columns, entityType, sheetName);
   } catch (e) {
-    Logger.log(
-      `Error in SyncService.saveTeamAwareColumnPreferences: ${e.message}`
-    );
 
     // Fallback to local implementation if UI.saveTeamAwareColumnPreferences fails
     const scriptProperties = PropertiesService.getScriptProperties();
@@ -8405,25 +7385,17 @@ function validateIdField(data, fieldName) {
         // If it's a valid number, update the field
         if (!isNaN(numericId) && /^\d+$/.test(idValue.trim())) {
           data[fieldName] = numericId;
-          Logger.log(
-            `Converted ${fieldName} from string "${idValue}" to number ${numericId}`
-          );
         } else {
           // Not a valid number, delete the field to prevent API errors
           delete data[fieldName];
-          Logger.log(
-            `Removed invalid ${fieldName}: "${idValue}" - must be numeric`
-          );
         }
       } else {
         // Not a number or string, delete the field
         delete data[fieldName];
-        Logger.log(`Removed invalid ${fieldName} with type ${typeof idValue}`);
       }
     } catch (e) {
       // If any errors, delete the field to be safe
       delete data[fieldName];
-      Logger.log(`Error validating ${fieldName}, removed: ${e.message}`);
     }
   }
 }
@@ -8460,9 +7432,7 @@ function setupOnEditTrigger() {
       .forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet())
       .onEdit()
       .create();
-    Logger.log("onEdit trigger created");
   } catch (e) {
-    Logger.log(`Error setting up onEdit trigger: ${e.message}`);
   }
 }
 
@@ -8479,14 +7449,11 @@ function removeOnEditTrigger() {
       const trigger = triggers[i];
       if (trigger.getHandlerFunction() === "onEdit") {
         ScriptApp.deleteTrigger(trigger);
-        Logger.log("onEdit trigger deleted");
         return;
       }
     }
 
-    Logger.log("No onEdit trigger found to delete");
   } catch (e) {
-    Logger.log(`Error removing onEdit trigger: ${e.message}`);
   }
 }
 
@@ -8511,20 +7478,11 @@ function logDebugInfo() {
   const savedColumnsJson = scriptProperties.getProperty(columnSettingsKey);
 
   if (savedColumnsJson) {
-    Logger.log(
-      `\n===== COLUMN SETTINGS FOR ${sheetName} - ${entityType} =====`
-    );
     try {
       const selectedColumns = JSON.parse(savedColumnsJson);
-      Logger.log(`Number of selected columns: ${selectedColumns.length}`);
-      Logger.log(JSON.stringify(selectedColumns, null, 2));
     } catch (e) {
-      Logger.log(`Error parsing column settings: ${e.message}`);
     }
   } else {
-    Logger.log(
-      `\n===== NO COLUMN SETTINGS FOUND FOR ${sheetName} - ${entityType} =====`
-    );
   }
 
   // Get a sample item to see what data is available
@@ -8551,17 +7509,10 @@ function logDebugInfo() {
     const sampleItem = sampleData[0];
 
     // Log filter ID and entity type
-    Logger.log("===== DEBUG INFORMATION =====");
-    Logger.log(`Entity Type: ${entityType}`);
-    Logger.log(`Filter ID: ${filterId}`);
-    Logger.log(`Sheet Name: ${sheetName}`);
 
     // Log complete raw deal data for inspection
-    Logger.log(`\n===== COMPLETE RAW ${entityType.toUpperCase()} DATA =====`);
-    Logger.log(JSON.stringify(sampleItem, null, 2));
 
     // Extract all fields including nested ones
-    Logger.log("\n===== ALL AVAILABLE FIELDS =====");
     const allFields = {};
 
     // Recursive function to extract all fields with their paths
@@ -8570,7 +7521,6 @@ function logDebugInfo() {
 
       if (Array.isArray(obj)) {
         // For arrays, log the length and extract fields from first item if exists
-        Logger.log(`${path} (Array with ${obj.length} items)`);
         if (obj.length > 0 && typeof obj[0] === "object") {
           extractAllFields(obj[0], `${path}[0]`);
         }
@@ -8590,7 +7540,6 @@ function logDebugInfo() {
           if (type === "object") {
             if (Array.isArray(value)) {
               allFields[newPath] = `array[${value.length}]`;
-              Logger.log(`${newPath}: array[${value.length}]`);
 
               // Special case for custom fields with options
               if (
@@ -8599,11 +7548,6 @@ function logDebugInfo() {
                 value[0] &&
                 value[0].label
               ) {
-                Logger.log(
-                  `  - Multiple options field with values: ${value
-                    .map((opt) => opt.label)
-                    .join(", ")}`
-                );
               }
 
               // For small arrays with objects, recursively extract from the first item
@@ -8612,7 +7556,6 @@ function logDebugInfo() {
               }
             } else {
               allFields[newPath] = "object";
-              Logger.log(`${newPath}: object`);
               extractAllFields(value, newPath);
             }
           } else {
@@ -8624,7 +7567,6 @@ function logDebugInfo() {
                 ? value.substring(0, 50) + "..."
                 : value;
 
-            Logger.log(`${newPath}: ${type} = ${preview}`);
           }
         }
       }
@@ -8635,44 +7577,30 @@ function logDebugInfo() {
 
     // Specifically focus on custom fields section if it exists
     if (sampleItem.custom_fields) {
-      Logger.log("\n===== CUSTOM FIELDS DETAIL =====");
       for (const key in sampleItem.custom_fields) {
         const field = sampleItem.custom_fields[key];
         const fieldType = typeof field;
 
         if (fieldType === "object" && Array.isArray(field)) {
-          Logger.log(`${key}: array[${field.length}]`);
           // Check if this is a multiple options field
           if (field.length > 0 && field[0] && field[0].label) {
-            Logger.log(
-              `  - Multiple options with values: ${field
-                .map((opt) => opt.label)
-                .join(", ")}`
-            );
           }
         } else {
           const preview =
             fieldType === "string" && field.length > 50
               ? field.substring(0, 50) + "..."
               : field;
-          Logger.log(`${key}: ${fieldType} = ${preview}`);
         }
       }
     }
 
     // Count unique fields
     const fieldPaths = Object.keys(allFields).sort();
-    Logger.log(`\nTotal unique fields found: ${fieldPaths.length}`);
 
     // Log all field paths in alphabetical order for easy lookup
-    Logger.log("\n===== ALPHABETICAL LIST OF ALL FIELD PATHS =====");
     fieldPaths.forEach((path) => {
-      Logger.log(`${path}: ${allFields[path]}`);
     });
   } else {
-    Logger.log(
-      `No ${entityType} found with this filter. Please check the filter ID.`
-    );
   }
 }
 
@@ -8696,9 +7624,6 @@ function detectColumnShifts() {
 
     // If no entity type set for this sheet, exit
     if (!entityType) {
-      Logger.log(
-        `No entity type set for sheet "${activeSheetName}", skipping column shift detection`
-      );
       return false;
     }
 
@@ -8718,11 +7643,6 @@ function detectColumnShifts() {
 
     // Check if the current headers match the stored mapping
     // We'll log each header to see if it exists in our mapping
-    Logger.log(
-      `Checking ${headers.length} headers against stored mapping with ${
-        Object.keys(headerToFieldMap).length
-      } entries`
-    );
 
     // Count headers found in mapping
     let headersFoundInMapping = 0;
@@ -8751,9 +7671,6 @@ function detectColumnShifts() {
               headerToFieldMap[header] = fieldKey;
               updated = true;
               matchFound = true;
-              Logger.log(
-                `Found case-insensitive match for "${header}" -> "${mappedHeader}" = ${fieldKey}`
-              );
               break;
             }
           }
@@ -8775,9 +7692,6 @@ function detectColumnShifts() {
                 const fieldKey = headerToFieldMap[mappedHeader];
                 headerToFieldMap[header] = fieldKey;
                 updated = true;
-                Logger.log(
-                  `Found normalized match for "${header}" -> "${mappedHeader}" = ${fieldKey}`
-                );
                 break;
               }
             }
@@ -8786,14 +7700,8 @@ function detectColumnShifts() {
       }
     });
 
-    Logger.log(
-      `Found ${headersFoundInMapping} headers in mapping out of ${headers.length} total headers`
-    );
 
     if (headersNotInMapping.length > 0) {
-      Logger.log(
-        `Headers not found in mapping: ${headersNotInMapping.join(", ")}`
-      );
     }
 
     // If we updated the mapping, save it
@@ -8803,17 +7711,11 @@ function detectColumnShifts() {
         mappingKey,
         JSON.stringify(headerToFieldMap)
       );
-      Logger.log(
-        `Updated header-to-field mapping with ${
-          Object.keys(headerToFieldMap).length
-        } entries`
-      );
       return true;
     }
 
     return false;
   } catch (error) {
-    Logger.log(`Error in detectColumnShifts: ${error.message}`);
     return false;
   }
 }
@@ -8834,13 +7736,7 @@ function ensureHeaderFieldMapping(sheetName, entityType) {
     if (mappingJson) {
       try {
         headerToFieldKeyMap = JSON.parse(mappingJson);
-        Logger.log(
-          `Loaded existing header-to-field mapping with ${
-            Object.keys(headerToFieldKeyMap).length
-          } entries`
-        );
       } catch (e) {
-        Logger.log(`Error parsing existing mapping: ${e.message}`);
         headerToFieldKeyMap = {};
       }
     }
@@ -8909,16 +7805,10 @@ function ensureHeaderFieldMapping(sheetName, entityType) {
                     const componentFieldKey = `${fieldKey}_${component}`;
                     if (!headerToFieldKeyMap[headerTrimmed]) {
                       headerToFieldKeyMap[headerTrimmed] = componentFieldKey;
-                      Logger.log(
-                        `Added address component mapping: "${headerTrimmed}" -> "${componentFieldKey}"`
-                      );
 
                       // Also add mapping for header with possible trailing space
                       if (h !== headerTrimmed) {
                         headerToFieldKeyMap[h] = componentFieldKey;
-                        Logger.log(
-                          `Added address component mapping with original spacing: "${h}" -> "${componentFieldKey}"`
-                        );
                       }
                     }
 
@@ -8926,9 +7816,6 @@ function ensureHeaderFieldMapping(sheetName, entityType) {
                     if (component === "admin_area_level_2" && h.endsWith(" ")) {
                       const exactHeader = h;
                       headerToFieldKeyMap[exactHeader] = componentFieldKey;
-                      Logger.log(
-                        `Added exact match for Admin Area Level with trailing space: "${exactHeader}" -> "${componentFieldKey}"`
-                      );
                     }
                   }
                 }
@@ -8943,16 +7830,12 @@ function ensureHeaderFieldMapping(sheetName, entityType) {
             mappingKey,
             JSON.stringify(headerToFieldKeyMap)
           );
-          Logger.log(`Updated header-to-field mapping with address components`);
         }
       }
 
       return headerToFieldKeyMap;
     }
 
-    Logger.log(
-      `Creating new header-to-field mapping for ${sheetName} (${entityType})`
-    );
 
     // Get column preferences for this sheet/entity
     const columnConfig = getColumnPreferences(entityType, sheetName);
@@ -8964,15 +7847,11 @@ function ensureHeaderFieldMapping(sheetName, entityType) {
           typeof SyncService !== "undefined" &&
           typeof SyncService.getTeamAwareColumnPreferences === "function"
         ) {
-          Logger.log(`Trying SyncService.getTeamAwareColumnPreferences`);
           const teamColumns = SyncService.getTeamAwareColumnPreferences(
             entityType,
             sheetName
           );
           if (teamColumns && teamColumns.length > 0) {
-            Logger.log(
-              `Found ${teamColumns.length} columns using team-aware method`
-            );
 
             // Create mapping from these columns
             teamColumns.forEach((col) => {
@@ -8980,7 +7859,6 @@ function ensureHeaderFieldMapping(sheetName, entityType) {
                 const displayName =
                   col.customName || col.name || formatColumnName(col.key);
                 headerToFieldKeyMap[displayName] = col.key;
-                Logger.log(`Added mapping: "${displayName}" -> "${col.key}"`);
 
                 // For address fields, also add mappings for their components
                 if (col.type === "address" || col.key.endsWith("address")) {
@@ -9028,17 +7906,11 @@ function ensureHeaderFieldMapping(sheetName, entityType) {
 
                     if (componentHeader) {
                       headerToFieldKeyMap[componentHeader] = componentFieldKey;
-                      Logger.log(
-                        `Added address component mapping: "${componentHeader}" -> "${componentFieldKey}"`
-                      );
 
                       // Also add with trailing space for admin_area_level_2 to handle the specific issue
                       if (component === "admin_area_level_2") {
                         const spacedHeader = `${baseHeader} - Admin Area Level `;
                         headerToFieldKeyMap[spacedHeader] = componentFieldKey;
-                        Logger.log(
-                          `Added address component mapping with trailing space: "${spacedHeader}" -> "${componentFieldKey}"`
-                        );
                       }
                     }
                   });
@@ -9052,23 +7924,14 @@ function ensureHeaderFieldMapping(sheetName, entityType) {
                 mappingKey,
                 JSON.stringify(headerToFieldKeyMap)
               );
-              Logger.log(
-                `Saved mapping with ${
-                  Object.keys(headerToFieldKeyMap).length
-                } entries`
-              );
               return headerToFieldKeyMap;
             }
           }
         }
       } catch (teamError) {
-        Logger.log(
-          `Error using team-aware column preferences: ${teamError.message}`
-        );
       }
 
       // If still no columns, use default columns
-      Logger.log(`No column config found, using default columns`);
       const defaultColumns = getDefaultColumns(entityType);
 
       // Create mapping from default columns
@@ -9077,20 +7940,15 @@ function ensureHeaderFieldMapping(sheetName, entityType) {
         const key = typeof col === "object" ? col.key : col;
         const displayName = formatColumnName(key);
         headerToFieldKeyMap[displayName] = key;
-        Logger.log(`Added default mapping: "${displayName}" -> "${key}"`);
       });
     } else {
       // Create mapping from column config
-      Logger.log(
-        `Creating mapping from ${columnConfig.length} column preferences`
-      );
 
       columnConfig.forEach((col) => {
         if (col.key) {
           const displayName =
             col.customName || col.name || formatColumnName(col.key);
           headerToFieldKeyMap[displayName] = col.key;
-          Logger.log(`Added mapping: "${displayName}" -> "${col.key}"`);
 
           // For address fields, also add mappings for their components
           if (col.type === "address" || col.key.endsWith("address")) {
@@ -9138,17 +7996,11 @@ function ensureHeaderFieldMapping(sheetName, entityType) {
 
               if (componentHeader) {
                 headerToFieldKeyMap[componentHeader] = componentFieldKey;
-                Logger.log(
-                  `Added address component mapping: "${componentHeader}" -> "${componentFieldKey}"`
-                );
 
                 // Also add with trailing space for admin_area_level_2 to handle the specific issue
                 if (component === "admin_area_level_2") {
                   const spacedHeader = `${baseHeader} - Admin Area Level `;
                   headerToFieldKeyMap[spacedHeader] = componentFieldKey;
-                  Logger.log(
-                    `Added address component mapping with trailing space: "${spacedHeader}" -> "${componentFieldKey}"`
-                  );
                 }
               }
             });
@@ -9176,9 +8028,6 @@ function ensureHeaderFieldMapping(sheetName, entityType) {
     Object.keys(commonMappings).forEach((displayName) => {
       if (!headerToFieldKeyMap[displayName]) {
         headerToFieldKeyMap[displayName] = commonMappings[displayName];
-        Logger.log(
-          `Added common mapping: "${displayName}" -> "${commonMappings[displayName]}"`
-        );
       }
     });
 
@@ -9187,15 +8036,9 @@ function ensureHeaderFieldMapping(sheetName, entityType) {
       mappingKey,
       JSON.stringify(headerToFieldKeyMap)
     );
-    Logger.log(
-      `Saved header-to-field mapping with ${
-        Object.keys(headerToFieldKeyMap).length
-      } entries`
-    );
 
     return headerToFieldKeyMap;
   } catch (error) {
-    Logger.log(`Error in ensureHeaderFieldMapping: ${error.message}`);
     return {}; // Return empty mapping in case of error
   }
 }
@@ -9353,7 +8196,6 @@ function filterReadOnlyFields(data, entityType) {
 
     // If we have the relationship field but not the parent field, look up the ID
     if (data[nestedField] && !data[parentField]) {
-      Logger.log(`Found ${nestedField} without corresponding ${parentField}`);
 
       // Try to extract ID from the name based on entity type and field
       // This is complex and may need to be enhanced with API lookups
@@ -9361,9 +8203,6 @@ function filterReadOnlyFields(data, entityType) {
         // For user-related fields, try to find a user ID matching this name
         const userId = lookupUserIdByName(data[nestedField]);
         if (userId) {
-          Logger.log(
-            `Resolved ${nestedField} "${data[nestedField]}" to ID: ${userId}`
-          );
           data[parentField] = userId;
         }
       }
@@ -9380,7 +8219,6 @@ function filterReadOnlyFields(data, entityType) {
     // First, handle custom fields with their special format
     if (customFieldPattern.test(key)) {
       // It's a base custom field (could be an address field base value)
-      Logger.log(`Found custom field with ID: ${key}`);
 
       // Store both in customFields for regular fields and in addressValues for address fields
       customFields[key] = data[key];
@@ -9395,24 +8233,17 @@ function filterReadOnlyFields(data, entityType) {
 
         // Special handling for admin_area_level_2 to ensure it's not filtered out
         if (component === "admin_area_level_2") {
-          Logger.log(
-            `Special handling for admin_area_level_2 component: ${fieldId}.${component} = ${data[key]}`
-          );
 
           // Skip the read-only check for admin_area_level_2
           if (!addressComponents[fieldId]) {
             addressComponents[fieldId] = {};
           }
           addressComponents[fieldId][component] = data[key];
-          Logger.log(
-            `Stored admin_area_level_2 component: ${fieldId}.${component} = ${data[key]}`
-          );
           continue;
         }
 
         // Skip if this is in read-only fields
         if (readOnlyFields.includes(key)) {
-          Logger.log(`Filtering out read-only custom field component: ${key}`);
           continue;
         }
 
@@ -9421,9 +8252,6 @@ function filterReadOnlyFields(data, entityType) {
           addressComponents[fieldId] = {};
         }
         addressComponents[fieldId][component] = data[key];
-        Logger.log(
-          `Stored address component: ${fieldId}.${component} = ${data[key]}`
-        );
       }
       continue;
     }
@@ -9438,7 +8266,6 @@ function filterReadOnlyFields(data, entityType) {
 
     // Skip if this is a known read-only field
     if (readOnlyFields.includes(key)) {
-      Logger.log(`Filtering out read-only field: ${key}`);
       continue;
     }
 
@@ -9455,11 +8282,7 @@ function filterReadOnlyFields(data, entityType) {
       const parentField = Object.keys(relationships).find((rel) => rel === key);
 
       if (parentField) {
-        Logger.log(
-          `Filtering out relationship field: ${key} - should use ${relationships[parentField]} instead`
-        );
       } else {
-        Logger.log(`Filtering out read-only field matching pattern: ${key}`);
       }
       continue;
     }
@@ -9476,9 +8299,6 @@ function filterReadOnlyFields(data, entityType) {
       ];
 
       if (!allowedNestedFields.includes(key)) {
-        Logger.log(
-          `Filtering out nested field: ${key} - nested fields are generally read-only`
-        );
         continue;
       }
     }
@@ -9489,7 +8309,6 @@ function filterReadOnlyFields(data, entityType) {
 
   // Handle custom fields
   if (Object.keys(customFields).length > 0) {
-    Logger.log(`Handling ${Object.keys(customFields).length} custom fields`);
     for (const fieldId in customFields) {
       // Special handling for address fields - preserve them as objects
       if (
@@ -9500,9 +8319,6 @@ function filterReadOnlyFields(data, entityType) {
       ) {
         // This appears to be an address field or another object-type field
         // Don't overwrite it - we'll handle it in the address components section
-        Logger.log(
-          `Skipping custom field ${fieldId} as it appears to be an object field`
-        );
         continue;
       }
 
@@ -9513,11 +8329,6 @@ function filterReadOnlyFields(data, entityType) {
 
   // Handle address components - for address fields, we may need special handling
   if (Object.keys(addressComponents).length > 0) {
-    Logger.log(
-      `Handling address components for ${
-        Object.keys(addressComponents).length
-      } address fields`
-    );
 
     // For address fields, Pipedrive expects an object structure with a 'value' property
     for (const fieldId in addressComponents) {
@@ -9532,11 +8343,6 @@ function filterReadOnlyFields(data, entityType) {
           entityId,
           fieldId
         );
-        Logger.log(
-          `Retrieved current address data for sync: ${JSON.stringify(
-            currentAddressData
-          )}`
-        );
       }
 
       // Check if we have a direct update to the full address field
@@ -9547,18 +8353,12 @@ function filterReadOnlyFields(data, entityType) {
       if (hasFullAddressUpdate) {
         // Prioritize the full address value - ensure it's a string
         addressObject.value = String(addressValues[fieldId]);
-        Logger.log(
-          `PRIORITY: Using full address update for field ${fieldId}: "${addressObject.value}"`
-        );
 
         // First preserve any current components that aren't being updated
         if (currentAddressData && typeof currentAddressData === "object") {
           for (const component in currentAddressData) {
             if (component !== "value" && !addressObject[component]) {
               addressObject[component] = String(currentAddressData[component]);
-              Logger.log(
-                `Preserved existing component ${component}=${currentAddressData[component]} from Pipedrive`
-              );
             }
           }
         }
@@ -9577,25 +8377,18 @@ function filterReadOnlyFields(data, entityType) {
           // Use the current full address value
           if (currentAddressData.value) {
             addressObject.value = String(currentAddressData.value);
-            Logger.log(
-              `Using current address value from Pipedrive: ${addressObject.value}`
-            );
           }
 
           // Add all current components that aren't already being updated
           for (const component in currentAddressData) {
             if (component !== "value" && !addressObject[component]) {
               addressObject[component] = String(currentAddressData[component]);
-              Logger.log(
-                `Preserved existing component ${component}=${currentAddressData[component]} from Pipedrive`
-              );
             }
           }
         }
         // Fall back to address value if no current data but we have it
         else if (addressValues[fieldId]) {
           addressObject.value = String(addressValues[fieldId]);
-          Logger.log(`Using original address value: ${addressValues[fieldId]}`);
         }
         // If no current data or original value, construct a new address from components
         else {
@@ -9637,9 +8430,6 @@ function filterReadOnlyFields(data, entityType) {
           // Set the value property to the constructed address
           if (newAddress) {
             addressObject.value = newAddress;
-            Logger.log(
-              `Constructed new address from components with proper commas: "${newAddress}"`
-            );
           }
         }
 
@@ -9662,9 +8452,6 @@ function filterReadOnlyFields(data, entityType) {
         filteredData.custom_fields[fieldId].admin_area_level_2 = String(
           addressObject.admin_area_level_2
         );
-        Logger.log(
-          `Explicitly added admin_area_level_2=${addressObject.admin_area_level_2} to address object for API`
-        );
       }
 
       // Final check to ensure all values are strings in the address object
@@ -9680,11 +8467,6 @@ function filterReadOnlyFields(data, entityType) {
       }
 
       // Log the final object to confirm it's properly structured
-      Logger.log(
-        `Final address object for field ${fieldId}: ${JSON.stringify(
-          filteredData.custom_fields[fieldId]
-        )}`
-      );
     }
   }
 
@@ -9693,17 +8475,6 @@ function filterReadOnlyFields(data, entityType) {
     delete filteredData.custom_fields;
   }
 
-  Logger.log(
-    `Filtered data payload from ${Object.keys(data).length} fields to ${
-      Object.keys(filteredData).length
-    } top-level fields ${
-      filteredData.custom_fields
-        ? "plus " +
-          Object.keys(filteredData.custom_fields).length +
-          " custom fields"
-        : ""
-    }`
-  );
   return filteredData;
 }
 
@@ -9716,9 +8487,6 @@ function filterReadOnlyFields(data, entityType) {
 function lookupUserIdByName(name) {
   // In a real implementation, this would query the Pipedrive API or use cached data
   // For now, we'll just log that this function was called
-  Logger.log(
-    `lookupUserIdByName called for "${name}" - this is a placeholder function`
-  );
   return null; // Placeholder, no lookup performed
 }
 
@@ -9739,9 +8507,6 @@ function handleAddressComponents(data) {
   // This ensures it gets processed even with unusual naming
   for (const key in result) {
     if (key.includes("_admin_area_level_2")) {
-      Logger.log(
-        `Found admin_area_level_2 field in root object: ${key} = ${result[key]}`
-      );
 
       // Extract the field ID part
       const fieldIdMatch = key.match(/^([a-f0-9]{20,})_admin_area_level_2$/i);
@@ -9767,15 +8532,9 @@ function handleAddressComponents(data) {
         // Add the admin_area_level_2 component to the parent address
         // Convert to string to ensure proper format for Pipedrive API
         result.custom_fields[fieldId].admin_area_level_2 = String(result[key]);
-        Logger.log(
-          `Added admin_area_level_2 = ${result[key]} directly to address object in custom_fields.${fieldId}`
-        );
 
         // Remove it from the root level
         delete result[key];
-        Logger.log(
-          `Removed admin_area_level_2 component from root level: ${key}`
-        );
       }
     }
   }
@@ -9805,7 +8564,6 @@ function handleAddressComponents(data) {
       const component = parts[2];
       const value = result[key];
 
-      Logger.log(`Found address component ${fieldId}.${component} = ${value}`);
 
       // Initialize the address components for this field if needed
       if (!addressComponents[fieldId]) {
@@ -9820,7 +8578,6 @@ function handleAddressComponents(data) {
 
       // Remove from root level immediately
       delete result[key];
-      Logger.log(`Removed ${key} from root level`);
     }
   }
 
@@ -9836,11 +8593,6 @@ function handleAddressComponents(data) {
         addressData.entityId,
         fieldId
       );
-      Logger.log(
-        `Retrieved current address data for ${fieldId}: ${JSON.stringify(
-          currentAddressData
-        )}`
-      );
     }
 
     // Create a new address object
@@ -9854,9 +8606,6 @@ function handleAddressComponents(data) {
     if (hasFullAddressUpdate) {
       // Full address field is present and updated - prioritize it
       addressObj.value = String(result[fieldId]);
-      Logger.log(
-        `PRIORITY: Using full address update for field ${fieldId}: "${addressObj.value}"`
-      );
 
       // Include both current components and updated components
       // First add current components that aren't being updated
@@ -9866,9 +8615,6 @@ function handleAddressComponents(data) {
             // Only add if not already being updated
             if (!addressData.components[component]) {
               addressObj[component] = String(currentAddressData[component]);
-              Logger.log(
-                `Preserved existing component ${component}=${currentAddressData[component]} from Pipedrive`
-              );
             }
           }
         }
@@ -9878,33 +8624,21 @@ function handleAddressComponents(data) {
       for (const component in addressData.components) {
         // Ensure all components are strings for Pipedrive API
         addressObj[component] = String(addressData.components[component]);
-        Logger.log(
-          `Added component ${component} to address object while prioritizing full address`
-        );
       }
     } else {
       // No full address update - construct address from components
-      Logger.log(
-        `No full address update found for field ${fieldId}, using components to build address`
-      );
 
       // Start with existing components from Pipedrive
       if (currentAddressData && typeof currentAddressData === "object") {
         // Use the existing value if available
         if (currentAddressData.value) {
           addressObj.value = String(currentAddressData.value);
-          Logger.log(
-            `Using existing address value from Pipedrive: ${addressObj.value}`
-          );
         }
 
         // Add all existing components for preservation
         for (const component in currentAddressData) {
           if (component !== "value") {
             addressObj[component] = String(currentAddressData[component]);
-            Logger.log(
-              `Preserved existing component ${component}=${currentAddressData[component]} from Pipedrive`
-            );
           }
         }
       } else {
@@ -9915,9 +8649,6 @@ function handleAddressComponents(data) {
       // Overwrite with modified components
       for (const component in addressData.components) {
         addressObj[component] = String(addressData.components[component]);
-        Logger.log(
-          `Updated component ${component} to ${addressData.components[component]}`
-        );
       }
 
       // If we now have components but no value, construct a new address string
@@ -9959,9 +8690,6 @@ function handleAddressComponents(data) {
         // Set the value property to the constructed address
         if (newAddress) {
           addressObj.value = newAddress;
-          Logger.log(
-            `Constructed new address from components with proper commas: "${newAddress}"`
-          );
         }
       }
     }
@@ -9989,24 +8717,13 @@ function handleAddressComponents(data) {
     // If we're using the full address, also remove it from the root level to avoid duplication
     if (hasFullAddressUpdate) {
       delete result[fieldId];
-      Logger.log(
-        `Removed full address ${fieldId} from root level after creating address object`
-      );
     }
 
-    Logger.log(
-      `Created structured address object for ${fieldId}: ${JSON.stringify(
-        result.custom_fields[fieldId]
-      )}`
-    );
   }
 
   // Final check for any address components still at root level - this is a safety check
   for (const key in result) {
     if (/^[a-f0-9]{20,}_[a-z_]+$/i.test(key)) {
-      Logger.log(
-        `WARNING: Address component still found at root level after processing: ${key}`
-      );
 
       // Extract field ID and component
       const parts = key.match(/^([a-f0-9]{20,})_(.+)$/i);
@@ -10018,9 +8735,6 @@ function handleAddressComponents(data) {
         if (result.custom_fields && result.custom_fields[fieldId]) {
           // Convert to string to ensure proper format for Pipedrive API
           result.custom_fields[fieldId][component] = String(result[key]);
-          Logger.log(
-            `Moved remaining component ${component} to parent in final safety check`
-          );
           delete result[key];
         }
       }
@@ -10044,7 +8758,6 @@ function getCurrentAddressData(entityType, entityId, addressFieldId) {
     const accessToken = scriptProperties.getProperty("PIPEDRIVE_ACCESS_TOKEN");
 
     if (!accessToken) {
-      Logger.log("No access token available for API request");
       return {};
     }
 
@@ -10067,13 +8780,9 @@ function getCurrentAddressData(entityType, entityId, addressFieldId) {
         apiUrl = `${baseUrl}/api/v2/organizations/${entityId}`;
         break;
       default:
-        Logger.log(`Unsupported entity type: ${entityType}`);
     }
 
     // Make the request
-    Logger.log(
-      `Fetching current address data for ${entityType} ${entityId}, field ${addressFieldId}`
-    );
     const response = UrlFetchApp.fetch(apiUrl, {
       method: "GET",
       headers: {
@@ -10084,22 +8793,15 @@ function getCurrentAddressData(entityType, entityId, addressFieldId) {
 
     // Check response
     if (response.getResponseCode() !== 200) {
-      Logger.log(`Error fetching data: ${response.getResponseCode()}`);
     }
 
     // Parse response
     const responseData = JSON.parse(response.getContentText());
 
     if (!responseData.success || !responseData.data) {
-      Logger.log("No data returned from API");
     }
 
     // Log the entire response structure to help debug this issue
-    Logger.log(
-      `API Response data structure: ${JSON.stringify(
-        Object.keys(responseData.data)
-      )}`
-    );
 
     // Try different paths where the custom field might be located
     let addressField = null;
@@ -10110,14 +8812,10 @@ function getCurrentAddressData(entityType, entityId, addressFieldId) {
       responseData.data.custom_fields[addressFieldId]
     ) {
       addressField = responseData.data.custom_fields[addressFieldId];
-      Logger.log(
-        `Found address in custom_fields: ${JSON.stringify(addressField)}`
-      );
     }
     // Check in data directly (some API endpoints might put it here)
     else if (responseData.data[addressFieldId]) {
       addressField = responseData.data[addressFieldId];
-      Logger.log(`Found address in data root: ${JSON.stringify(addressField)}`);
     }
 
     // If address field is just a string (not an object), create an object
@@ -10128,12 +8826,8 @@ function getCurrentAddressData(entityType, entityId, addressFieldId) {
     }
 
     // Return the complete address object with all components
-    Logger.log(
-      `Final address data with all components: ${JSON.stringify(addressField)}`
-    );
     return addressField;
   } catch (error) {
-    Logger.log(`Error fetching current address data: ${error.message}`);
   }
 }
 
@@ -10167,9 +8861,6 @@ function sanitizePayloadForPipedrive(payload) {
 
     // Specifically check for admin_area_level_2 field that's causing problems
     if (key.includes("_admin_area_level_2")) {
-      Logger.log(
-        `Found problematic admin_area_level_2 field at top level: ${key} = ${result[key]}`
-      );
 
       // Extract the field ID from the key
       const fieldId = key.split("_admin_area_level_2")[0];
@@ -10188,9 +8879,6 @@ function sanitizePayloadForPipedrive(payload) {
 
       // Add the admin_area_level_2 component directly to the address object
       result.custom_fields[fieldId].admin_area_level_2 = String(result[key]);
-      Logger.log(
-        `Moved admin_area_level_2 = ${result[key]} to custom_fields.${fieldId}`
-      );
 
       // Mark for removal
       addressComponentKeys.push(key);
@@ -10202,9 +8890,6 @@ function sanitizePayloadForPipedrive(payload) {
     if (match) {
       const fieldId = match[1];
       const component = match[2];
-      Logger.log(
-        `Found address component at top level: ${key} (field: ${fieldId}, component: ${component})`
-      );
 
       // Ensure the custom_fields object exists
       if (!result.custom_fields) {
@@ -10220,9 +8905,6 @@ function sanitizePayloadForPipedrive(payload) {
 
       // Add the component to the address object
       result.custom_fields[fieldId][component] = String(result[key]);
-      Logger.log(
-        `Moved address component ${component} = ${result[key]} to custom_fields.${fieldId}`
-      );
 
       // Mark for removal
       addressComponentKeys.push(key);
@@ -10232,15 +8914,10 @@ function sanitizePayloadForPipedrive(payload) {
   // Remove the top-level address components
   addressComponentKeys.forEach((key) => {
     delete result[key];
-    Logger.log(`Removed address component from top level: ${key}`);
   });
 
   // If we made changes, log the updated payload
   if (addressComponentKeys.length > 0) {
-    Logger.log(
-      `Sanitized payload. Moved ${addressComponentKeys.length} address components to their parent objects.`
-    );
-    Logger.log(`SANITIZED PAYLOAD: ${JSON.stringify(result)}`);
   }
 
   return result;
@@ -10253,17 +8930,13 @@ function sanitizePayloadForPipedrive(payload) {
  * @param {string} label - Label for logging
  */
 function logObjectStructure(obj, label) {
-  Logger.log(`--- Structure for ${label} ---`);
-  Logger.log(`Type: ${typeof obj}`);
 
   if (obj === null || obj === undefined) {
-    Logger.log(`${label} is ${obj}`);
     return;
   }
 
   try {
     // Log direct properties
-    Logger.log(`Properties: ${Object.keys(obj).join(", ")}`);
 
     // Log methods if any
     const methods = Object.getOwnPropertyNames(
@@ -10273,13 +8946,10 @@ function logObjectStructure(obj, label) {
     );
 
     if (methods.length) {
-      Logger.log(`Methods: ${methods.join(", ")}`);
     }
   } catch (e) {
-    Logger.log(`Error inspecting ${label}: ${e.message}`);
   }
 
-  Logger.log(`--- End of ${label} structure ---`);
 }
 
 /**
@@ -10312,5 +8982,4 @@ function saveSettings(apiKey, entityType, filterId, subdomain, sheetName, enable
   scriptProperties.setProperty(timestampEnabledKey, enableTimestamp.toString());
   scriptProperties.setProperty('SHEET_NAME', sheetName);
   
-  Logger.log(`Saved settings for sheet "${sheetName}": entityType=${entityType}, filterId=${filterId}, enableTimestamp=${enableTimestamp}`);
 }

@@ -44,7 +44,6 @@ function showAuthorizationDialog() {
       }
     } catch (e) {
       // Token is invalid, continue with auth
-      Logger.log('Error checking token: ' + e.message);
       // Clear any existing tokens
       scriptProperties.deleteProperty('PIPEDRIVE_ACCESS_TOKEN');
       scriptProperties.deleteProperty('PIPEDRIVE_REFRESH_TOKEN');
@@ -66,8 +65,6 @@ function showAuthorizationDialog() {
   
   const authUrl = `https://oauth.pipedrive.com/oauth/authorize?client_id=${PIPEDRIVE_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&state=${state}&scope=${encodeURIComponent(scopes)}`;
   
-  Logger.log(`Generated authorization URL with redirect URI: ${REDIRECT_URI}`);
-  Logger.log(`Authorization URL: ${authUrl}`);
   
   // Save state for validation in callback
   scriptProperties.setProperty('OAUTH_STATE', state);
@@ -126,7 +123,6 @@ function doGet(e) {
     // This function is called when Pipedrive redirects back to the app
     const code = e.parameter.code;
     const state = e.parameter.state;
-    Logger.log(`OAuth callback received with code: ${code ? 'present' : 'missing'} and state: ${state}`);
     
     // Validate state to prevent CSRF attacks
     const scriptProperties = PropertiesService.getScriptProperties();
@@ -134,7 +130,6 @@ function doGet(e) {
     scriptProperties.deleteProperty('OAUTH_STATE'); // Clear state after use
     
     if (!state || state !== savedState) {
-      Logger.log('State validation failed');
       return HtmlService.createHtmlOutput(
         '<html>'
         + '<head>'
@@ -157,7 +152,6 @@ function doGet(e) {
       try {
         // Create Authorization header with Base64 encoded client_id:client_secret
         const authHeader = "Basic " + Utilities.base64Encode(PIPEDRIVE_CLIENT_ID + ":" + PIPEDRIVE_CLIENT_SECRET);
-        Logger.log(`Attempting to exchange authorization code for tokens using client ID: ${PIPEDRIVE_CLIENT_ID}`);
         
         // Exchange the authorization code for an access token
         const tokenResponse = UrlFetchApp.fetch('https://oauth.pipedrive.com/oauth/token', {
@@ -177,8 +171,6 @@ function doGet(e) {
         
         const responseCode = tokenResponse.getResponseCode();
         const responseText = tokenResponse.getContentText();
-        Logger.log(`Token exchange response code: ${responseCode}`);
-        Logger.log(`Token exchange response: ${responseText}`);
         
         if (responseCode !== 200) {
           throw new Error(`Token exchange failed with status ${responseCode}: ${responseText}`);
@@ -188,7 +180,6 @@ function doGet(e) {
         try {
           tokenData = JSON.parse(responseText);
         } catch (parseError) {
-          Logger.log(`Error parsing token response: ${parseError.message}`);
           throw new Error('Invalid response from Pipedrive OAuth server');
         }
         
@@ -209,12 +200,10 @@ function doGet(e) {
         
         // Save the API domain if provided
         if (tokenData.api_domain) {
-          Logger.log(`API domain received: ${tokenData.api_domain}`);
           // Extract just the subdomain part
           const apiDomainMatch = tokenData.api_domain.match(/https:\/\/([^.]+)/);
           if (apiDomainMatch && apiDomainMatch[1]) {
             const subdomain = apiDomainMatch[1];
-            Logger.log(`Setting subdomain to: ${subdomain}`);
             scriptProperties.setProperty('PIPEDRIVE_SUBDOMAIN', subdomain);
           }
         }
@@ -225,12 +214,10 @@ function doGet(e) {
           if (userResponse && userResponse.success && userResponse.data) {
             const userData = userResponse.data;
             if (!scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN') && userData.company_domain) {
-              Logger.log(`Setting subdomain from user info: ${userData.company_domain}`);
               scriptProperties.setProperty('PIPEDRIVE_SUBDOMAIN', userData.company_domain);
             }
           }
         } catch (userError) {
-          Logger.log(`Error getting user info: ${userError.message}`);
           // Non-fatal error, continue with success page
         }
         
@@ -255,7 +242,6 @@ function doGet(e) {
         .setTitle('Connected to Pipedrive');
       } catch (error) {
         // Handle authorization error
-        Logger.log('Token exchange error: ' + error.message);
         return HtmlService.createHtmlOutput(
           '<html>'
           + '<head>'
@@ -312,7 +298,6 @@ function refreshAccessTokenIfNeeded() {
   
   // If no token or refresh token, we can't refresh
   if (!accessToken || !refreshToken) {
-    Logger.log('Cannot refresh token: missing access token or refresh token');
     // Clear any existing tokens to force re-authentication
     scriptProperties.deleteProperty('PIPEDRIVE_ACCESS_TOKEN');
     scriptProperties.deleteProperty('PIPEDRIVE_REFRESH_TOKEN');
@@ -323,11 +308,9 @@ function refreshAccessTokenIfNeeded() {
   // Check if token is expired or about to expire (5 minutes buffer)
   const now = new Date().getTime();
   if (!expiresAt || now > (parseInt(expiresAt) - (5 * 60 * 1000))) {
-    Logger.log('Token expired or about to expire, refreshing...');
     try {
       // Create Authorization header with Base64 encoded client_id:client_secret
       const authHeader = "Basic " + Utilities.base64Encode(PIPEDRIVE_CLIENT_ID + ":" + PIPEDRIVE_CLIENT_SECRET);
-      Logger.log(`Refreshing token using client ID: ${PIPEDRIVE_CLIENT_ID}`);
       
       // Refresh the token
       const tokenResponse = UrlFetchApp.fetch('https://oauth.pipedrive.com/oauth/token', {
@@ -345,10 +328,8 @@ function refreshAccessTokenIfNeeded() {
       
       const responseCode = tokenResponse.getResponseCode();
       const responseText = tokenResponse.getContentText();
-      Logger.log(`Token refresh response code: ${responseCode}`);
       
       if (responseCode !== 200) {
-        Logger.log(`Token refresh failed: ${responseText}`);
         // Clear tokens to force re-authentication
         scriptProperties.deleteProperty('PIPEDRIVE_ACCESS_TOKEN');
         scriptProperties.deleteProperty('PIPEDRIVE_REFRESH_TOKEN');
@@ -359,7 +340,6 @@ function refreshAccessTokenIfNeeded() {
       const tokenData = JSON.parse(responseText);
       
       if (!tokenData.access_token) {
-        Logger.log(`No access token in refresh response: ${responseText}`);
         // Clear tokens to force re-authentication
         scriptProperties.deleteProperty('PIPEDRIVE_ACCESS_TOKEN');
         scriptProperties.deleteProperty('PIPEDRIVE_REFRESH_TOKEN');
@@ -379,15 +359,12 @@ function refreshAccessTokenIfNeeded() {
         const apiDomainMatch = tokenData.api_domain.match(/https:\/\/([^.]+)/);
         if (apiDomainMatch && apiDomainMatch[1]) {
           const subdomain = apiDomainMatch[1];
-          Logger.log(`Setting subdomain from refresh to: ${subdomain}`);
           scriptProperties.setProperty('PIPEDRIVE_SUBDOMAIN', subdomain);
         }
       }
       
-      Logger.log('Token refreshed successfully');
       return true;
     } catch (error) {
-      Logger.log('Token refresh error: ' + error.message);
       // Clear tokens to force re-authentication
       scriptProperties.deleteProperty('PIPEDRIVE_ACCESS_TOKEN');
       scriptProperties.deleteProperty('PIPEDRIVE_REFRESH_TOKEN');

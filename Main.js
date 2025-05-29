@@ -43,7 +43,6 @@ function onInstall(e) {
   const userProperties = PropertiesService.getUserProperties();
   userProperties.setProperty('FIRST_INSTALL', 'true');
   
-  Logger.log('Add-on installed for user');
 }
 
 /**
@@ -58,7 +57,6 @@ function onOpen(e) {
     
     if (wasVerified) {
       // User was previously verified, show full menu immediately
-      Logger.log('User was previously verified as team member, showing full menu');
       createPipedriveMenu();
       checkForPaymentSuccess();
       return;
@@ -69,7 +67,6 @@ function onOpen(e) {
     
     if (userEmail) {
       // User email is available, try automatic initialization
-      Logger.log(`Auto-initializing for user: ${userEmail}`);
       
       // Preload verified users
       preloadVerifiedUsers();
@@ -118,7 +115,6 @@ function onOpen(e) {
     }
       
   } catch (error) {
-    Logger.log(`Error in onOpen: ${error.message}`);
     
     // Fallback to initialization menu
     const ui = SpreadsheetApp.getUi();
@@ -168,7 +164,6 @@ function checkForPaymentSuccess() {
     }
   } catch (error) {
     // Silently handle errors in this check
-    Logger.log('Error checking payment success: ' + error.message);
   }
 }
 
@@ -179,7 +174,6 @@ function checkForPaymentSuccess() {
 function initializePipedriveMenu() {
   try {
     const userEmail = Session.getActiveUser().getEmail();
-    Logger.log(`Initializing Pipedrive menu for user: ${userEmail}`);
     
     // Preload verified users
     preloadVerifiedUsers();
@@ -210,7 +204,6 @@ function initializePipedriveMenu() {
       return false;
     }
   } catch (e) {
-    Logger.log(`Error in initializePipedriveMenu: ${e.message}`);
     
     // Show error to user
     const ui = SpreadsheetApp.getUi();
@@ -265,7 +258,6 @@ function showUpgradeDialog() {
       return;
     }
   } catch (error) {
-    Logger.log('Error checking plan in showUpgradeDialog: ' + error.message);
   }
   
   // Show upgrade dialog for free users
@@ -333,11 +325,9 @@ function checkAnyUserAccess(userEmail) {
     try {
       const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
       if (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED) {
-        Logger.log(`${userEmail} is the script owner, granting access`);
         return true;
       }
     } catch (e) {
-      Logger.log(`Error checking script owner: ${e.message}`);
     }
     
     // APPROACH 2: Check email map in document properties-`
@@ -350,28 +340,22 @@ function checkAnyUserAccess(userEmail) {
         
         // Simplified check - just use lowercase consistently
         if (emailMap[userEmail.toLowerCase()]) {
-          Logger.log(`${userEmail} found in email map`);
           return true;
         }
       }
     } catch (mapError) {
-      Logger.log(`Error checking email map: ${mapError.message}`);
     }
     
     // APPROACH 3: Direct check of teams data
     try {
       if (isUserInTeam(userEmail)) {
-        Logger.log(`${userEmail} found in team members list`);
         return true;
       }
     } catch (teamError) {
-      Logger.log(`Error checking teams data: ${teamError.message}`);
     }
     
-    Logger.log(`${userEmail} not found in any access list`);
     return false;
   } catch (e) {
-    Logger.log(`Error in checkAnyUserAccess: ${e.message}`);
     return false;
   }
 }
@@ -385,7 +369,6 @@ function forceTeamMembershipCheck(userEmail) {
   try {
     if (!userEmail) return false;
     
-    Logger.log(`Force checking team membership for: ${userEmail}`);
     
     // Try getting from document properties directly
     const docProps = PropertiesService.getDocumentProperties();
@@ -393,10 +376,8 @@ function forceTeamMembershipCheck(userEmail) {
     
     if (emailToTeamMapStr) {
       const emailToTeamMap = JSON.parse(emailToTeamMapStr);
-      Logger.log(`Current email map: ${JSON.stringify(emailToTeamMap)}`);
       
       if (emailToTeamMap[userEmail.toLowerCase()]) {
-        Logger.log(`User found in email map, creating Pipedrive menu`);
         return true;
       }
     }
@@ -410,16 +391,13 @@ function forceTeamMembershipCheck(userEmail) {
       // Case-insensitive check
       for (let i = 0; i < memberEmails.length; i++) {
         if (memberEmails[i].toLowerCase() === userEmail.toLowerCase()) {
-          Logger.log(`User found in team ${teamId}, creating Pipedrive menu`);
           return true;
         }
       }
     }
     
-    Logger.log(`User ${userEmail} not found in any team`);
     return false;
   } catch (e) {
-    Logger.log(`Error in forceTeamMembershipCheck: ${e.message}`);
     return false;
   }
 }
@@ -438,22 +416,18 @@ function hasVerifiedTeamAccess() {
     try {
       const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
       if (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED) {
-        Logger.log(`User ${userEmail} is the script owner/installer, granting full access`);
         return true;
       }
     } catch (e) {
-      Logger.log(`Error checking if user is script owner: ${e.message}`);
     }
     
     // Directly check if user is in a team
     if (isUserInTeam(userEmail)) {
-      Logger.log(`User ${userEmail} found in teams data`);
       return true;
     }
     
     return false;
   } catch (e) {
-    Logger.log(`Error in hasVerifiedTeamAccess: ${e.message}`);
     return false;
   }
 }
@@ -479,11 +453,9 @@ function preloadVerifiedUsers() {
         VERIFIED_USERS[email.toLowerCase()] = true;
       }
       
-      Logger.log('Teams data preloaded successfully');
     }
     return true;
   } catch (e) {
-    Logger.log(`Error in preloadVerifiedUsers: ${e.message}`);
     return false;
   }
 }
@@ -510,10 +482,8 @@ function verifyTeamAccess() {
           // Update the email-to-team map to ensure persistence between sessions
           updateEmailToTeamMap();
           // Also store in cache for faster lookup
-          Logger.log(`Added ${userEmail} to verified users list`);
         }
       } catch (e) {
-        Logger.log(`Error adding to verified users: ${e.message}`);
       }
       
       // Show success with forced reload
@@ -544,7 +514,6 @@ function verifyTeamAccess() {
     // Show team join dialog for non-members
     showTeamJoinRequest();
   } catch (e) {
-    Logger.log(`Error in verifyTeamAccess: ${e.message}`);
     ui.alert('Error', 'An error occurred: ' + e.message, ui.ButtonSet.OK);
   }
 }
@@ -571,7 +540,6 @@ function refreshMenuAfterVerification() {
     );
     return true;
   } catch (e) {
-    Logger.log(`Error refreshing menu: ${e.message}`);
     return false;
   }
 }
@@ -605,9 +573,7 @@ function checkAndVerifyTeamMembership() {
           docProps.setProperty('VERIFIED_TEAM_USERS', JSON.stringify(verifiedUsers));
         }
         
-        Logger.log(`User ${userEmail} verified successfully`);
       } catch (e) {
-        Logger.log(`Error setting verification properties: ${e.message}`);
       }
       
       return { success: true };
@@ -615,7 +581,6 @@ function checkAndVerifyTeamMembership() {
       return { success: false, error: 'You are not a member of any team. Please join a team first.' };
     }
   } catch (e) {
-    Logger.log(`Error verifying team membership: ${e.message}`);
     return { success: false, error: e.message };
   }
 }
@@ -644,9 +609,7 @@ function refreshMenuAfterJoin() {
     const userTeam = getUserTeam(userEmail, teamsData);
 
     // Show debug info
-    Logger.log(`Menu refresh - User: ${userEmail}, Has team: ${userTeam !== null}`);
     if (userTeam) {
-      Logger.log(`Team ID: ${userTeam.teamId}, Members: ${userTeam.memberEmails.length}`);
     }
 
     // Force proper menu creation
@@ -659,7 +622,6 @@ function refreshMenuAfterJoin() {
       5
     );
   } catch (e) {
-    Logger.log(`Error in refreshMenuAfterJoin: ${e.message}`);
   }
 }
 
@@ -684,7 +646,6 @@ function fixMenuAfterJoin() {
     
     return true;
   } catch (e) {
-    Logger.log('Error in fixMenuAfterJoin: ' + e.message);
     return false;
   }
 }
@@ -696,7 +657,6 @@ function forceReauthorize() {
   try {
     // First try to get user info to verify authentication
     const userEmail = Session.getActiveUser().getEmail();
-    Logger.log(`Current user: ${userEmail}`);
     
     // Create HTML with a button that explicitly requests the permission
     const html = HtmlService.createHtmlOutput(`
@@ -767,7 +727,6 @@ function forceReauthorize() {
     
     SpreadsheetApp.getUi().showModalDialog(html, 'Authorization Required');
   } catch (e) {
-    Logger.log(`Error in forceReauthorize: ${e.message}`);
     
     // Show error to the user
     SpreadsheetApp.getUi().alert(
@@ -822,7 +781,6 @@ function clearTeamDataForTesting() {
     PropertiesService.getDocumentProperties().deleteProperty('VERIFIED_USER_IDS');
     PropertiesService.getDocumentProperties().deleteProperty('VERIFIED_TEAM_USERS');
     
-    Logger.log('All team data has been cleared');
     
     // Show confirmation
     ui.alert(
@@ -831,7 +789,6 @@ function clearTeamDataForTesting() {
       ui.ButtonSet.OK
     );
   } catch (e) {
-    Logger.log('Error in clearTeamDataForTesting: ' + e.message);
     SpreadsheetApp.getUi().alert('Error', 'Failed to clear team data: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
@@ -846,7 +803,6 @@ function testShowJoinTeamDialog() {
     showTeamJoinRequest();
     return true;
   } catch (e) {
-    Logger.log('Error in testShowJoinTeamDialog: ' + e.message);
     SpreadsheetApp.getUi().alert('Error', 'Failed to show join team dialog: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
     return false;
   }
@@ -911,7 +867,6 @@ function testFirstInstallation() {
     
     SpreadsheetApp.getUi().showModalDialog(html, 'Testing First Installation');
   } catch (e) {
-    Logger.log('Error in testFirstInstallation: ' + e.message);
     SpreadsheetApp.getUi().alert('Error', 'Failed to run test: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
@@ -927,7 +882,6 @@ function testCreateTeamForOwner() {
       throw new Error('Unable to determine user email');
     }
     
-    Logger.log('Creating test team for user: ' + userEmail);
     
     // For testing purposes, we'll create a team directly regardless of current status
     // This simulates the behavior that happens during first installation
@@ -969,7 +923,6 @@ function testCreateTeamForOwner() {
       };
     }
   } catch (e) {
-    Logger.log('Error in testCreateTeamForOwner: ' + e.message);
     throw e;
   }
 }
@@ -984,7 +937,6 @@ function showColumnsTab() {
   try {
     SettingsDialogUI.showSettings('columns');
   } catch (e) {
-    Logger.log('Error in showColumnsTab: ' + e.message);
     SpreadsheetApp.getUi().alert('Error', 'Failed to open column settings: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
@@ -997,7 +949,6 @@ function showSettingsTab() {
   try {
     SettingsDialogUI.showSettings('settings');
   } catch (e) {
-    Logger.log('Error in showSettingsTab: ' + e.message);
     SpreadsheetApp.getUi().alert('Error', 'Failed to open filter settings: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
@@ -1011,7 +962,6 @@ function showTeamManager(joinOnly) {
   try {
     TeamManagerUI.showTeamManager(joinOnly);
   } catch (e) {
-    Logger.log('Error in showTeamManager: ' + e.message);
     SpreadsheetApp.getUi().alert('Error', 'Failed to open team manager: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }

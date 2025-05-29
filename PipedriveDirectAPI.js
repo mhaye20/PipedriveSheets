@@ -14,11 +14,7 @@
  */
 function processDateTimeFields(payload, rowData, fieldDefinitions, headerToFieldKeyMap) {
   try {
-    Logger.log("Processing date and time fields in payload...");
-    Logger.log(`FULL PAYLOAD STRUCTURE: ${JSON.stringify(payload)}`);
-    Logger.log(`FIELD DEFINITIONS AVAILABLE: ${fieldDefinitions ? 'YES' : 'NO'}`);
     if (rowData) {
-      Logger.log(`ROW DATA CONTENT: ${JSON.stringify(rowData)}`);
     }
     const fieldKeys = Object.keys(payload);
 
@@ -34,7 +30,6 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
           fieldKeyToHeader[headerToFieldKeyMap[header]] = header;
         }
       }
-      Logger.log(`Created field key to header mapping with ${Object.keys(fieldKeyToHeader).length} entries`);
     }
     
     // First identify date/time range pairs directly from field keys (not headers)
@@ -43,36 +38,28 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
     // Look for end time fields in rowData and add to tracking
     const rowDataUntilFields = [];
     if (rowData) {
-      Logger.log(`CHECKING ROW DATA FOR TIME RANGE FIELDS...`);
       for (const headerKey in rowData) {
-        Logger.log(`Checking header: ${headerKey}`);
         // Check if this header maps to a field key
         const fieldKey = headerToFieldKeyMap ? headerToFieldKeyMap[headerKey] : null;
         if (fieldKey) {
-          Logger.log(`Header ${headerKey} maps to field ${fieldKey}`);
           if (fieldKey.endsWith('_until')) {
-            Logger.log(`FOUND _UNTIL FIELD IN ROW DATA: ${headerKey} -> ${fieldKey} = ${rowData[headerKey]}`);
             rowDataUntilFields.push(fieldKey);
             // Track the base field key too
             const baseFieldKey = fieldKey.replace(/_until$/, "");
-            Logger.log(`Base field for ${fieldKey} would be ${baseFieldKey}`);
             
             // CRITICAL: Add the _until field to the payload immediately
             if (!payload[fieldKey] && rowData[headerKey]) {
               payload[fieldKey] = rowData[headerKey];
-              Logger.log(`ADDED _UNTIL FIELD TO PAYLOAD: ${fieldKey} = ${rowData[headerKey]}`);
             }
           }
         }
         
         // Also check if the header itself indicates an end time field
         if (headerKey.toLowerCase().includes('end time') && rowData[headerKey]) {
-          Logger.log(`Found end time header: ${headerKey} = ${rowData[headerKey]}`);
           // Try to find the corresponding field key
           const correspondingFieldKey = headerToFieldKeyMap ? headerToFieldKeyMap[headerKey] : null;
           if (correspondingFieldKey && !payload[correspondingFieldKey]) {
             payload[correspondingFieldKey] = rowData[headerKey];
-            Logger.log(`Added end time field to payload: ${correspondingFieldKey} = ${rowData[headerKey]}`);
           }
         }
       }
@@ -80,39 +67,30 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
     
     // Look in field definitions if available
     if (fieldDefinitions) {
-      Logger.log(`SCANNING FIELD DEFINITIONS FOR TIME RANGE PAIRS...`);
       for (const fieldKey in fieldDefinitions) {
         if (fieldKey.endsWith("_until")) {
           const baseFieldKey = fieldKey.replace(/_until$/, "");
-          Logger.log(`Found _until field: ${fieldKey}, checking for base field: ${baseFieldKey}`);
           if (fieldDefinitions[baseFieldKey]) {
             timeRangePairs[baseFieldKey] = fieldKey;
-            Logger.log(`IDENTIFIED TIME RANGE PAIR by field keys: ${baseFieldKey} -> ${fieldKey}`);
           } else {
-            Logger.log(`WARNING: Found _until field ${fieldKey} but no matching base field ${baseFieldKey}`);
           }
         }
       }
     } else {
-      Logger.log(`NO FIELD DEFINITIONS AVAILABLE FOR TIME RANGE DETECTION`);
     }
     
     // Also look for time range pairs in the payload itself - more aggressive detection
-    Logger.log(`SCANNING PAYLOAD FOR TIME RANGE PAIRS...`);
     for (const key in payload) {
       if (key.endsWith("_until")) {
         const baseKey = key.replace(/_until$/, "");
         // Accept even if base key doesn't exist yet - it might come from rowData or custom_fields
         timeRangePairs[baseKey] = key;
-        Logger.log(`IDENTIFIED TIME RANGE PAIR IN PAYLOAD: ${baseKey} -> ${key}`);
       }
     }
 
     // Also check in custom_fields object for time range pairs
     if (payload.custom_fields) {
-      Logger.log(`EXAMINING CUSTOM_FIELDS OBJECT FOR TIME RANGE PAIRS...`);
       const customFieldKeys = Object.keys(payload.custom_fields);
-      Logger.log(`Custom fields keys: ${customFieldKeys.join(', ')}`);
       
       // First handle time range pairs - more aggressive detection
       for (const key of customFieldKeys) {
@@ -120,11 +98,9 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
           const baseKey = key.replace(/_until$/, "");
           // Don't require the base key to exist
           timeRangePairs[baseKey] = key;
-          Logger.log(`IDENTIFIED TIME RANGE FIELD PAIR IN CUSTOM_FIELDS: ${baseKey} and ${key} = ${payload.custom_fields[key]}`);
           
           // Ensure the time range end field exists at the root level
           payload[key] = payload.custom_fields[key];
-          Logger.log(`Promoted time range end field ${key} to root level: ${payload[key]}`);
         }
       }
       
@@ -135,7 +111,6 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
           // If we have this field in our data or in fieldDefinitions, add it to time range pairs
           if (payload.custom_fields[untilKey] || (fieldDefinitions && fieldDefinitions[untilKey])) {
             timeRangePairs[key] = untilKey;
-            Logger.log(`IDENTIFIED TIME RANGE PAIR from base field: ${key} -> ${untilKey}`);
           }
         }
       }
@@ -146,55 +121,43 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
         const headerKey = fieldKeyToHeader[untilFieldKey];
         
         if (headerKey && rowData[headerKey]) {
-          Logger.log(`FOUND TIME RANGE END (UNTIL) IN ROWDATA: ${headerKey} = ${rowData[headerKey]}`);
           if (!timeRangePairs[baseKey]) {
             timeRangePairs[baseKey] = untilFieldKey;
-            Logger.log(`ADDED NEW TIME RANGE PAIR FROM ROWDATA: ${baseKey} -> ${untilFieldKey}`);
           }
         }
       }
 
       // Promote all custom fields to root level WITHOUT deleting custom_fields
       // Pipedrive API requires these values to be present in both places
-      Logger.log(`PROMOTING CUSTOM FIELDS TO ROOT LEVEL...`);
       for (const key of customFieldKeys) {
         payload[key] = payload.custom_fields[key];
-        Logger.log(`Promoted ${key} to root level: ${JSON.stringify(payload[key])}`);
       }
       
       // DO NOT delete custom_fields - it's needed for proper API handling
       // delete payload.custom_fields; 
 
       // Continue with time range pair processing...
-      Logger.log(`PROCESSING TIME RANGE PAIRS: ${Object.keys(timeRangePairs).join(', ')}`);
       for (const baseKey in timeRangePairs) {
         const untilKey = timeRangePairs[baseKey];
-        Logger.log(`PROCESSING TIME RANGE PAIR: ${baseKey} -> ${untilKey}`);
         
         // Get the start time value from any available source
         let startValue = null;
         if (payload[baseKey] !== undefined) {
           startValue = payload[baseKey];
-          Logger.log(`Found start time in payload root: ${baseKey} = ${startValue}`);
         } else if (payload.custom_fields && payload.custom_fields[baseKey] !== undefined) {
           startValue = payload.custom_fields[baseKey];
-          Logger.log(`Found start time in custom_fields: ${baseKey} = ${startValue}`);
         } else if (rowData && fieldKeyToHeader && fieldKeyToHeader[baseKey] && rowData[fieldKeyToHeader[baseKey]]) {
           startValue = rowData[fieldKeyToHeader[baseKey]];
-          Logger.log(`Found start time in row data: ${fieldKeyToHeader[baseKey]} = ${startValue}`);
         }
         
         // Get the end time value from any available source
         let endValue = null;
         if (payload[untilKey] !== undefined) {
           endValue = payload[untilKey];
-          Logger.log(`Found end time in payload root: ${untilKey} = ${endValue}`);
         } else if (payload.custom_fields && payload.custom_fields[untilKey] !== undefined) {
           endValue = payload.custom_fields[untilKey];
-          Logger.log(`Found end time in custom_fields: ${untilKey} = ${endValue}`);
         } else if (rowData && fieldKeyToHeader && fieldKeyToHeader[untilKey] && rowData[fieldKeyToHeader[untilKey]]) {
           endValue = rowData[fieldKeyToHeader[untilKey]];
-          Logger.log(`Found end time in row data: ${fieldKeyToHeader[untilKey]} = ${endValue}`);
         }
         
         // Format the values if they exist
@@ -214,24 +177,19 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
           // Format as dates for date range fields
           formattedStartValue = startValue ? formatDateValue(startValue) : null;
           formattedEndValue = endValue ? formatDateValue(endValue) : null;
-          Logger.log(`Processing as DATE RANGE for ${baseKey}: start=${formattedStartValue}, end=${formattedEndValue}`);
         } else {
           // Format as times for time range fields  
           formattedStartValue = startValue ? formatTimeValue(startValue) : null;
           formattedEndValue = endValue ? formatTimeValue(endValue) : null;
-          Logger.log(`Processing as TIME RANGE for ${baseKey}: start=${formattedStartValue}, end=${formattedEndValue}`);
         }
         
-        Logger.log(`FORMATTED TIME VALUES: Start=${formattedStartValue}, End=${formattedEndValue}`);
         
         // Ensure we have both parts of the time range
         // If only one is present, use it for both (required by Pipedrive)
         if (formattedStartValue && !formattedEndValue) {
           formattedEndValue = formattedStartValue;
-          Logger.log(`USING START TIME FOR MISSING END TIME: ${formattedEndValue}`);
         } else if (!formattedStartValue && formattedEndValue) {
           formattedStartValue = formattedEndValue;
-          Logger.log(`USING END TIME FOR MISSING START TIME: ${formattedStartValue}`);
         }
         
         // Only proceed if we have at least one value
@@ -245,16 +203,13 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
           if (formattedStartValue) {
             payload[baseKey] = formattedStartValue;
             payload.custom_fields[baseKey] = formattedStartValue;
-            Logger.log(`SET TIME RANGE START: ${baseKey} = ${formattedStartValue}`);
           }
           
           if (formattedEndValue) {
             payload[untilKey] = formattedEndValue;
             payload.custom_fields[untilKey] = formattedEndValue;
-            Logger.log(`SET TIME RANGE END: ${untilKey} = ${formattedEndValue}`);
           }
         } else {
-          Logger.log(`No valid time values found for range pair ${baseKey} -> ${untilKey}`);
         }
       }
     }
@@ -262,14 +217,11 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
     // Log all time range pairs that were identified
     if (Object.keys(timeRangePairs).length > 0) {
       payload.__hasTimeRangeFields = true;
-      Logger.log("Added time range field flag to payload");
-      Logger.log(`TIME RANGE PAIRS IDENTIFIED (${Object.keys(timeRangePairs).length}): ${JSON.stringify(timeRangePairs)}`);
       
       // For each time range pair that we identified, ensure both parts are added to custom_fields
       // This is a fallback in case the normal processing missed them
       for (const baseKey in timeRangePairs) {
         const untilKey = timeRangePairs[baseKey];
-        Logger.log(`ENSURING BOTH PARTS EXIST FOR TIME RANGE: ${baseKey} -> ${untilKey}`);
         
         // Make sure we have custom_fields
         if (!payload.custom_fields) payload.custom_fields = {};
@@ -280,12 +232,10 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
           if (payload[untilKey]) {
             // Copy from root to custom_fields
             payload.custom_fields[untilKey] = payload[untilKey];
-            Logger.log(`COPIED end time from root to custom_fields: ${untilKey} = ${payload[untilKey]}`);
           } else {
             // Use start time as end time
             payload.custom_fields[untilKey] = payload.custom_fields[baseKey];
             payload[untilKey] = payload.custom_fields[baseKey];
-            Logger.log(`SET end time to match start time: ${untilKey} = ${payload.custom_fields[untilKey]}`);
           }
         }
         
@@ -295,12 +245,10 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
           if (payload[baseKey]) {
             // Copy from root to custom_fields
             payload.custom_fields[baseKey] = payload[baseKey];
-            Logger.log(`COPIED start time from root to custom_fields: ${baseKey} = ${payload[baseKey]}`);
           } else {
             // Use end time as start time
             payload.custom_fields[baseKey] = payload.custom_fields[untilKey];
             payload[baseKey] = payload.custom_fields[untilKey];
-            Logger.log(`SET start time to match end time: ${baseKey} = ${payload.custom_fields[baseKey]}`);
           }
         }
       }
@@ -314,7 +262,6 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
       const baseHeader = fieldKeyToHeader[baseKey];
       const untilHeader = fieldKeyToHeader[untilKey];
 
-      Logger.log(`Processing time range pair: ${baseKey} -> ${untilKey} (headers: ${baseHeader} -> ${untilHeader})`);
 
       // Check for values in both payload and rowData
       let startValue = payload[baseKey];
@@ -323,12 +270,10 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
       // If values not in payload, try to get from rowData
       if (!startValue && baseHeader && rowData[baseHeader]) {
         startValue = rowData[baseHeader];
-        Logger.log(`Found start time in row data: ${baseHeader} = ${startValue}`);
       }
 
       if (!endValue && untilHeader && rowData[untilHeader]) {
         endValue = rowData[untilHeader];
-        Logger.log(`Found end time in row data: ${untilHeader} = ${endValue}`);
       }
 
       // Update both values in payload and custom_fields
@@ -340,7 +285,6 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
           const formattedStartValue = formatTimeValue(startValue);
           payload[baseKey] = formattedStartValue;
           payload.custom_fields[baseKey] = formattedStartValue;
-          Logger.log(`Set time range start in payload: ${baseKey} = ${formattedStartValue}`);
         }
 
         if (endValue) {
@@ -348,7 +292,6 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
           const formattedEndValue = formatTimeValue(endValue);
           payload[untilKey] = formattedEndValue;
           payload.custom_fields[untilKey] = formattedEndValue;
-          Logger.log(`Set time range end in payload: ${untilKey} = ${formattedEndValue}`);
         }
 
         // Always set both values, even if one is missing - this ensures proper time range handling
@@ -357,12 +300,10 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
           const formattedValue = formatTimeValue(startValue);
           payload[untilKey] = formattedValue;
           payload.custom_fields[untilKey] = formattedValue;
-          Logger.log(`CRITICAL: Added missing end time using start time: ${untilKey} = ${formattedValue}`);
         }
         // Similarly, if we have an end but no start, log a warning but do not auto-copy
         // as this might cause unexpected behavior
         if (!startValue && endValue) {
-          Logger.log(`WARNING: Found end time but no start time for pair: ${baseKey} -> ${untilKey}`);
         }
         
         // Flag payload as having time range fields
@@ -372,8 +313,6 @@ function processDateTimeFields(payload, rowData, fieldDefinitions, headerToField
 
     return payload;
   } catch (error) {
-    Logger.log(`Error processing date/time fields: ${error.message}`);
-    Logger.log(`Error stack: ${error.stack}`);
     return payload;
   }
 }
@@ -393,10 +332,7 @@ function updateDealDirect(dealId, payload, accessToken, basePath, fieldDefinitio
     dealId = Number(dealId);
     
     // Enhanced logging for debugging time range issues
-    Logger.log(`updateDealDirect called for deal ${dealId}`);
-    Logger.log(`Initial payload keys: ${Object.keys(payload).join(', ')}`);
     if (payload.custom_fields) {
-      Logger.log(`Custom fields keys: ${Object.keys(payload.custom_fields).join(', ')}`);
     }
     
     // Look for time range _until fields and ensure they are at root level
@@ -410,7 +346,6 @@ function updateDealDirect(dealId, payload, accessToken, basePath, fieldDefinitio
     for (const key in payload) {
       if (key.endsWith("_until")) {
         untilFields.push(key);
-        Logger.log(`Found _until field in root payload: ${key} = ${payload[key]}`);
       }
     }
     
@@ -418,13 +353,11 @@ function updateDealDirect(dealId, payload, accessToken, basePath, fieldDefinitio
       for (const key in payload.custom_fields) {
         if (key.endsWith("_until") && !untilFields.includes(key)) {
           untilFields.push(key);
-          Logger.log(`Found _until field in custom_fields: ${key} = ${payload.custom_fields[key]}`);
         }
       }
     }
     
     // Log found _until fields
-    Logger.log(`Found ${untilFields.length} potential time range end fields: ${untilFields.join(', ')}`);
     
     // Process each _until field to find its matching start field
     for (const untilKey of untilFields) {
@@ -445,9 +378,6 @@ function updateDealDirect(dealId, payload, accessToken, basePath, fieldDefinitio
         endValue: endValueRoot !== undefined ? endValueRoot : endValueCustom
       };
       
-      Logger.log(`DETECTED TIME RANGE: ${baseKey} -> ${untilKey}`);
-      Logger.log(`Start value from root: ${startValueRoot}, from custom_fields: ${startValueCustom}`);
-      Logger.log(`End value from root: ${endValueRoot}, from custom_fields: ${endValueCustom}`);
     }
     
     // Look for other potential time fields that don't follow the _until convention
@@ -475,7 +405,6 @@ function updateDealDirect(dealId, payload, accessToken, basePath, fieldDefinitio
               endKey: endKey,
               endValue: payload[endKey] !== undefined ? payload[endKey] : (payload.custom_fields && payload.custom_fields[endKey])
             };
-            Logger.log(`Found non-standard time range pair: ${key} -> ${endKey}`);
             break;
           }
         }
@@ -489,7 +418,6 @@ function updateDealDirect(dealId, payload, accessToken, basePath, fieldDefinitio
     // Remove empty custom_fields to avoid API errors
     if (payload.custom_fields && Object.keys(payload.custom_fields).length === 0) {
       delete payload.custom_fields;
-      Logger.log('Removed empty custom_fields object');
     }
     
     // Create final payload with explicit time range handling
@@ -516,28 +444,23 @@ function updateDealDirect(dealId, payload, accessToken, basePath, fieldDefinitio
         // Format as dates for date range fields
         formattedStartValue = pair.startValue !== undefined ? formatDateValue(pair.startValue) : null;
         formattedEndValue = pair.endValue !== undefined ? formatDateValue(pair.endValue) : null;
-        Logger.log(`Formatting as DATE RANGE: start=${formattedStartValue}, end=${formattedEndValue}`);
       } else {
         // Format as times for time range fields
         formattedStartValue = pair.startValue !== undefined ? formatTimeValue(pair.startValue) : null;
         formattedEndValue = pair.endValue !== undefined ? formatTimeValue(pair.endValue) : null;
-        Logger.log(`Formatting as TIME RANGE: start=${formattedStartValue}, end=${formattedEndValue}`);
       }
       
-      Logger.log(`FORMATTED TIME VALUES: Start=${formattedStartValue}, End=${formattedEndValue}`);
       
       // Auto-fill missing end time with start time if needed
       let effectiveEndValue = formattedEndValue;
       if (formattedStartValue && !formattedEndValue) {
         effectiveEndValue = formattedStartValue;
-        Logger.log(`CRITICAL: Auto-filled missing end time with start time for ${pair.endKey}`);
       }
       
       // Auto-fill missing start time with end time if needed
       let effectiveStartValue = formattedStartValue;
       if (!formattedStartValue && formattedEndValue) {
         effectiveStartValue = formattedEndValue;
-        Logger.log(`CRITICAL: Auto-filled missing start time with end time for ${pair.startKey}`);
       }
       
       // ALWAYS set both values, even if one or both were null initially
@@ -548,15 +471,12 @@ function updateDealDirect(dealId, payload, accessToken, basePath, fieldDefinitio
         const defaultValue = "00:00:00";
         processedPayload[pair.startKey] = defaultValue;
         processedPayload[pair.endKey] = defaultValue;
-        Logger.log(`Both time range values missing, using default: ${defaultValue}`);
       } else {
         // At least one value exists, use it
         processedPayload[pair.startKey] = effectiveStartValue || effectiveEndValue;
         processedPayload[pair.endKey] = effectiveEndValue || effectiveStartValue;
-        Logger.log(`Set time range values: start=${processedPayload[pair.startKey]}, end=${processedPayload[pair.endKey]}`);
       }
       
-      Logger.log(`ROOT LEVEL time range values set: ${pair.startKey}=${processedPayload[pair.startKey]}, ${pair.endKey}=${processedPayload[pair.endKey]}`);
       
       // Ensure custom_fields exists
       if (!processedPayload.custom_fields) {
@@ -567,15 +487,12 @@ function updateDealDirect(dealId, payload, accessToken, basePath, fieldDefinitio
       processedPayload.custom_fields[pair.startKey] = processedPayload[pair.startKey];
       processedPayload.custom_fields[pair.endKey] = processedPayload[pair.endKey];
       
-      Logger.log(`CUSTOM_FIELDS time range values set: ${pair.startKey}=${processedPayload.custom_fields[pair.startKey]}, ${pair.endKey}=${processedPayload.custom_fields[pair.endKey]}`);
     });
 
     // Create URL for the request
     const dealUrl = `${basePath}/deals/${dealId}`;
-    Logger.log(`Direct API: Using URL: ${dealUrl}`);
     
     // Log the complete final payload to verify time range fields are included
-    Logger.log(`FINAL API PAYLOAD WITH TIME RANGES: ${JSON.stringify(processedPayload)}`);
 
     // Create fetch options
     const options = {
@@ -589,34 +506,23 @@ function updateDealDirect(dealId, payload, accessToken, basePath, fieldDefinitio
     };
     
     // Make the API request
-    Logger.log(`API request parameters: ${JSON.stringify({
-      id: dealId,
-      entityType: 'deals',
-      apiBasePath: basePath,
-      accessToken: accessToken.substring(0, 5) + '...'
-    })}`);
     
     // Additional check for address fields
     if (processedPayload.custom_fields && 
         Object.keys(processedPayload.custom_fields).some(key => 
           typeof processedPayload.custom_fields[key] === 'object' && 
           processedPayload.custom_fields[key] !== null)) {
-      Logger.log("Payload contains address field objects in custom_fields");
     }
     
     // Fetch data from Pipedrive API
     const response = UrlFetchApp.fetch(dealUrl, options);
     const responseCode = response.getResponseCode();
-    Logger.log(`Direct API call response code: ${responseCode}`);
     
     // Parse the response
     const responseData = JSON.parse(response.getContentText());
-    Logger.log(`Direct API response: ${JSON.stringify(responseData)}`);
     
     return responseData;
   } catch (error) {
-    Logger.log(`Error in updateDealDirect: ${error.message}`);
-    Logger.log(`Error stack: ${error.stack}`);
     throw error;
   }
 }
@@ -657,19 +563,15 @@ function formatTimeValue(value) {
     // CRITICAL: Handle objects that might have a 'value' property
     if (typeof value === 'object' && value !== null && !(value instanceof Date)) {
       if (value.value !== undefined) {
-        Logger.log(`WARNING: formatTimeValue received object with value property, extracting: ${value.value}`);
         value = value.value;
       } else {
-        Logger.log(`ERROR: formatTimeValue received non-Date object without value property: ${JSON.stringify(value)}`);
         return null;
       }
     }
 
-    Logger.log(`Formatting time value: ${value} (type: ${typeof value})`);
     
     // Quick check if it's already a properly formatted time string
     if (typeof value === 'string' && value.match(/^\d{2}:\d{2}:\d{2}$/)) {
-      Logger.log(`Value is already in perfect HH:MM:SS format: ${value}`);
       return value;
     }
     
@@ -682,26 +584,21 @@ function formatTimeValue(value) {
         const minutes = value.getMinutes();
         const seconds = value.getSeconds();
         const formatted = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-        Logger.log(`Excel time Date object converted directly: ${formatted}`);
         return formatted;
       }
       // For other Date objects, extract time normally
       timeObj = value;
-      Logger.log(`Value is a Date object with time: ${timeObj.getHours()}:${timeObj.getMinutes()}:${timeObj.getSeconds()}`);
     } else if (typeof value === 'string') {
       // Try to parse the string as a time
       if (value.match(/^\d{1,2}:\d{2}(:\d{2})?$/)) {
         // Already in proper format, ensure it has seconds
-        Logger.log(`Value is already in time format: ${value}`);
         const parts = value.split(':');
         if (parts.length === 2) {
           const formatted = `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}:00`;
-          Logger.log(`Added seconds to time: ${formatted}`);
           return formatted;
         } else if (parts.length === 3) {
           // Already has seconds, just ensure proper padding
           const formatted = `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}:${parts[2].padStart(2, '0')}`;
-          Logger.log(`Formatted existing time with padding: ${formatted}`);
           return formatted;
         }
         return value;
@@ -709,7 +606,6 @@ function formatTimeValue(value) {
 
       // Special handling for "1899-12-30" date format (Excel/Sheets time-only format)
       if (value.includes("1899-12-30")) {
-        Logger.log(`Detected Excel/Sheets time format: ${value}`);
         // This format indicates a time-only value stored as a date
         // Extract time part directly from the ISO string to avoid timezone issues
         const timePart = value.split("T")[1];
@@ -718,7 +614,6 @@ function formatTimeValue(value) {
           const timeMatch = timePart.match(/(\d{2}):(\d{2}):(\d{2})/);
           if (timeMatch) {
             const formatted = `${timeMatch[1]}:${timeMatch[2]}:${timeMatch[3]}`;
-            Logger.log(`Extracted time from Excel format ISO string: ${formatted}`);
             return formatted;
           }
         }
@@ -726,17 +621,14 @@ function formatTimeValue(value) {
         const datePart = new Date(value);
         if (!isNaN(datePart.getTime())) {
           timeObj = datePart;
-          Logger.log(`Parsed Excel time format to: ${timeObj.getHours()}:${timeObj.getMinutes()}:${timeObj.getSeconds()}`);
         }
       }
       // Try parsing as a date+time
       else if (value.includes("T")) {
         // Handle ISO format strings
-        Logger.log(`Parsing ISO format string: ${value}`);
         const datePart = new Date(value);
         if (!isNaN(datePart.getTime())) {
           timeObj = datePart;
-          Logger.log(`Parsed ISO date to time: ${timeObj.getHours()}:${timeObj.getMinutes()}:${timeObj.getSeconds()}`);
         } else {
           // Try extracting time part directly
           const timePart = value.split("T")[1];
@@ -744,7 +636,6 @@ function formatTimeValue(value) {
             const timeComponents = timePart.split(":");
             if (timeComponents.length >= 2) {
               const formatted = `${timeComponents[0].padStart(2, '0')}:${timeComponents[1].padStart(2, '0')}:00`;
-              Logger.log(`Extracted time from ISO string: ${formatted}`);
               return formatted;
             }
           }
@@ -753,7 +644,6 @@ function formatTimeValue(value) {
         // AM/PM format detection
         const amPmMatch = value.match(/(\d{1,2}):(\d{2})\s*(am|pm)/i);
         if (amPmMatch) {
-          Logger.log(`Detected AM/PM format: ${value}`);
           let hours = parseInt(amPmMatch[1], 10);
           const minutes = amPmMatch[2];
           const ampm = amPmMatch[3].toLowerCase();
@@ -762,7 +652,6 @@ function formatTimeValue(value) {
           if (ampm === 'am' && hours === 12) hours = 0;
           
           const formatted = `${String(hours).padStart(2, '0')}:${minutes}:00`;
-          Logger.log(`Formatted AM/PM time to: ${formatted}`);
           return formatted;
         }
         
@@ -773,18 +662,15 @@ function formatTimeValue(value) {
           const minutes = parseInt(simpleTimeMatch[2], 10);
           if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
             const formatted = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
-            Logger.log(`Extracted time using simple regex: ${formatted}`);
             return formatted;
           }
         }
         
         // Try as regular time string
-        Logger.log(`Trying to parse as regular date: ${value}`);
         timeObj = new Date(value);
       }
     } else if (typeof value === 'number') {
       // Handle numeric time values (could be Excel time values)
-      Logger.log(`Value is a number: ${value}`);
       // If it's a small decimal (Excel time format), convert to hours/minutes
       if (value < 1) {
         const totalHours = value * 24;
@@ -793,14 +679,12 @@ function formatTimeValue(value) {
         const seconds = Math.floor(((totalHours - hours) * 60 - minutes) * 60);
         
         const formatted = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-        Logger.log(`Converted Excel time number to: ${formatted}`);
         return formatted;
       }
       
       // Otherwise try to create a date from timestamp
       timeObj = new Date(value);
     } else {
-      Logger.log(`Unrecognized time format, using string conversion: ${value}`);
       return String(value);
     }
 
@@ -813,20 +697,16 @@ function formatTimeValue(value) {
           const hours = timeMatch[1].padStart(2, '0');
           const minutes = timeMatch[2].padStart(2, '0');
           const formatted = `${hours}:${minutes}:00`;
-          Logger.log(`Extracted time using regex: ${formatted}`);
           return formatted;
         }
       }
-      Logger.log(`Failed to parse time, returning as string: ${value}`);
       return String(value);
     }
 
     // Format as HH:MM:SS
     const formatted = `${String(timeObj.getHours()).padStart(2, '0')}:${String(timeObj.getMinutes()).padStart(2, '0')}:${String(timeObj.getSeconds()).padStart(2, '0')}`;
-    Logger.log(`Formatted time from date object: ${formatted}`);
     return formatted;
   } catch (error) {
-    Logger.log(`Error formatting time value: ${error.message}`);
     return String(value);
   }
 }
@@ -840,7 +720,6 @@ function formatDateValue(value) {
   try {
     if (!value) return null;
     
-    Logger.log(`Formatting date value: ${value} (type: ${typeof value})`);
 
     let dateObj;
     if (value instanceof Date) {
@@ -848,7 +727,6 @@ function formatDateValue(value) {
     } else if (typeof value === 'string') {
       // Check if already in YYYY-MM-DD format
       if (value.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        Logger.log(`Date already in correct format: ${value}`);
         return value;
       }
       
@@ -857,14 +735,12 @@ function formatDateValue(value) {
         // Extract just the date part
         const datePart = value.split('T')[0];
         if (datePart.match(/^\d{4}-\d{2}-\d{2}$/)) {
-          Logger.log(`Extracted date from ISO string: ${datePart}`);
           return datePart;
         }
       }
       
       // Handle time-only values that might be mistaken for dates
       if (value.match(/^\d{1,2}:\d{2}:\d{2}$/)) {
-        Logger.log(`WARNING: Time value passed to date formatter: ${value}`);
         // Return null or today's date, depending on requirements
         return null;
       }
@@ -876,16 +752,13 @@ function formatDateValue(value) {
     }
 
     if (isNaN(dateObj.getTime())) {
-      Logger.log(`Failed to parse date value: ${value}`);
       return String(value);
     }
 
     // Format as YYYY-MM-DD
     const formatted = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
-    Logger.log(`Formatted date: ${formatted}`);
     return formatted;
   } catch (error) {
-    Logger.log(`Error formatting date value: ${error.message}`);
     return String(value);
   }
 }
@@ -905,10 +778,7 @@ function updatePersonDirect(personId, payload, accessToken, basePath, fieldDefin
     personId = Number(personId);
 
     // Enhanced logging for debugging
-    Logger.log(`updatePersonDirect called for person ${personId}`);
-    Logger.log(`Initial payload keys: ${Object.keys(payload).join(', ')}`);
     if (payload.custom_fields) {
-      Logger.log(`Custom fields keys: ${Object.keys(payload.custom_fields).join(', ')}`);
     }
     
     // Process date/time fields similar to other entities
@@ -917,7 +787,6 @@ function updatePersonDirect(personId, payload, accessToken, basePath, fieldDefin
     // IMPORTANT: For persons in API v1, custom fields must be at root level
     // If we have custom_fields object, we need to flatten it to root level
     if (processedPayload.custom_fields) {
-      Logger.log(`Flattening custom_fields to root level for person update`);
       const customFields = processedPayload.custom_fields;
       
       // Create new payload with custom fields at root level
@@ -927,7 +796,6 @@ function updatePersonDirect(personId, payload, accessToken, basePath, fieldDefin
       // Add each custom field to root level
       for (const key in customFields) {
         flattenedPayload[key] = customFields[key];
-        Logger.log(`Moved custom field to root: ${key} = ${customFields[key]}`);
       }
       
       processedPayload = flattenedPayload;
@@ -935,10 +803,8 @@ function updatePersonDirect(personId, payload, accessToken, basePath, fieldDefin
 
     // Create URL for the request
     const personUrl = `${basePath}/persons/${personId}`;
-    Logger.log(`Direct API: Using URL: ${personUrl}`);
     
     // Log the complete final payload
-    Logger.log(`FINAL API PAYLOAD: ${JSON.stringify(processedPayload)}`);
 
     // Create fetch options
     const options = {
@@ -995,10 +861,7 @@ function updateOrganizationDirect(organizationId, payload, accessToken, basePath
     organizationId = Number(organizationId);
     
     // Enhanced logging for debugging
-    Logger.log(`updateOrganizationDirect called for organization ${organizationId}`);
-    Logger.log(`Initial payload keys: ${Object.keys(payload).join(', ')}`);
     if (payload.custom_fields) {
-      Logger.log(`Custom fields keys: ${Object.keys(payload.custom_fields).join(', ')}`);
     }
     
     // For organizations, we need to handle the payload differently
@@ -1014,7 +877,6 @@ function updateOrganizationDirect(organizationId, payload, accessToken, basePath
     
     // If there are custom fields, add them at root level
     if (payload.custom_fields) {
-      Logger.log(`Processing custom fields for organization update`);
       
       // Process time range fields first
       const timeRangePairs = {};
@@ -1024,7 +886,6 @@ function updateOrganizationDirect(organizationId, payload, accessToken, basePath
         if (key.endsWith('_until')) {
           const baseKey = key.replace(/_until$/, '');
           timeRangePairs[baseKey] = key;
-          Logger.log(`Identified time range pair: ${baseKey} -> ${key}`);
         }
       }
       
@@ -1044,11 +905,9 @@ function updateOrganizationDirect(organizationId, payload, accessToken, basePath
                 (String(value).includes('T') && !String(value).includes('1899-12-30'))) {
               // It's a date
               finalPayload[key] = formatDateValue(value);
-              Logger.log(`Formatted date field ${key}: ${value} -> ${finalPayload[key]}`);
             } else {
               // It's a time
               finalPayload[key] = formatTimeValue(value);
-              Logger.log(`Formatted time field ${key}: ${value} -> ${finalPayload[key]}`);
             }
           } else {
             finalPayload[key] = value;
@@ -1056,7 +915,6 @@ function updateOrganizationDirect(organizationId, payload, accessToken, basePath
         } else {
           // Regular custom field
           finalPayload[key] = value;
-          Logger.log(`Added custom field ${key}: ${value}`);
         }
       }
       
@@ -1067,10 +925,8 @@ function updateOrganizationDirect(organizationId, payload, accessToken, basePath
         // If we have one but not the other, copy the value
         if (finalPayload[baseKey] && !finalPayload[untilKey]) {
           finalPayload[untilKey] = finalPayload[baseKey];
-          Logger.log(`Added missing end time for ${untilKey} using start time value: ${finalPayload[untilKey]}`);
         } else if (!finalPayload[baseKey] && finalPayload[untilKey]) {
           finalPayload[baseKey] = finalPayload[untilKey];
-          Logger.log(`Added missing start time for ${baseKey} using end time value: ${finalPayload[baseKey]}`);
         }
       }
     }
@@ -1084,10 +940,8 @@ function updateOrganizationDirect(organizationId, payload, accessToken, basePath
     
     // Create URL for the request
     const organizationUrl = `${basePath}/organizations/${organizationId}`;
-    Logger.log(`Direct API: Using URL: ${organizationUrl}`);
     
     // Log the complete final payload
-    Logger.log(`FINAL API PAYLOAD: ${JSON.stringify(processedPayload)}`);
 
     // Create fetch options
     const options = {
@@ -1102,26 +956,16 @@ function updateOrganizationDirect(organizationId, payload, accessToken, basePath
     };
     
     // Make the API request
-    Logger.log(`API request parameters: ${JSON.stringify({
-      id: organizationId,
-      entityType: 'organizations',
-      apiBasePath: basePath,
-      accessToken: accessToken.substring(0, 5) + '...'
-    })}`);
     
     // Fetch data from Pipedrive API
     const response = UrlFetchApp.fetch(organizationUrl, options);
     const responseCode = response.getResponseCode();
-    Logger.log(`Direct API call response code: ${responseCode}`);
     
     // Parse the response
     const responseData = JSON.parse(response.getContentText());
-    Logger.log(`Direct API response: ${JSON.stringify(responseData)}`);
     
     return responseData;
   } catch (error) {
-    Logger.log(`Error in updateOrganizationDirect: ${error.message}`);
-    Logger.log(`Error stack: ${error.stack}`);
     return {
       success: false,
       error: error.message,
@@ -1145,10 +989,7 @@ function updateProductDirect(productId, payload, accessToken, basePath, fieldDef
     productId = Number(productId);
     
     // Enhanced logging for debugging
-    Logger.log(`updateProductDirect called for product ${productId}`);
-    Logger.log(`Initial payload keys: ${Object.keys(payload).join(', ')}`);
     if (payload.custom_fields) {
-      Logger.log(`Custom fields keys: ${Object.keys(payload.custom_fields).join(', ')}`);
     }
     
     // For products, we need to handle the payload differently
@@ -1175,7 +1016,6 @@ function updateProductDirect(productId, payload, accessToken, basePath, fieldDef
               finalPayload[key] = numValue;
             } else {
               // If it's not a number, skip it (it's probably a category name, not ID)
-              Logger.log(`Skipping category field - value "${payload[key]}" is not a number`);
             }
           } else {
             finalPayload[key] = null;
@@ -1188,7 +1028,6 @@ function updateProductDirect(productId, payload, accessToken, basePath, fieldDef
               finalPayload[key] = numValue;
             } else {
               // If it's a string like "Mike", skip it - we can't convert names to IDs here
-              Logger.log(`Skipping owner_id field - value "${payload[key]}" is not a number`);
             }
           }
         } else if (key === 'prices') {
@@ -1202,7 +1041,6 @@ function updateProductDirect(productId, payload, accessToken, basePath, fieldDef
               price: Number(payload[key]) || 0,
               currency: 'USD' // Default currency, should be configurable
             }];
-            Logger.log(`Converted single price value to array: ${JSON.stringify(finalPayload[key])}`);
           }
         } else {
           finalPayload[key] = payload[key];
@@ -1212,7 +1050,6 @@ function updateProductDirect(productId, payload, accessToken, basePath, fieldDef
     
     // If there are custom fields, add them at root level
     if (payload.custom_fields) {
-      Logger.log(`Processing custom fields for product update`);
       
       // Process time range fields first
       const timeRangePairs = {};
@@ -1222,7 +1059,6 @@ function updateProductDirect(productId, payload, accessToken, basePath, fieldDef
         if (key.endsWith('_until')) {
           const baseKey = key.replace(/_until$/, '');
           timeRangePairs[baseKey] = key;
-          Logger.log(`Identified time range pair: ${baseKey} -> ${key}`);
         }
       }
       
@@ -1242,11 +1078,9 @@ function updateProductDirect(productId, payload, accessToken, basePath, fieldDef
                 (String(value).includes('T') && !String(value).includes('1899-12-30'))) {
               // It's a date
               finalPayload[key] = formatDateValue(value);
-              Logger.log(`Formatted date field ${key}: ${value} -> ${finalPayload[key]}`);
             } else {
               // It's a time
               finalPayload[key] = formatTimeValue(value);
-              Logger.log(`Formatted time field ${key}: ${value} -> ${finalPayload[key]}`);
             }
           } else {
             finalPayload[key] = value;
@@ -1254,7 +1088,6 @@ function updateProductDirect(productId, payload, accessToken, basePath, fieldDef
         } else {
           // Regular custom field
           finalPayload[key] = value;
-          Logger.log(`Added custom field ${key}: ${value}`);
         }
       }
       
@@ -1265,10 +1098,8 @@ function updateProductDirect(productId, payload, accessToken, basePath, fieldDef
         // If we have one but not the other, copy the value
         if (finalPayload[baseKey] && !finalPayload[untilKey]) {
           finalPayload[untilKey] = finalPayload[baseKey];
-          Logger.log(`Added missing end time for ${untilKey} using start time value: ${finalPayload[untilKey]}`);
         } else if (!finalPayload[baseKey] && finalPayload[untilKey]) {
           finalPayload[baseKey] = finalPayload[untilKey];
-          Logger.log(`Added missing start time for ${baseKey} using end time value: ${finalPayload[baseKey]}`);
         }
       }
     }
@@ -1282,10 +1113,8 @@ function updateProductDirect(productId, payload, accessToken, basePath, fieldDef
     
     // Create URL for the request
     const productUrl = `${basePath}/products/${productId}`;
-    Logger.log(`Direct API: Using URL: ${productUrl}`);
     
     // Log the complete final payload
-    Logger.log(`FINAL API PAYLOAD: ${JSON.stringify(processedPayload)}`);
 
     // Create fetch options
     const options = {
@@ -1300,26 +1129,16 @@ function updateProductDirect(productId, payload, accessToken, basePath, fieldDef
     };
     
     // Make the API request
-    Logger.log(`API request parameters: ${JSON.stringify({
-      id: productId,
-      entityType: 'products',
-      apiBasePath: basePath,
-      accessToken: accessToken.substring(0, 5) + '...'
-    })}`);
     
     // Fetch data from Pipedrive API
     const response = UrlFetchApp.fetch(productUrl, options);
     const responseCode = response.getResponseCode();
-    Logger.log(`Direct API call response code: ${responseCode}`);
     
     // Parse the response
     const responseData = JSON.parse(response.getContentText());
-    Logger.log(`Direct API response: ${JSON.stringify(responseData)}`);
     
     return responseData;
   } catch (error) {
-    Logger.log(`Error in updateProductDirect: ${error.message}`);
-    Logger.log(`Error stack: ${error.stack}`);
     return {
       success: false,
       error: error.message,

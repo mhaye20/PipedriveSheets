@@ -21,7 +21,6 @@ UI.showError = function(message) {
     const ui = SpreadsheetApp.getUi();
     ui.alert('Error', message, ui.ButtonSet.OK);
   } catch (error) {
-    Logger.log('Error showing error dialog: ' + error.message);
   }
 };
 
@@ -47,7 +46,6 @@ UI.processTemplate = function(template, data) {
       const value = UI.evalInContext(variable, data) || '';
       return value;
     } catch (e) {
-      Logger.log('Error processing variable: ' + e.message);
       return '';
     }
   });
@@ -80,7 +78,6 @@ UI.processIfElse = function(template, data) {
       
       return conditionResult ? ifContent : elseContent;
     } catch (e) {
-      Logger.log('Error processing if condition: ' + e.message);
       return '';
     }
   });
@@ -131,7 +128,6 @@ UI.processForEach = function(template, data) {
               return UI.evalInContext(varName, itemContext) || '';
             }
           } catch (e) {
-            Logger.log('Error in foreach variable replacement: ' + e.message);
             return '';
           }
         });
@@ -139,7 +135,6 @@ UI.processForEach = function(template, data) {
         return itemContent;
       }).join('');
     } catch (e) {
-      Logger.log('Error processing foreach: ' + e.message);
       return '';
     }
   });
@@ -172,7 +167,6 @@ UI.evalInContext = function(expr, context) {
     const evaluator = new Function(...keys, `return ${expr};`);
     return evaluator(...values);
   } catch (e) {
-    Logger.log('Error evaluating expression: ' + e.message);
     return null;
   }
 };
@@ -187,7 +181,6 @@ UI.evalPropertyPath = function(obj, path) {
   try {
     return path.split('.').reduce((o, p) => o && o[p], obj);
   } catch (e) {
-    Logger.log('Error evaluating property path: ' + e.message);
     return undefined;
   }
 };

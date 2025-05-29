@@ -9,7 +9,22 @@
       "Bash(clasp push:*)",
       "Bash(rg:*)",
       "Bash(curl:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(chmod:*)",
+      "Bash(./cleanup-logging.sh:*)",
+      "Bash(rm:*)",
+      "Bash(node:*)",
+      "Bash(for file in dist/*.js)",
+      "Bash(do echo \"Checking $file\")",
+      "Bash(echo:*)",
+      "Bash(done)",
+      "Bash(do echo -n \"Checking $file... \")",
+      "Bash(for file in *.js)",
+      "Bash(do if ! node -c \"$file\")",
+      "Bash(then echo \"$file has syntax error\")",
+      "Bash(fi)",
+      "Bash(./fix-orphaned-logs.sh:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": []
   }

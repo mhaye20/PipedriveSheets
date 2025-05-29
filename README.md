@@ -1,4 +1,4 @@
-# Pipedrive for Google Sheets
+# PipedriveSheets
 
 A Google Sheets Add-on that connects to Pipedrive CRM and syncs data between your spreadsheets and Pipedrive.
 
@@ -16,7 +16,7 @@ A Google Sheets Add-on that connects to Pipedrive CRM and syncs data between you
 ### From Google Workspace Marketplace
 
 1. Visit the [Google Workspace Marketplace](https://workspace.google.com/marketplace) (will be available after approval)
-2. Search for "Pipedrive for Sheets"
+2. Search for "PipedriveSheets"
 3. Click "Install" and follow the prompts
 
 ### Manual Installation
@@ -71,9 +71,7 @@ To contribute or modify:
 
 ## Versioning
 
-- **Version 1.0.0**: Initial release with basic sync functionality
-- **Version 1.0.1**: Added team collaboration features
-- **Version 1.1.0**: Added two-way sync capability
+- **Version 1.0.0**: Initial release with team collaboration features and two-way sync capability
 
 ## License
 
@@ -81,7 +79,7 @@ Apache License 2.0
 
 ## Support
 
-For support or feature requests, please contact [your-email@example.com](mailto:your-email@example.com)
+For support or feature requests, please contact [support@pipedrivesheets](mailto:support@pipedrivesheets)
 
 ## Project Structure
 

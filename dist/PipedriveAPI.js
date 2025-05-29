@@ -43,17 +43,14 @@ function makeAuthenticatedRequest(url, options = {}) {
   };
   
   try {
-    Logger.log(`Making authenticated request to: ${url}`);
     const response = UrlFetchApp.fetch(url, requestOptions);
     const statusCode = response.getResponseCode();
     const responseText = response.getContentText();
     
     // Log response details for debugging
-    Logger.log(`Response status code: ${statusCode}`);
     
     // Handle different status codes
     if (statusCode === 401) {
-      Logger.log('Received 401 Unauthorized, attempting to refresh token...');
       // Try to refresh the token
       if (refreshAccessTokenIfNeeded()) {
         // Get the new token
@@ -108,12 +105,9 @@ function makeAuthenticatedRequest(url, options = {}) {
       } else {
         // Handle error response
         const errorMessage = responseData.error || `API request failed with status ${statusCode}`;
-        Logger.log(`Pipedrive API error: ${errorMessage}`);
         throw new Error(errorMessage);
       }
     } catch (parseError) {
-      Logger.log(`Error parsing response as JSON: ${parseError.message}`);
-      Logger.log(`Response text: ${responseText}`);
       
       // If we got HTML instead of JSON, it's likely an authentication issue
       if (responseText.includes('<!DOCTYPE html>')) {
@@ -123,7 +117,6 @@ function makeAuthenticatedRequest(url, options = {}) {
       throw new Error(`Invalid response from Pipedrive API: ${responseText.substring(0, 100)}...`);
     }
   } catch (error) {
-    Logger.log(`Error in makeAuthenticatedRequest: ${error.message}`);
     throw error;
   }
 }
@@ -199,7 +192,6 @@ function searchPersonsByName(names) {
             if (item.item && item.item.name && item.item.name.toLowerCase() === searchTerm.toLowerCase()) {
               nameToIdMap[name] = item.item.id;
               found = true;
-              Logger.log(`Found exact match for "${name}": Person ID ${item.item.id}`);
               break;
             }
           }
@@ -207,19 +199,15 @@ function searchPersonsByName(names) {
           // If no exact match, use the first result
           if (!found && response.data.items.length > 0 && response.data.items[0].item) {
             nameToIdMap[name] = response.data.items[0].item.id;
-            Logger.log(`Using first match for "${name}": Person ID ${response.data.items[0].item.id} (${response.data.items[0].item.name})`);
           } else if (!found) {
-            Logger.log(`No person found for name: ${name}`);
           }
         }
       } catch (searchError) {
-        Logger.log(`Error searching for person "${name}": ${searchError.message}`);
       }
     }
     
     return nameToIdMap;
   } catch (error) {
-    Logger.log(`Error in searchPersonsByName: ${error.message}`);
     return {};
   }
 }
@@ -232,7 +220,6 @@ function searchPersonsByName(names) {
  */
 function buildEntityMappings(items, entityType) {
   try {
-    Logger.log(`Building entity mappings for ${entityType}...`);
     
     const mappings = {
       personIdToName: {},
@@ -306,7 +293,6 @@ function buildEntityMappings(items, entityType) {
       }
     }
     
-    Logger.log(`Pre-mapped: ${Object.keys(mappings.personIdToName).length} persons, ${Object.keys(mappings.orgIdToName).length} orgs, ${Object.keys(mappings.dealIdToTitle).length} deals, ${Object.keys(mappings.userIdToName).length} users`);
     
     // Fetch missing entity names in batches
     const batchFetchPromises = [];
@@ -335,11 +321,9 @@ function buildEntityMappings(items, entityType) {
       batchFetchPromises.push(batchFetchEntities('users', missingUserIds, mappings.userIdToName, 'name'));
     }
     
-    Logger.log(`Final mappings: ${Object.keys(mappings.personIdToName).length} persons, ${Object.keys(mappings.orgIdToName).length} orgs, ${Object.keys(mappings.dealIdToTitle).length} deals, ${Object.keys(mappings.userIdToName).length} users`);
     
     return mappings;
   } catch (error) {
-    Logger.log(`Error building entity mappings: ${error.message}`);
     return {
       personIdToName: {},
       orgIdToName: {},
@@ -360,7 +344,6 @@ function buildEntityMappings(items, entityType) {
  */
 function batchFetchEntities(entityType, ids, mapping, nameField) {
   try {
-    Logger.log(`Fetching ${ids.length} ${entityType} names...`);
     
     const batchSize = 100;
     for (let i = 0; i < ids.length; i += batchSize) {
@@ -377,11 +360,9 @@ function batchFetchEntities(entityType, ids, mapping, nameField) {
           }
         }
       } catch (e) {
-        Logger.log(`Error fetching ${entityType} names for batch: ${e.message}`);
       }
     }
   } catch (error) {
-    Logger.log(`Error in batchFetchEntities: ${error.message}`);
   }
 }
 
@@ -416,7 +397,6 @@ function searchEntitiesByName(entityType, names) {
             if (item.item && itemName && itemName.toLowerCase() === searchTerm.toLowerCase()) {
               nameToIdMap[name] = item.item.id;
               found = true;
-              Logger.log(`Found exact match for "${name}": ${entityType} ID ${item.item.id}`);
               break;
             }
           }
@@ -425,19 +405,15 @@ function searchEntitiesByName(entityType, names) {
           if (!found && response.data.items.length > 0 && response.data.items[0].item) {
             nameToIdMap[name] = response.data.items[0].item.id;
             const itemName = response.data.items[0].item.name || response.data.items[0].item.title;
-            Logger.log(`Using first match for "${name}": ${entityType} ID ${response.data.items[0].item.id} (${itemName})`);
           } else if (!found) {
-            Logger.log(`No ${entityType} found for name: ${name}`);
           }
         }
       } catch (searchError) {
-        Logger.log(`Error searching for ${entityType} "${name}": ${searchError.message}`);
       }
     }
     
     return nameToIdMap;
   } catch (error) {
-    Logger.log(`Error in searchEntitiesByName: ${error.message}`);
     return {};
   }
 }
@@ -497,20 +473,17 @@ function getFilteredDataFromPipedrive(entityType, filterId, limit = 100) {
           hasMore = false;
         }
       } else {
-        Logger.log(`Failed to retrieve ${entityType}: ${responseData.error}`);
         hasMore = false;
       }
     }
     
     // Log completion status for large datasets
     if (allItems.length > 100) {
-      Logger.log(`Retrieved ${allItems.length} ${entityType} from Pipedrive filter`);
       SpreadsheetApp.getActiveSpreadsheet().toast(`Retrieved ${allItems.length} ${entityType} from Pipedrive filter. Preparing data for the sheet...`);
     }
     
     return allItems;
   } catch (error) {
-    Logger.log(`Error retrieving ${entityType}: ${error.message}`);
     return [];
   }
 }
@@ -559,7 +532,6 @@ function getActivityFields(forceRefresh = false) {
 function getLeadFields(forceRefresh = false) {
   // Leads don't have their own custom fields - they inherit from deals
   // So we need to get deal fields and return them for leads
-  Logger.log('Getting lead fields - using deal fields as leads inherit from deals');
   return getEntityFields('dealFields', forceRefresh);
 }
 
@@ -578,29 +550,23 @@ function getLeadLabels(forceRefresh = false) {
     if (cachedData) {
       try {
         const labels = JSON.parse(cachedData);
-        Logger.log(`Retrieved ${labels.length} lead labels from cache`);
         return labels;
       } catch (e) {
-        Logger.log('Failed to parse cached lead labels');
       }
     }
   }
   
   try {
-    Logger.log('Fetching lead labels from Pipedrive API');
     const response = makePipedriveRequest('leadLabels');
     
     if (response && response.data) {
       // Cache for 1 hour
       cache.put(cacheKey, JSON.stringify(response.data), 3600);
-      Logger.log(`Retrieved ${response.data.length} lead labels from API`);
       return response.data;
     } else {
-      Logger.log('No lead labels data in response');
       return [];
     }
   } catch (e) {
-    Logger.log(`Error fetching lead labels: ${e.message}`);
     return [];
   }
 }
@@ -634,7 +600,6 @@ function getFilteredEntityData(entityType, filterId, limit = 0) {
     
     return items;
   } catch (e) {
-    Logger.log(`Error getting ${entityType} data: ${e.message}`);
     throw new Error(`Failed to get ${entityType} data: ${e.message}`);
   }
 }
@@ -697,7 +662,6 @@ function getAllItemsWithPagination(endpoint, limit = 0) {
     
     return allItems;
   } catch (e) {
-    Logger.log(`Error in getAllItemsWithPagination: ${e.message}`);
     throw e;
   }
 }
@@ -729,24 +693,20 @@ function getEntityFields(fieldEndpoint, forceRefresh = false) {
           const oneHour = 60 * 60 * 1000; // 1 hour in milliseconds
           
           if (currentTime - cacheTime < oneHour && cachedData && cachedData.length > 0) {
-            Logger.log(`Using cached ${fieldEndpoint} data (${cachedData.length} fields)`);
             return cachedData;
           }
         }
       } catch (cacheError) {
-        Logger.log(`Error parsing cached ${fieldEndpoint} data: ${cacheError.message}`);
         // Cache error is non-fatal, continue to fetch new data
       }
     }
     
     // Make the request to get the fields
-    Logger.log(`Fetching ${fieldEndpoint} from Pipedrive API`);
     const response = makePipedriveRequest(fieldEndpoint);
     
     if (response.success && response.data) {
       // If the data exists but is empty, that's a problem
       if (!response.data.length) {
-        Logger.log(`Warning: ${fieldEndpoint} returned empty data array. This may indicate an API issue.`);
       }
       
       // Cache the response for future use
@@ -756,23 +716,19 @@ function getEntityFields(fieldEndpoint, forceRefresh = false) {
       return response.data;
     }
     
-    Logger.log(`API response for ${fieldEndpoint} was unsuccessful or missing data`);
     
     // If we have cached data, use it as a fallback
     if (cachedDataJson) {
       try {
         const cachedData = JSON.parse(cachedDataJson);
-        Logger.log(`Using cached ${fieldEndpoint} data as fallback`);
         return cachedData;
       } catch (e) {
-        Logger.log(`Error parsing cached ${fieldEndpoint} fallback data: ${e.message}`);
       }
     }
     
     // Return empty array as last resort
     return [];
   } catch (e) {
-    Logger.log(`Error getting field definitions for ${fieldEndpoint}: ${e.message}`);
     
     // Check if we have cached data to use as fallback
     try {
@@ -782,11 +738,9 @@ function getEntityFields(fieldEndpoint, forceRefresh = false) {
       
       if (cachedDataJson) {
         const cachedData = JSON.parse(cachedDataJson);
-        Logger.log(`Using cached ${fieldEndpoint} data as fallback after error`);
         return cachedData;
       }
     } catch (cacheError) {
-      Logger.log(`Error accessing cache after API failure: ${cacheError.message}`);
     }
     
     // If all else fails, return empty array
@@ -800,7 +754,6 @@ function getEntityFields(fieldEndpoint, forceRefresh = false) {
  */
 function getPipedriveFilters() {
   try {
-    Logger.log('Getting filters from Pipedrive');
     
     // Get script properties
     const scriptProperties = PropertiesService.getScriptProperties();
@@ -826,11 +779,9 @@ function getPipedriveFilters() {
     const statusCode = response.getResponseCode();
     const responseText = response.getContentText();
     
-    Logger.log(`Filter API response code: ${statusCode}`);
     
     // Handle different status codes
     if (statusCode === 401) {
-      Logger.log('Received 401 Unauthorized, attempting to refresh token...');
       // Try to refresh the token
       if (refreshAccessTokenIfNeeded()) {
         // Get the new token
@@ -860,12 +811,10 @@ function getPipedriveFilters() {
         if (retryStatusCode >= 200 && retryStatusCode < 300 && retryData.success) {
           // Enhance filters with their type in human-readable form
           const filters = retryData.data || [];
-          Logger.log(`Retrieved ${filters.length} filters from Pipedrive`);
           
           filters.forEach(filter => {
             filter.typeFormatted = formatFilterType(filter.type);
             filter.normalizedType = normalizeFilterType(filter.type);
-            Logger.log(`Filter: ${filter.name}, Type: ${filter.type}, Normalized: ${filter.normalizedType}`);
           });
           
           return filters;
@@ -885,18 +834,14 @@ function getPipedriveFilters() {
       
       // Enhance filters with their type in human-readable form
       const filters = responseData.data || [];
-      Logger.log(`Retrieved ${filters.length} filters from Pipedrive`);
       
       filters.forEach(filter => {
         filter.typeFormatted = formatFilterType(filter.type);
         filter.normalizedType = normalizeFilterType(filter.type);
-        Logger.log(`Filter: ${filter.name}, Type: ${filter.type}, Normalized: ${filter.normalizedType}`);
       });
       
       return filters;
     } catch (parseError) {
-      Logger.log(`Error parsing response as JSON: ${parseError.message}`);
-      Logger.log(`Response text: ${responseText}`);
       
       if (responseText.includes('<!DOCTYPE html>')) {
         throw new Error('Authentication error. Please reconnect to Pipedrive.');
@@ -905,7 +850,6 @@ function getPipedriveFilters() {
       throw new Error(`Invalid response from Pipedrive API: ${responseText.substring(0, 100)}...`);
     }
   } catch (e) {
-    Logger.log(`Error in getPipedriveFilters: ${e.message}`);
     throw e;
   }
 }
@@ -972,7 +916,6 @@ function normalizeFilterType(type) {
     case 'leads':
       return ENTITY_TYPES.LEADS;
     default:
-      Logger.log(`Unknown filter type: ${type}`);
       return lowerType;
   }
 }
@@ -984,7 +927,6 @@ function normalizeFilterType(type) {
  */
 function getFiltersForEntityType(entityType) {
   try {
-    Logger.log(`Getting filters for entity type: ${entityType}`);
     
     // Get script properties
     const scriptProperties = PropertiesService.getScriptProperties();
@@ -1010,11 +952,9 @@ function getFiltersForEntityType(entityType) {
     const statusCode = response.getResponseCode();
     const responseText = response.getContentText();
     
-    Logger.log(`Filter API response code: ${statusCode}`);
     
     // Handle different status codes
     if (statusCode === 401) {
-      Logger.log('Received 401 Unauthorized, attempting to refresh token...');
       // Try to refresh the token
       if (refreshAccessTokenIfNeeded()) {
         // Get the new token
@@ -1043,17 +983,14 @@ function getFiltersForEntityType(entityType) {
         const retryData = JSON.parse(retryResponseText);
         if (retryStatusCode >= 200 && retryStatusCode < 300 && retryData.success) {
           const filters = retryData.data || [];
-          Logger.log(`Retrieved ${filters.length} total filters`);
           
           // Filter based on normalized type matching the requested entity type
           const matchingFilters = filters.filter(filter => {
             const normalizedType = normalizeFilterType(filter.type);
             const isMatch = normalizedType === entityType;
-            Logger.log(`Filter: ${filter.name}, Type: ${filter.type}, Normalized: ${normalizedType}, Matches ${entityType}: ${isMatch}`);
             return isMatch;
           });
           
-          Logger.log(`Found ${matchingFilters.length} matching filters for ${entityType}`);
           return matchingFilters;
         }
       }
@@ -1070,21 +1007,16 @@ function getFiltersForEntityType(entityType) {
       }
       
       const filters = responseData.data || [];
-      Logger.log(`Retrieved ${filters.length} total filters`);
       
       // Filter based on normalized type matching the requested entity type
       const matchingFilters = filters.filter(filter => {
         const normalizedType = normalizeFilterType(filter.type);
         const isMatch = normalizedType === entityType;
-        Logger.log(`Filter: ${filter.name}, Type: ${filter.type}, Normalized: ${normalizedType}, Matches ${entityType}: ${isMatch}`);
         return isMatch;
       });
       
-      Logger.log(`Found ${matchingFilters.length} matching filters for ${entityType}`);
       return matchingFilters;
     } catch (parseError) {
-      Logger.log(`Error parsing response as JSON: ${parseError.message}`);
-      Logger.log(`Response text: ${responseText}`);
       
       if (responseText.includes('<!DOCTYPE html>')) {
         throw new Error('Authentication error. Please reconnect to Pipedrive.');
@@ -1093,7 +1025,6 @@ function getFiltersForEntityType(entityType) {
       throw new Error(`Invalid response from Pipedrive API: ${responseText.substring(0, 100)}...`);
     }
   } catch (e) {
-    Logger.log(`Error in getFiltersForEntityType: ${e.message}`);
     throw new Error(`Failed to get filters for ${entityType}: ${e.message}`);
   }
 }
@@ -1116,7 +1047,6 @@ function getFieldDefinitionsMap(entityType, forceRefresh = false) {
     case ENTITY_TYPES.LEADS: endpoint = 'dealFields'; break; // Leads inherit custom fields from deals
     case ENTITY_TYPES.PRODUCTS: endpoint = 'productFields'; break;
     default:
-      Logger.log(`Unknown entity type for field definitions: ${entityType}`);
       return {};
   }
   
@@ -1130,10 +1060,8 @@ function getFieldDefinitionsMap(entityType, forceRefresh = false) {
         }
       });
     }
-    Logger.log(`Created field definition map with ${Object.keys(fieldMap).length} entries for ${entityType}`);
     return fieldMap;
   } catch (e) {
-    Logger.log(`Error creating field definition map for ${entityType}: ${e.message}`);
     return {}; // Return empty map on error
   }
 }
@@ -1200,16 +1128,13 @@ function getFieldOptionMappingsForEntity(entityType) {
               mappings['label_ids'][label.id] = label.name;
             }
           });
-          Logger.log(`Added ${leadLabels.length} lead label mappings`);
         }
       } catch (e) {
-        Logger.log(`Error getting lead labels for mapping: ${e.message}`);
       }
     }
     
     return mappings;
   } catch (e) {
-    Logger.log(`Error getting field option mappings: ${e.message}`);
     return {};
   }
 }
@@ -1255,7 +1180,6 @@ function makePipedriveRequest(endpoint, options = {}) {
     } else {
       // If we got a 401, try to refresh the token and retry
       if (statusCode === 401) {
-        Logger.log('Received 401 Unauthorized, attempting to refresh token and retry...');
         
         // Force token refresh
         scriptProperties.deleteProperty('PIPEDRIVE_TOKEN_EXPIRES');
@@ -1267,11 +1191,9 @@ function makePipedriveRequest(endpoint, options = {}) {
       
       // Handle error response
       const errorMessage = responseData.error || `API request failed with status code ${statusCode}`;
-      Logger.log(`Pipedrive API error (${endpoint}): ${errorMessage}`);
       throw new Error(errorMessage);
     }
   } catch (error) {
-    Logger.log(`Error in makePipedriveRequest: ${error.message}`);
     throw error;
   }
 }
@@ -1282,19 +1204,15 @@ function makePipedriveRequest(endpoint, options = {}) {
  * @return {Object} Mapping of custom field keys to field names
  */
 function getCustomFieldMappings(entityType) {
-  Logger.log(`Getting custom field mappings for ${entityType}`);
 
   let customFields = getCustomFieldsForEntity(entityType);
   const map = {};
 
-  Logger.log(`Retrieved ${customFields.length} custom fields for ${entityType}`);
 
   customFields.forEach(field => {
     map[field.key] = field.name;
     // Log each mapping for debugging
-    Logger.log(`Custom field mapping: ${field.key} => ${field.name}`);
   });
-  Logger.log(`Total custom field mappings: ${Object.keys(map).length}`);
 
   return map;
 }
@@ -1308,7 +1226,6 @@ function getCustomFieldsForEntity(entityType) {
   try {
     // Ensure we have a valid token
     if (!refreshAccessTokenIfNeeded()) {
-      Logger.log('Not authenticated with Pipedrive');
       return [];
     }
     
@@ -1316,7 +1233,6 @@ function getCustomFieldsForEntity(entityType) {
     const accessToken = scriptProperties.getProperty('PIPEDRIVE_ACCESS_TOKEN');
     
     if (!accessToken) {
-      Logger.log('No OAuth access token found');
       return [];
     }
     
@@ -1343,7 +1259,6 @@ function getCustomFieldsForEntity(entityType) {
         endpoint = 'productFields';
         break;
       default:
-        Logger.log(`Unknown entity type: ${entityType}`);
         return [];
     }
     
@@ -1362,24 +1277,20 @@ function getCustomFieldsForEntity(entityType) {
     const responseCode = response.getResponseCode();
     
     if (responseCode !== 200) {
-      Logger.log(`Error fetching custom fields: ${responseCode}`);
       return [];
     }
     
     const result = JSON.parse(response.getContentText());
     
     if (!result.success) {
-      Logger.log(`API returned error: ${result.error || 'Unknown error'}`);
       return [];
     }
     
     // Extract only custom fields
     const customFields = result.data.filter(field => field.edit_flag);
-    Logger.log(`Found ${customFields.length} custom fields for ${entityType}`);
     
     return customFields;
   } catch (e) {
-    Logger.log(`Error in getCustomFieldsForEntity: ${e.message}`);
     return [];
   }
 }

@@ -95,11 +95,9 @@ function checkAnyUserAccess(userEmail) {
     try {
       const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
       if (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED) {
-        Logger.log(`${userEmail} is the script owner, granting access`);
         return true;
       }
     } catch (e) {
-      Logger.log(`Error checking script owner: ${e.message}`);
     }
     
     // APPROACH 2: Check email map in document properties
@@ -112,28 +110,22 @@ function checkAnyUserAccess(userEmail) {
         
         // Simplified check - just use lowercase consistently
         if (emailMap[userEmail.toLowerCase()]) {
-          Logger.log(`${userEmail} found in email map`);
           return true;
         }
       }
     } catch (mapError) {
-      Logger.log(`Error checking email map: ${mapError.message}`);
     }
     
     // APPROACH 3: Direct check of teams data
     try {
       if (isUserInTeam(userEmail)) {
-        Logger.log(`${userEmail} found in team members list`);
         return true;
       }
     } catch (teamError) {
-      Logger.log(`Error checking teams data: ${teamError.message}`);
     }
     
-    Logger.log(`${userEmail} not found in any access list`);
     return false;
   } catch (e) {
-    Logger.log(`Error in checkAnyUserAccess: ${e.message}`);
     return false;
   }
 }
@@ -147,7 +139,6 @@ function forceTeamMembershipCheck(userEmail) {
   try {
     if (!userEmail) return false;
     
-    Logger.log(`Force checking team membership for: ${userEmail}`);
     
     // Try getting from document properties directly
     const docProps = PropertiesService.getDocumentProperties();
@@ -155,10 +146,8 @@ function forceTeamMembershipCheck(userEmail) {
     
     if (emailToTeamMapStr) {
       const emailToTeamMap = JSON.parse(emailToTeamMapStr);
-      Logger.log(`Current email map: ${JSON.stringify(emailToTeamMap)}`);
       
       if (emailToTeamMap[userEmail.toLowerCase()]) {
-        Logger.log(`User found in email map, creating Pipedrive menu`);
         return true;
       }
     }
@@ -172,16 +161,13 @@ function forceTeamMembershipCheck(userEmail) {
       // Case-insensitive check
       for (let i = 0; i < memberEmails.length; i++) {
         if (memberEmails[i].toLowerCase() === userEmail.toLowerCase()) {
-          Logger.log(`User found in team ${teamId}, creating Pipedrive menu`);
           return true;
         }
       }
     }
     
-    Logger.log(`User ${userEmail} not found in any team`);
     return false;
   } catch (e) {
-    Logger.log(`Error in forceTeamMembershipCheck: ${e.message}`);
     return false;
   }
 }
@@ -200,22 +186,18 @@ function hasVerifiedTeamAccess() {
     try {
       const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
       if (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED) {
-        Logger.log(`User ${userEmail} is the script owner/installer, granting full access`);
         return true;
       }
     } catch (e) {
-      Logger.log(`Error checking if user is script owner: ${e.message}`);
     }
     
     // Directly check if user is in a team
     if (isUserInTeam(userEmail)) {
-      Logger.log(`User ${userEmail} found in teams data`);
       return true;
     }
     
     return false;
   } catch (e) {
-    Logger.log(`Error in hasVerifiedTeamAccess: ${e.message}`);
     return false;
   }
 }
@@ -229,11 +211,9 @@ function preloadVerifiedUsers() {
     // Basic check to ensure teams data is available
     const teamsData = getTeamsData();
     if (teamsData) {
-      Logger.log('Teams data preloaded successfully');
     }
     return true;
   } catch (e) {
-    Logger.log(`Error in preloadVerifiedUsers: ${e.message}`);
     return false;
   }
 }
@@ -260,14 +240,12 @@ function verifyTeamAccess() {
           // Update the email-to-team map to ensure persistence between sessions
           updateEmailToTeamMap();
           // Also store in cache for faster lookup
-          Logger.log(`Added ${userEmail} to verified users list`);
         }
         
         // Store verification status in user properties for future sessions
         const userProperties = PropertiesService.getUserProperties();
         userProperties.setProperty('VERIFIED_TEAM_MEMBER', 'true');
       } catch (e) {
-        Logger.log(`Error adding to verified users: ${e.message}`);
       }
       
       // Show success with forced reload
@@ -298,7 +276,6 @@ function verifyTeamAccess() {
     // Show team join dialog for non-members
     showTeamJoinRequest();
   } catch (e) {
-    Logger.log(`Error in verifyTeamAccess: ${e.message}`);
     ui.alert('Error', 'An error occurred: ' + e.message, ui.ButtonSet.OK);
   }
 }
@@ -325,7 +302,6 @@ function refreshMenuAfterVerification() {
     );
     return true;
   } catch (e) {
-    Logger.log(`Error refreshing menu: ${e.message}`);
     return false;
   }
 }
@@ -359,9 +335,7 @@ function checkAndVerifyTeamMembership() {
           docProps.setProperty('VERIFIED_TEAM_USERS', JSON.stringify(verifiedUsers));
         }
         
-        Logger.log(`User ${userEmail} verified successfully`);
       } catch (e) {
-        Logger.log(`Error setting verification properties: ${e.message}`);
       }
       
       return { success: true };
@@ -369,7 +343,6 @@ function checkAndVerifyTeamMembership() {
       return { success: false, error: 'You are not a member of any team. Please join a team first.' };
     }
   } catch (e) {
-    Logger.log(`Error verifying team membership: ${e.message}`);
     return { success: false, error: e.message };
   }
 }
@@ -383,7 +356,6 @@ function showTeamJoinRequest() {
     showTeamManager(true); // Show team manager in join-only mode
   } else {
     // This is a fallback but the UI.gs implementation should be used
-    Logger.log('Delegating to UI.gs showTeamJoinRequest');
     UI.showTeamJoinRequest();
   }
 }
@@ -409,7 +381,6 @@ function isUserInTeam(email) {
           return true;
         }
       } catch (e) {
-        Logger.log('Error parsing email map: ' + e.message);
       }
     }
     
@@ -431,7 +402,6 @@ function isUserInTeam(email) {
     
     return false;
   } catch (e) {
-    Logger.log('Error in isUserInTeam: ' + e.message);
     return false;
   }
 } 

@@ -20,10 +20,8 @@ function initializePipedriveClient(apiToken, basePath = null) {
       const subdomain = scriptProperties.getProperty('PIPEDRIVE_SUBDOMAIN');
       if (subdomain) {
         basePath = `https://${subdomain}.pipedrive.com/v1`;
-        Logger.log(`Using subdomain for API base path: ${basePath}`);
       } else {
         basePath = 'https://api.pipedrive.com/v1';
-        Logger.log(`No subdomain found, using default API base path: ${basePath}`);
       }
     }
     
@@ -34,7 +32,6 @@ function initializePipedriveClient(apiToken, basePath = null) {
       basePath: basePath
     });
     
-    Logger.log(`Created API configuration with basePath: ${basePath}`);
     
     // Create a map to hold API clients
     const apiClients = {};
@@ -42,7 +39,6 @@ function initializePipedriveClient(apiToken, basePath = null) {
     // Setup polyfills from AppLib if available
     if (getNpmPackageHelpers() && getNpmPackageHelpers().setupPolyfills) {
       getNpmPackageHelpers().setupPolyfills();
-      Logger.log('Called setupPolyfills from AppLib');
     } else {
       setupPolyfills();
     }
@@ -57,7 +53,6 @@ function initializePipedriveClient(apiToken, basePath = null) {
     
     return apiClients;
   } catch (error) {
-    Logger.log(`Error initializing Pipedrive client: ${error.message}`);
     throw error;
   }
 }
@@ -78,13 +73,11 @@ function createFixedApiClient(apiName, pipedriveLib, config) {
     }
     
     const apiClient = new ApiClass(config);
-    Logger.log(`Created ${apiName} client`);
     
     // Apply custom adapter to fix URL and payload issues
     if (apiClient.axios && apiClient.axios.defaults) {
       const customAdapter = createGASAdapter();
       apiClient.axios.defaults.adapter = customAdapter;
-      Logger.log(`Applied custom adapter to ${apiName}`);
     }
     
     // Fix update method based on API type
@@ -114,7 +107,6 @@ function createFixedApiClient(apiName, pipedriveLib, config) {
     
     return apiClient;
   } catch (error) {
-    Logger.log(`Error creating fixed API client for ${apiName}: ${error.message}`);
     throw error;
   }
 }
@@ -127,7 +119,6 @@ function createFixedApiClient(apiName, pipedriveLib, config) {
  */
 function fixUpdateMethod(apiClient, methodName, entityPath) {
   if (!apiClient[methodName]) {
-    Logger.log(`Method ${methodName} not found on API client`);
     return;
   }
   
@@ -149,7 +140,6 @@ function fixUpdateMethod(apiClient, methodName, entityPath) {
         throw new Error(`No body provided in ${methodName} parameters`);
       }
       
-      Logger.log(`Enhanced ${methodName} called with ID ${params.id}`);
       
       // Clean up the body payload
       const cleanBody = sanitizePayload(params.body);
@@ -161,7 +151,6 @@ function fixUpdateMethod(apiClient, methodName, entityPath) {
       };
       
       // Log the payload for debugging
-      Logger.log(`Update payload for ${methodName}: ${JSON.stringify(cleanBody).substring(0, 200)}...`);
       
       // Create explicit request options with fixed URL
       const requestOptions = {
@@ -171,15 +160,12 @@ function fixUpdateMethod(apiClient, methodName, entityPath) {
       // Call the original method with our fixed parameters and options
       return await originalMethod.call(apiClient, updatedParams, requestOptions);
     } catch (error) {
-      Logger.log(`Error in enhanced ${methodName}: ${error.message}`);
       if (error.stack) {
-        Logger.log(`Stack trace: ${error.stack}`);
       }
       throw error;
     }
   };
   
-  Logger.log(`Fixed ${methodName} method for better Google Apps Script compatibility`);
 }
 
 /**
@@ -229,7 +215,6 @@ function createGASAdapter() {
   return function gasAdapter(config) {
     return new Promise((resolve, reject) => {
       try {
-        Logger.log('GAS adapter: Processing request');
         
         // Convert axios config to UrlFetchApp options
         const options = {
@@ -242,17 +227,14 @@ function createGASAdapter() {
         // Fix authorization header
         if (config.headers && config.headers['Authorization']) {
           // Auth header already set, keep it
-          Logger.log('Using existing Authorization header');
         } else if (config.headers && config.headers['api_token']) {
           // Using API token as query param (fallback)
-          Logger.log('Using API token from headers');
         }
         
         // Fix URL format - handle '[object Object]' issue
         let finalUrl = config.url;
         if (finalUrl && finalUrl.includes('[object Object]')) {
           finalUrl = finalUrl.split('[object Object]')[0];
-          Logger.log(`Fixed URL format: ${finalUrl}`);
         }
         
         // Add query parameters if any
@@ -276,7 +258,6 @@ function createGASAdapter() {
           // Extract body from {id, body} format
           if (typeof payloadData === 'object' && payloadData.id !== undefined && payloadData.body !== undefined) {
             payloadData = payloadData.body;
-            Logger.log('Extracted body from {id, body} format');
           }
           
           // Always stringify objects for payload
@@ -284,10 +265,8 @@ function createGASAdapter() {
             ? JSON.stringify(payloadData) 
             : String(payloadData);
             
-          Logger.log(`Prepared payload: ${options.payload.substring(0, 200)}...`);
         }
         
-        Logger.log(`Making fetch request to: ${finalUrl}`);
         
         // Make the request
         const response = UrlFetchApp.fetch(finalUrl, options);
@@ -309,12 +288,10 @@ function createGASAdapter() {
           config: config
         };
         
-        Logger.log(`Response status: ${axiosResponse.status}`);
         
         // Resolve the promise
         resolve(axiosResponse);
       } catch (error) {
-        Logger.log(`GAS adapter error: ${error.message}`);
         reject(error);
       }
     });
@@ -332,15 +309,12 @@ function setupPolyfills() {
     // Install polyfills globally
     if (npmHelpers && npmHelpers.getURLPolyfill) {
       global.URL = npmHelpers.getURLPolyfill();
-      Logger.log('URL polyfill installed globally');
     }
     
     if (npmHelpers && npmHelpers.getURLSearchParamsPolyfill) {
       global.URLSearchParams = npmHelpers.getURLSearchParamsPolyfill();
-      Logger.log('URLSearchParams polyfill installed globally');
     }
   } catch (error) {
-    Logger.log(`Error setting up polyfills: ${error.message}`);
   }
 }
 
@@ -355,20 +329,17 @@ function getNpmPackage() {
     if (npmHelpers && npmHelpers.getPipedriveLib) {
       const lib = npmHelpers.getPipedriveLib();
       if (lib) {
-        Logger.log('Got Pipedrive library from npm helpers');
         return lib;
       }
     }
     
     // Fallback to direct import if available
     if (typeof pipedrive !== 'undefined') {
-      Logger.log('Using globally available pipedrive object');
       return pipedrive;
     }
     
     throw new Error('Pipedrive npm package not found');
   } catch (error) {
-    Logger.log(`Error getting npm package: ${error.message}`);
     throw error;
   }
 }
@@ -388,7 +359,6 @@ function getNpmPackageHelpers() {
     }
     return null;
   } catch (error) {
-    Logger.log(`Error getting npm package helpers: ${error.message}`);
     return null;
   }
 }

@@ -78,12 +78,6 @@ const PaymentService = {
         }
       }
       
-      Logger.log('Creating checkout session:');
-      Logger.log('Email: ' + userEmail);
-      Logger.log('User ID: ' + userId);
-      Logger.log('Script ID: ' + ScriptApp.getScriptId());
-      Logger.log('Plan Type: ' + planType);
-      Logger.log('API URL: ' + this.API_URL);
       
       // Get the current spreadsheet URL for proper redirect
       const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -98,7 +92,6 @@ const PaymentService = {
         cancelUrl: spreadsheetUrl + '?upgrade=cancelled'
       };
       
-      Logger.log('Payload: ' + JSON.stringify(payload));
       
       const response = UrlFetchApp.fetch(`${this.API_URL}/create-checkout-session`, {
         method: 'POST',
@@ -109,12 +102,9 @@ const PaymentService = {
         muteHttpExceptions: true // This will return the error response instead of throwing
       });
       
-      Logger.log('Response code: ' + response.getResponseCode());
-      Logger.log('Response text: ' + response.getContentText());
       
       if (response.getResponseCode() !== 200) {
         const errorText = response.getContentText();
-        Logger.log('Error response: ' + errorText);
         
         try {
           const errorData = JSON.parse(errorText);
@@ -127,14 +117,11 @@ const PaymentService = {
       const data = JSON.parse(response.getContentText());
       
       if (!data.checkoutUrl) {
-        Logger.log('No checkout URL in response: ' + JSON.stringify(data));
         throw new Error('No checkout URL returned from server');
       }
       
       return data.checkoutUrl;
     } catch (error) {
-      Logger.log('Error in createCheckoutSession: ' + error.toString());
-      Logger.log('Error stack: ' + error.stack);
       console.error('Error creating checkout session:', error);
       throw error;
     }
@@ -150,23 +137,19 @@ const PaymentService = {
     if (userEmail && isUserInTeam(userEmail)) {
       // User is in a team - check if the team owner has a Team plan
       const userTeam = getUserTeam(userEmail);
-      Logger.log('User team data: ' + JSON.stringify(userTeam));
       
       if (userTeam) {
         const teamsData = getTeamsData();
         const team = teamsData[userTeam.teamId];
-        Logger.log('Team data: ' + JSON.stringify(team));
         
         if (team) {
           // Use createdBy if available, otherwise use first admin as team owner
           const teamOwnerEmail = team.createdBy || (team.adminEmails && team.adminEmails[0]);
           
           if (!teamOwnerEmail) {
-            Logger.log('[hasFeatureAccess] No team owner found for team: ' + userTeam.teamId);
             return false;
           }
           
-          Logger.log('Checking team owner subscription for: ' + teamOwnerEmail);
           // Check cache first for team owner's subscription
           const cache = CacheService.getUserCache();
           const cacheKey = 'team_owner_sub_' + teamOwnerEmail.toLowerCase();
@@ -199,7 +182,6 @@ const PaymentService = {
               
               // Special case: if current user IS the team owner, use their own subscription status
               if (normalizedOwnerEmail === currentUserEmail) {
-                Logger.log('Current user is the team owner, using their subscription status');
                 const currentUserStatus = this.getSubscriptionStatus();
                 
                 if (currentUserStatus.plan === 'team') {
@@ -235,7 +217,6 @@ const PaymentService = {
                 
                 if (response.getResponseCode() === 200) {
                   const ownerData = JSON.parse(response.getContentText());
-                  Logger.log('Team owner subscription data: ' + JSON.stringify(ownerData));
                   
                   // Check if owner has team plan
                   if (ownerData.plan === 'team') {
@@ -247,19 +228,15 @@ const PaymentService = {
                       const cancelDate = new Date(ownerData.cancelAt);
                       const now = new Date();
                       ownerHasTeamPlan = now < cancelDate;
-                      Logger.log('Team owner subscription canceled, valid until: ' + ownerData.cancelAt + ', still valid: ' + ownerHasTeamPlan);
                     }
                   }
                   
                   // Cache the full owner data for use in getCurrentPlan
                   cache.put(cacheKey, JSON.stringify(ownerData), 300);
                 } else {
-                  Logger.log('Failed to get team owner subscription. Response code: ' + response.getResponseCode());
-                  Logger.log('Response: ' + response.getContentText());
                 }
               }
             } catch (error) {
-              Logger.log('Error checking team owner subscription: ' + error.message);
             }
           }
           
@@ -306,7 +283,6 @@ const PaymentService = {
     
     // If user has their own Team subscription, return it directly
     if (individualSubscription.plan === 'team') {
-      Logger.log('[getCurrentPlan] User has their own Team subscription');
       return {
         ...individualSubscription,
         details: {
@@ -324,10 +300,8 @@ const PaymentService = {
     
     // Check if user is a team member with inherited Team plan
     if (userEmail && isUserInTeam(userEmail)) {
-      Logger.log('[getCurrentPlan] User is in team, checking for inherited access');
       const userTeam = getUserTeam(userEmail);
       if (userTeam) {
-        Logger.log('[getCurrentPlan] User team: ' + JSON.stringify(userTeam));
         const teamsData = getTeamsData();
         const team = teamsData[userTeam.teamId];
         
@@ -336,10 +310,8 @@ const PaymentService = {
           const teamOwnerEmail = team.createdBy || (team.adminEmails && team.adminEmails[0]);
           
           if (!teamOwnerEmail) {
-            Logger.log('[getCurrentPlan] No team owner found for team: ' + userTeam.teamId);
             // Fall back to individual subscription check
           } else {
-            Logger.log('[getCurrentPlan] Team owner email: ' + teamOwnerEmail);
             
             // Check if team owner has active Team plan
             const cache = CacheService.getUserCache();
@@ -372,7 +344,6 @@ const PaymentService = {
               
               // Special case: if current user IS the team owner, use their own subscription status
               if (normalizedOwnerEmail === currentUserEmail) {
-                Logger.log('[getCurrentPlan] Current user is the team owner, using their subscription status');
                 const currentUserStatus = this.getSubscriptionStatus();
                 ownerData = currentUserStatus;
                 
@@ -403,11 +374,9 @@ const PaymentService = {
                   muteHttpExceptions: true
                 });
                 
-                Logger.log('[getCurrentPlan] API Response code: ' + response.getResponseCode());
                 
                 if (response.getResponseCode() === 200) {
                   ownerData = JSON.parse(response.getContentText());
-                  Logger.log('[getCurrentPlan] Owner subscription data: ' + JSON.stringify(ownerData));
                   
                   // Check if owner has team plan
                   if (ownerData.plan === 'team') {
@@ -419,18 +388,15 @@ const PaymentService = {
                       const cancelDate = new Date(ownerData.cancelAt);
                       const now = new Date();
                       ownerHasTeamPlan = now < cancelDate;
-                      Logger.log('[getCurrentPlan] Team owner subscription canceled, valid until: ' + ownerData.cancelAt + ', still valid: ' + ownerHasTeamPlan);
                     }
                   }
                   
                   // Cache the full owner data
                   cache.put(cacheKey, JSON.stringify(ownerData), 300);
                 } else {
-                  Logger.log('[getCurrentPlan] Failed to get owner subscription: ' + response.getContentText());
                 }
               }
             } catch (error) {
-              Logger.log('Error checking team owner subscription: ' + error.message);
             }
           }
           
@@ -642,7 +608,6 @@ const PaymentService = {
   clearSubscriptionCache() {
     const cache = CacheService.getUserCache();
     cache.remove('subscription_status');
-    Logger.log('Subscription cache cleared');
   },
   
   /**
@@ -654,11 +619,6 @@ const PaymentService = {
       const userId = Session.getTemporaryActiveUserKey() || 'anonymous-' + Utilities.getUuid();
       const scriptId = ScriptApp.getScriptId();
       
-      Logger.log('Creating customer portal session:');
-      Logger.log('Email: ' + userEmail);
-      Logger.log('User ID: ' + userId);
-      Logger.log('Script ID: ' + scriptId);
-      Logger.log('API URL: ' + this.API_URL);
       
       const payload = {
         email: userEmail,
@@ -667,7 +627,6 @@ const PaymentService = {
         returnUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl()
       };
       
-      Logger.log('Portal payload: ' + JSON.stringify(payload));
       
       const response = UrlFetchApp.fetch(`${this.API_URL}/create-portal-session`, {
         method: 'POST',
@@ -678,11 +637,8 @@ const PaymentService = {
         muteHttpExceptions: true
       });
       
-      Logger.log('Portal response code: ' + response.getResponseCode());
-      Logger.log('Portal response text: ' + response.getContentText());
       
       if (response.getResponseCode() === 404) {
-        Logger.log('404 Error - endpoint not found. Backend may need redeployment.');
         throw new Error('Portal endpoint not available. Please try again later.');
       }
       
@@ -691,7 +647,6 @@ const PaymentService = {
         try {
           const errorData = JSON.parse(errorText);
           const errorMessage = errorData.error || 'Failed to create portal session';
-          Logger.log('Portal error: ' + errorMessage);
           
           if (errorMessage.includes('No active subscription')) {
             throw new Error('No active subscription found. Please ensure you have completed payment.');
@@ -699,7 +654,6 @@ const PaymentService = {
           
           throw new Error(errorMessage);
         } catch (parseError) {
-          Logger.log('Error parsing response: ' + parseError);
           throw new Error('Failed to create portal session');
         }
       }
@@ -707,15 +661,12 @@ const PaymentService = {
       const data = JSON.parse(response.getContentText());
       
       if (!data.portalUrl) {
-        Logger.log('No portal URL in response: ' + JSON.stringify(data));
         throw new Error('No portal URL returned from server');
       }
       
       return data.portalUrl;
       
     } catch (error) {
-      Logger.log('Error in createCustomerPortalSession: ' + error.toString());
-      Logger.log('Error stack: ' + error.stack);
       throw error;
     }
   }

@@ -1930,7 +1930,6 @@ TeamManagerUI.isScriptOwner = function() {
     var authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
     return authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED;
   } catch (e) {
-    Logger.log('Error checking script owner: ' + e.message);
     return false;
   }
 };
@@ -1991,7 +1990,6 @@ TeamManagerUI.showTeamManager = function(joinOnly = false) {
           teamCreator = teamsData[teamId].createdBy;
         }
       } catch (e) {
-        Logger.log('Error getting team creator: ' + e.message);
       }
     }
 
@@ -2024,7 +2022,6 @@ TeamManagerUI.showTeamManager = function(joinOnly = false) {
     // Show the dialog
     SpreadsheetApp.getUi().showModalDialog(htmlOutput, hasTeam ? 'Team Management' : 'Team Access');
   } catch (error) {
-    Logger.log('Error in showTeamManager: ' + error.message);
     showError('An error occurred while loading the team management interface: ' + error.message);
   }
 };

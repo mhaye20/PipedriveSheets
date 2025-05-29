@@ -39,7 +39,6 @@ function completeSetup() {
     
     return true;
   } catch (error) {
-    Logger.log('Error in completeSetup: ' + error.message);
     return false;
   }
 }

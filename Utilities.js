@@ -205,13 +205,11 @@ function formatTimeField(timeValue) {
         timeValue.hour !== undefined && timeValue.minute !== undefined) {
       hour = parseInt(timeValue.hour, 10);
       minute = parseInt(timeValue.minute, 10);
-      Logger.log(`[TIME DEBUG] Already an object with hour/minute: ${JSON.stringify(timeValue)}`);
     }
     // If it's a Date object
     else if (timeValue instanceof Date) {
       hour = timeValue.getHours();
       minute = timeValue.getMinutes();
-      Logger.log(`[TIME DEBUG] Extracted from Date object: ${hour}:${minute}`);
     }
     // If it's a string in format HH:MM or H:MM
     else if (typeof timeValue === 'string') {
@@ -219,7 +217,6 @@ function formatTimeField(timeValue) {
       if (match) {
         hour = parseInt(match[1], 10);
         minute = parseInt(match[2], 10);
-        Logger.log(`[TIME DEBUG] Parsed from HH:MM format: ${hour}:${minute}`);
       }
       // Try to parse as ISO date
       else if (timeValue.includes('T')) {
@@ -228,12 +225,9 @@ function formatTimeField(timeValue) {
           if (!isNaN(date.getTime())) {
             hour = date.getHours();
             minute = date.getMinutes();
-            Logger.log(`[TIME DEBUG] Extracted from ISO date: ${hour}:${minute}, original value: ${timeValue}`);
           } else {
-            Logger.log(`[TIME DEBUG] Invalid ISO date: ${timeValue}`);
           }
         } catch (err) {
-          Logger.log(`[TIME DEBUG] Error parsing ISO date: ${timeValue}, error: ${err.message}`);
         }
       }
       // Try parsing "1:30 PM" format
@@ -250,7 +244,6 @@ function formatTimeField(timeValue) {
           }
           
           minute = parseInt(parts[2], 10);
-          Logger.log(`[TIME DEBUG] Parsed from AM/PM format: ${hour}:${minute}`);
         }
       }
     }
@@ -260,7 +253,6 @@ function formatTimeField(timeValue) {
       if (!isNaN(date.getTime())) {
         hour = date.getHours();
         minute = date.getMinutes();
-        Logger.log(`[TIME DEBUG] Extracted from timestamp: ${hour}:${minute}`);
       }
     }
     
@@ -270,14 +262,11 @@ function formatTimeField(timeValue) {
         minute >= 0 && minute <= 59) {
       // Return as object with hour and minute properties as Pipedrive API expects
       const result = { hour: hour, minute: minute };
-      Logger.log(`[TIME DEBUG] Returning time object: ${JSON.stringify(result)}`);
       return result;
     }
     
-    Logger.log(`[TIME DEBUG] Failed to format time value: ${JSON.stringify(timeValue)}`);
     return null;
   } catch (e) {
-    Logger.log(`Error in formatTimeField: ${e.message}`);
     return null;
   }
 }
@@ -297,24 +286,19 @@ function getValueByPath(obj, path) {
     const parts = path.split('.');
     const component = parts[1];
     
-    Logger.log(`Getting address component: ${component} from object`);
     
     // First check if we have a special flattened format like org['address.subpremise']
     if (obj[path] !== undefined) {
-      Logger.log(`Found address component as direct flattened field: ${path} = ${obj[path]}`);
       return obj[path];
     }
     
     // Check if the address exists as an object
     if (obj.address && typeof obj.address === 'object') {
       if (obj.address[component] !== undefined) {
-        Logger.log(`Found address component in address object: ${component} = ${obj.address[component]}`);
         return obj.address[component];
       } else {
-        Logger.log(`Address component ${component} not found in address object: ${JSON.stringify(obj.address)}`);
       }
     } else {
-      Logger.log(`Address object not found or not an object: ${JSON.stringify(obj.address)}`);
     }
     
     // If we get here, we didn't find the address component
@@ -332,21 +316,17 @@ function getValueByPath(obj, path) {
     if (obj[path] !== undefined) {
       // Get component type for better logging
       const componentType = path.split('_').slice(1).join('_');
-      Logger.log(`Found custom address component as direct field: ${path} = ${obj[path]} (${componentType})`);
       return obj[path];
     }
     
     // Special logging for locality vs sublocality to help debug
     if (path.includes('_locality') || path.includes('_sublocality')) {
       const componentType = path.split('_').slice(1).join('_');
-      Logger.log(`Address component ${componentType} not found directly at ${path}`);
       
       // Try to find if the component exists under a different path
       if (componentType === 'locality' && path.replace('_locality', '_sublocality') in obj) {
-        Logger.log(`Note: Found sublocality where locality was requested`);
       }
       else if (componentType === 'sublocality' && path.replace('_sublocality', '_locality') in obj) {
-        Logger.log(`Note: Found locality where sublocality was requested`);
       }
     }
     
@@ -472,11 +452,9 @@ function formatValue(value, columnPath, optionMappings = {}, entityMappings = {}
   if (columnPath.startsWith('address.')) {
     // The address component is the part after "address."
     const addressComponent = columnPath.split('.')[1];
-    Logger.log(`Formatting address component: ${addressComponent} with value: ${value}`);
     
     // If the value is an object and has that component, extract it
     if (typeof value === 'object' && value !== null && value[addressComponent] !== undefined) {
-      Logger.log(`Address component ${addressComponent} found in object: ${value[addressComponent]}`);
       return value[addressComponent].toString();
     }
     
@@ -843,7 +821,6 @@ function isMultiOptionField(fieldKey, entityType) {
                          
     return isMultiOption;
   } catch (e) {
-    Logger.log(`Error in isMultiOptionField: ${e.message}`);
     return false;
   }
 }
@@ -875,7 +852,6 @@ function getOptionIdByLabel(fieldKey, optionLabel, entityType) {
     
     return null;
   } catch (e) {
-    Logger.log(`Error in getOptionIdByLabel: ${e.message}`);
     return null;
   }
 }
@@ -998,7 +974,6 @@ function initializeCustomFieldsCache(entityType) {
     // Initialize cache object if it doesn't exist
     if (typeof fieldDefinitionsCache.rawNames === 'undefined') {
       fieldDefinitionsCache.rawNames = {};
-      Logger.log('Initialized new rawNames cache.');
     }
     
     // Determine which fields to fetch based on entityType
@@ -1011,11 +986,10 @@ function initializeCustomFieldsCache(entityType) {
         case 'activities': fieldsToFetch.push(() => getActivityFields(true)); break;
         case 'leads': fieldsToFetch.push(() => getLeadFields(true)); break;
         case 'products': fieldsToFetch.push(() => getProductFields(true)); break;
-        default: Logger.log(`Unknown specific entity type for cache: ${entityType}`); break;
+        default: break;
       }
     } else {
       // If no entityType, fetch all (useful for initial load or general formatting)
-      Logger.log('No specific entity type, fetching fields for all types (forcing refresh).');
       fieldsToFetch = [
         () => getDealFields(true),
         () => getPersonFields(true),
@@ -1052,12 +1026,9 @@ function initializeCustomFieldsCache(entityType) {
       }
     });
     
-    Logger.log(`Processed ${totalFieldsProcessed} fields. Raw names cache size: ${Object.keys(fieldDefinitionsCache.rawNames).length}`);
     
     return fieldDefinitionsCache.rawNames; // Return the cache object
   } catch (e) {
-    Logger.log(`Error in initializeCustomFieldsCache: ${e.message}`);
-    Logger.log(`Stack: ${e.stack}`);
     // Ensure cache object exists even on error
     if (typeof fieldDefinitionsCache.rawNames === 'undefined') {
        fieldDefinitionsCache.rawNames = {};

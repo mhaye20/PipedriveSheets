@@ -23,7 +23,6 @@ function getTeamsData() {
     
     return JSON.parse(teamsDataStr);
   } catch (e) {
-    Logger.log(`Error in getTeamsData: ${e.message}`);
     return {};
   }
 }
@@ -56,7 +55,6 @@ function getUserTeam(userEmail, teamsData = null) {
         const mappedTeamId = emailMap[normalizedEmail];
         
         if (mappedTeamId && teamsData[mappedTeamId]) {
-          Logger.log(`User ${userEmail} found in team map for team ${mappedTeamId}`);
           
           // Get the team data
           const team = teamsData[mappedTeamId];
@@ -74,7 +72,6 @@ function getUserTeam(userEmail, teamsData = null) {
           };
         }
       } catch (e) {
-        Logger.log(`Error parsing email map: ${e.message}`);
         // Continue to slower path check
       }
     }
@@ -91,7 +88,6 @@ function getUserTeam(userEmail, teamsData = null) {
           const isAdmin = team.adminEmails && 
                          team.adminEmails.some(email => email.toLowerCase() === normalizedEmail);
           
-          Logger.log(`User ${userEmail} found in team ${teamId}`);
           return {
             teamId: teamId,
             name: team.name || 'Unnamed Team',
@@ -117,10 +113,8 @@ function getUserTeam(userEmail, teamsData = null) {
     }
     
     // User not found in any team
-    Logger.log(`User ${userEmail} not found in any team`);
     return null;
   } catch (e) {
-    Logger.log(`Error in getUserTeam: ${e.message}`);
     return null;
   }
 }
@@ -136,7 +130,6 @@ function saveTeamsData(teamsData) {
     docProps.setProperty('TEAMS_DATA', JSON.stringify(teamsData));
     return true;
   } catch (e) {
-    Logger.log(`Error in saveTeamsData: ${e.message}`);
     return false;
   }
 }
@@ -150,7 +143,6 @@ function isScriptOwner() {
     const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
     return authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED;
   } catch (e) {
-    Logger.log('Error checking script owner: ' + e.message);
     return false;
   }
 }
@@ -218,16 +210,13 @@ function createTeam(teamName) {
       try {
         const userProperties = PropertiesService.getUserProperties();
         userProperties.setProperty('VERIFIED_TEAM_MEMBER', 'true');
-        Logger.log('Set VERIFIED_TEAM_MEMBER flag for team creator');
       } catch (e) {
-        Logger.log('Error setting verified team member flag: ' + e.message);
       }
       
       // Try to refresh the menu
       try {
         fixMenuAfterJoin();
       } catch (menuError) {
-        Logger.log('Error refreshing menu: ' + menuError.message);
       }
 
       // Return success with team information
@@ -240,7 +229,6 @@ function createTeam(teamName) {
       return { success: false, message: 'Failed to save team data.' };
     }
   } catch (e) {
-    Logger.log('Error creating team: ' + e.message);
     return { success: false, message: 'An error occurred: ' + e.message };
   }
 }
@@ -301,16 +289,13 @@ function joinTeam(teamId) {
       try {
         const userProperties = PropertiesService.getUserProperties();
         userProperties.setProperty('VERIFIED_TEAM_MEMBER', 'true');
-        Logger.log('Set VERIFIED_TEAM_MEMBER flag for user');
       } catch (e) {
-        Logger.log('Error setting verified team member flag: ' + e.message);
       }
       
       // Try to refresh the menu
       try {
         fixMenuAfterJoin();
       } catch (menuError) {
-        Logger.log('Error refreshing menu: ' + menuError.message);
       }
       
       return { success: true };
@@ -318,7 +303,6 @@ function joinTeam(teamId) {
       return { success: false, message: 'Failed to save team data.' };
     }
   } catch (e) {
-    Logger.log('Error joining team: ' + e.message);
     return { success: false, message: 'An error occurred: ' + e.message };
   }
 }
@@ -350,11 +334,9 @@ function updateEmailToTeamMap() {
     
     // Save the map to document properties
     PropertiesService.getDocumentProperties().setProperty('EMAIL_TO_TEAM_MAP', JSON.stringify(emailMap));
-    Logger.log('Email-to-team map updated successfully');
     
     return true;
   } catch (e) {
-    Logger.log('Error updating email map: ' + e.message);
     return false;
   }
 }
@@ -461,14 +443,11 @@ function leaveTeam() {
     try {
       const userProperties = PropertiesService.getUserProperties();
       userProperties.deleteProperty('VERIFIED_TEAM_MEMBER');
-      Logger.log('Cleared VERIFIED_TEAM_MEMBER flag after leaving team');
     } catch (e) {
-      Logger.log('Error clearing verified team member flag: ' + e.message);
     }
     
     return { success: true, message: 'You have successfully left the team.' };
   } catch (e) {
-    Logger.log(`Error in leaveTeam: ${e.message}`);
     return { success: false, message: e.message };
   }
 }
@@ -536,7 +515,6 @@ function addTeamMember(email) {
       return { success: false, message: 'Failed to save team data.' };
     }
   } catch (e) {
-    Logger.log(`Error in addTeamMember: ${e.message}`);
     return { success: false, message: e.message };
   }
 }
@@ -580,7 +558,6 @@ function deleteTeam() {
       return { success: false, message: 'Failed to delete team.' };
     }
   } catch (e) {
-    Logger.log(`Error in deleteTeam: ${e.message}`);
     return { success: false, message: e.message };
   }
 }
@@ -648,7 +625,6 @@ function promoteTeamMember(email) {
       return { success: false, message: 'Failed to update team data.' };
     }
   } catch (e) {
-    Logger.log(`Error in promoteTeamMember: ${e.message}`);
     return { success: false, message: e.message };
   }
 }
@@ -722,7 +698,6 @@ function demoteTeamMember(email) {
         };
       }
     } catch (e) {
-      Logger.log(`Error checking script owner status for ${email}: ${e.message}`);
       // Continue with the demotion since we couldn't verify
     }
     
@@ -741,7 +716,6 @@ function demoteTeamMember(email) {
       return { success: false, message: 'Failed to update team data.' };
     }
   } catch (e) {
-    Logger.log(`Error in demoteTeamMember: ${e.message}`);
     return { success: false, message: e.message };
   }
 }
@@ -820,7 +794,6 @@ function removeTeamMember(email) {
       return { success: false, message: 'Failed to update team data.' };
     }
   } catch (e) {
-    Logger.log(`Error in removeTeamMember: ${e.message}`);
     return { success: false, message: e.message };
   }
 }
@@ -877,7 +850,6 @@ function renameTeam(newName) {
       return { success: false, message: 'Failed to update team data.' };
     }
   } catch (e) {
-    Logger.log(`Error in renameTeam: ${e.message}`);
     return { success: false, message: e.message };
   }
 }
@@ -925,9 +897,7 @@ function logTeamActivity(teamId, action, actorEmail, details = {}) {
     // Save back to properties
     docProps.setProperty(activityKey, JSON.stringify(activities));
     
-    Logger.log(`Logged activity for team ${teamId}: ${action} by ${actorEmail}`);
   } catch (e) {
-    Logger.log(`Error logging team activity: ${e.message}`);
   }
 }
 
@@ -950,7 +920,6 @@ function getTeamActivities(teamId, limit = 20) {
     const activities = JSON.parse(existingActivities);
     return activities.slice(0, limit);
   } catch (e) {
-    Logger.log(`Error getting team activities: ${e.message}`);
     return [];
   }
 }
@@ -1086,7 +1055,6 @@ function getFormattedTeamActivities() {
     
     return formattedActivities;
   } catch (e) {
-    Logger.log(`Error in getFormattedTeamActivities: ${e.message}`);
     throw new Error(`Failed to load team activities: ${e.message}`);
   }
 }

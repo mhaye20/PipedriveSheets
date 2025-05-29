@@ -68,7 +68,6 @@ SettingsDialogUI.showSettings = function(initialTab = 'settings') {
     // If we're opening the columns tab or need to preload column data, fetch it
     if (initialTab === 'columns') {
       try {
-        Logger.log(`Attempting to load column data for ${savedEntityType}`);
         // Get the saved columns
         selectedColumnsData = getColumnPreferences(savedEntityType, activeSheetName) || [];
         
@@ -100,7 +99,6 @@ SettingsDialogUI.showSettings = function(initialTab = 'settings') {
           }
           
           if (sampleData && sampleData.length > 0) {
-            Logger.log(`Got sample data for ${savedEntityType}, populating column data`);
             // We got sample data but won't process it here - the UI will handle that
             // This is just to make sure we have something for the template
             availableColumnsData = [
@@ -109,11 +107,9 @@ SettingsDialogUI.showSettings = function(initialTab = 'settings') {
             ];
           }
         } catch (columnError) {
-          Logger.log(`Non-critical error loading column data: ${columnError.message}`);
           // Don't fail the whole dialog for column data issues
         }
       } catch (dataError) {
-        Logger.log(`Error preparing column data: ${dataError.message}`);
       }
     }
     
@@ -153,7 +149,6 @@ SettingsDialogUI.showSettings = function(initialTab = 'settings') {
     // Show modal dialog
     SpreadsheetApp.getUi().showModalDialog(htmlOutput, `Pipedrive Settings for "${activeSheetName}"`);
   } catch (error) {
-    Logger.log('Error showing settings: ' + error.message);
     SpreadsheetApp.getActiveSpreadsheet().toast('Error showing settings: ' + error.message, 'Error', 5);
   }
 };
@@ -175,7 +170,6 @@ SettingsDialogUI.showHelp = function() {
       try {
         versionHistory = JSON.parse(versionHistoryJson);
       } catch (e) {
-        Logger.log('Error parsing version history: ' + e.message);
       }
     }
     
@@ -184,7 +178,6 @@ SettingsDialogUI.showHelp = function() {
     try {
       currentPlan = PaymentService.getCurrentPlan();
     } catch (e) {
-      Logger.log('Error getting current plan: ' + e.message);
     }
 
     // Create the HTML template
@@ -208,7 +201,6 @@ SettingsDialogUI.showHelp = function() {
       
     SpreadsheetApp.getUi().showModalDialog(html, 'Help & About');
   } catch (error) {
-    Logger.log('Error in showHelp: ' + error.message);
     SpreadsheetApp.getActiveSpreadsheet().toast('Error showing help: ' + error.message, 'Error', 5);
   }
 };
@@ -255,7 +247,6 @@ function showColumnSelectorUI() {
     const filterId = scriptProperties.getProperty(sheetFilterIdKey);
     const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
 
-    Logger.log(`Getting data for sheet "${activeSheetName}" with entityType: ${entityType}, filterId: ${filterId}`);
 
     // Check if we can connect to Pipedrive
     SpreadsheetApp.getActiveSpreadsheet().toast(`Connecting to Pipedrive to retrieve ${entityType} data...`);
@@ -289,9 +280,7 @@ function showColumnSelectorUI() {
           sampleData = PipedriveAPI.getProductsWithFilter(filterId, 1);
           break;
       }
-      Logger.log(`Retrieved ${sampleData ? sampleData.length : 0} items for ${entityType}`);
     } catch (apiError) {
-      Logger.log(`Error retrieving ${entityType} data: ${apiError.message}`);
       throw new Error(`Failed to retrieve ${entityType} data from Pipedrive: ${apiError.message}`);
     }
 
@@ -315,7 +304,6 @@ function showColumnSelectorUI() {
     function extractFields(obj, parentPath = '', parentName = '') {
       // Special handling for custom_fields in API v2
       if (parentPath === 'custom_fields') {
-        Logger.log('Processing custom_fields object');
         
         for (const key in obj) {
           if (obj.hasOwnProperty(key) && !addedCustomFields.has(key)) {
@@ -329,7 +317,6 @@ function showColumnSelectorUI() {
             // First try to use the field map which should contain proper names from the API
             if (fieldMap[key]) {
               displayName = fieldMap[key];
-              Logger.log(`Using field map name for custom field ${key}: ${displayName}`);
             } 
             // If not in field map but looks like a hash ID, use a generic name + label
             else if (/^[a-f0-9]{20,}$/i.test(key)) {
@@ -345,12 +332,10 @@ function showColumnSelectorUI() {
                 }
               }
               displayName = fieldType;
-              Logger.log(`Generated generic name for hash ID custom field ${key}: ${displayName}`);
             }
             // Fall back to formatting the key
             else {
               displayName = formatColumnName(key);
-              Logger.log(`Formatting custom field key ${key} to ${displayName}`);
             }
             
             // Simple value custom fields
@@ -451,11 +436,9 @@ function showColumnSelectorUI() {
       
       // Handle arrays
       if (Array.isArray(obj)) {
-        Logger.log(`Processing array with ${obj.length} items, parent: ${parentPath}`);
         
         // Skip arrays for IM fields - they're not commonly used and create clutter
         if (parentPath === 'im') {
-          Logger.log(`Skipping IM array to reduce clutter`);
           return;
         }
         
@@ -500,7 +483,6 @@ function showColumnSelectorUI() {
           } else if (parentPath !== 'im') {
             // For other object arrays (not email/phone/im), don't create confusing entries
             // Just skip them or handle specially
-            Logger.log(`Skipping generic array processing for ${parentPath} to avoid confusion`);
           }
         }
         return;
@@ -567,7 +549,6 @@ function showColumnSelectorUI() {
     }
 
     // Sample data and field mapping are ready, extract available columns
-    Logger.log(`Beginning field extraction from sample data`);
     availableColumns = []; // Reset the global variable instead of redeclaring
     
     try {
@@ -601,7 +582,6 @@ function showColumnSelectorUI() {
         fieldMap[field.key] = field.name;
       });
       
-      Logger.log(`Got ${fieldDefinitions.length} field definitions and created field map`);
       
       // Create a record of already added custom fields to avoid duplicates
       const addedCustomFields = new Set();
@@ -611,7 +591,6 @@ function showColumnSelectorUI() {
       const processedTopLevelKeys = new Set();
       
       // First, build top-level column data
-      Logger.log(`Building top-level columns first`);
       
       // Start with essential fields for every entity type
       const essentialFields = ['id', 'name', 'owner_id'];
@@ -741,7 +720,6 @@ function showColumnSelectorUI() {
         }
       }
       
-      Logger.log(`Extracted ${availableColumns.length} available columns from sample data`);
       
       // Remove any duplicate fields
       const keySet = new Set();
@@ -753,10 +731,7 @@ function showColumnSelectorUI() {
         return true;
       });
       
-      Logger.log(`After deduplication: ${availableColumns.length} columns`);
     } catch (extractError) {
-      Logger.log(`Error during field extraction: ${extractError.message}`);
-      Logger.log(`Error stack: ${extractError.stack}`);
       
       // Create some minimal columns as fallback
       availableColumns = [
@@ -771,15 +746,11 @@ function showColumnSelectorUI() {
         );
       }
       
-      Logger.log(`Using ${availableColumns.length} fallback columns after extraction error`);
     }
     
     // Log all columns before filtering to debug
-    Logger.log(`Total columns before filtering: ${availableColumns.length}`);
     const keylessColumns = availableColumns.filter(col => !col.key);
-    Logger.log(`Keyless columns found: ${keylessColumns.length}`);
     keylessColumns.forEach(col => {
-      Logger.log(`Keyless column: name="${col.name}", parentKey="${col.parentKey || 'null'}"`);
     });
     
     // Filter out problematic fields
@@ -787,27 +758,23 @@ function showColumnSelectorUI() {
       // CRITICAL: Filter out ALL entries that have no key
       // These problematic entries only have name and parentKey
       if (!col.key) {
-        Logger.log(`Filtering out keyless field: name="${col.name}", parentKey="${col.parentKey || 'null'}"`);
         return false;
       }
       
       // Additional filters for fields that DO have keys
       // Filter out all IM-related fields
       if (col.parentKey && (col.parentKey === 'im' || col.parentKey.startsWith('im.'))) {
-        Logger.log(`Filtering out IM field: ${col.name} (parent: ${col.parentKey})`);
         return false;
       }
       
       // Filter out fields with email.0, phone.0 parentKeys
       if (col.parentKey && col.parentKey.match(/^(email|phone)\.\d+$/)) {
-        Logger.log(`Filtering out field with numeric parent: ${col.name} (parent: ${col.parentKey})`);
         return false;
       }
       
       // Filter out fields where parentKey is just 'email' or 'phone' but name contains " - 0"
       if (col.parentKey && (col.parentKey === 'email' || col.parentKey === 'phone') && 
           col.name && col.name.includes(' - 0')) {
-        Logger.log(`Filtering out array field: ${col.name} (parent: ${col.parentKey})`);
         return false;
       }
       
@@ -826,13 +793,11 @@ function showColumnSelectorUI() {
         
         // Remove confusing array-indexed email/phone fields
         if (col.key.match(/^(email|phone|im)\.\d+/) || col.key.match(/\.\d+$/)) {
-          Logger.log(`Filtering out confusing array field by key: ${col.key} (${col.name})`);
           return false;
         }
         
         // Remove nested array fields that have numeric indices
         if (col.key.includes('.') && col.key.match(/\.\d+\./)) {
-          Logger.log(`Filtering out nested array field: ${col.key}`);
           return false;
         }
       }
@@ -970,13 +935,9 @@ function showColumnSelectorUI() {
     });
     
     // Log results after filtering
-    Logger.log(`Total columns after filtering: ${availableColumns.length}`);
     const remainingKeylessColumns = availableColumns.filter(col => !col.key);
-    Logger.log(`Remaining keyless columns: ${remainingKeylessColumns.length}`);
     if (remainingKeylessColumns.length > 0) {
-      Logger.log(`ERROR: Still have keyless columns after filtering!`);
       remainingKeylessColumns.forEach(col => {
-        Logger.log(`Remaining keyless: name="${col.name}", parentKey="${col.parentKey || 'null'}"`);
       });
     }
     
@@ -1426,16 +1387,12 @@ function showColumnSelectorUI() {
     
     // Log the structure of email and phone fields if they exist
     if (sampleItem.email) {
-      Logger.log(`Email field structure: ${JSON.stringify(sampleItem.email)}`);
     }
     if (sampleItem.phone) {
-      Logger.log(`Phone field structure: ${JSON.stringify(sampleItem.phone)}`);
     }
     
     // Log the first 10 available columns after sorting to see their structure
-    Logger.log(`First 10 available columns after sorting:`);
     availableColumns.slice(0, 10).forEach((col, index) => {
-      Logger.log(`Column ${index + 1}: key=${col.key}, name=${col.name}, isNested=${col.isNested}, parentKey=${col.parentKey || 'null'}`);
     });
     
     // Now get the currently saved columns (if any)
@@ -1443,7 +1400,6 @@ function showColumnSelectorUI() {
     
     // If no columns are saved yet, use defaults
     if (!savedColumns || savedColumns.length === 0) {
-      Logger.log(`No saved columns found, using defaults for ${entityType}`);
       
       // Use entity-specific defaults if available, otherwise use common defaults
       const defaultKeys = DEFAULT_COLUMNS[entityType.toUpperCase()] || DEFAULT_COLUMNS.COMMON;
@@ -1462,9 +1418,7 @@ function showColumnSelectorUI() {
         savedColumns = savedColumns.concat(phoneColumns);
       }
       
-      Logger.log(`Using ${savedColumns.length} default columns`);
     } else {
-      Logger.log(`Found ${savedColumns.length} saved columns`);
     }
     
     // Create HTML for the UI
@@ -1475,7 +1429,6 @@ function showColumnSelectorUI() {
     
     SpreadsheetApp.getUi().showModalDialog(html, 'Select Columns to Display');
   } catch (error) {
-    Logger.log('Error in showColumnSelectorUI: ' + error.message);
     SpreadsheetApp.getActiveSpreadsheet().toast('Error: ' + error.message);
     throw error;
   }
@@ -1495,8 +1448,6 @@ ColumnSelectorUI.showColumnSelector = function() {
     
     SettingsDialogUI.showSettings('columns');
   } catch (e) {
-    Logger.log(`Error in ColumnSelectorUI.showColumnSelector: ${e.message}`);
-    Logger.log(`Stack trace: ${e.stack}`);
     SpreadsheetApp.getUi().alert('Error', 'Failed to open column selector: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 };
@@ -1881,25 +1832,19 @@ ColumnSelectorUI.formatEntityTypeName = function(entityType) {
  */
 function saveColumnPreferences(entityType, sheetName, columns) {
   try {
-    Logger.log(`Saving column preferences for ${entityType} in sheet "${sheetName}"`);
-    Logger.log(`Received ${columns.length} columns to save`);
     
     // Log the first 10 columns to help debug
     if (columns.length > 0) {
-      Logger.log('First 10 columns being saved:');
       columns.slice(0, 10).forEach((col, index) => {
-        Logger.log(`Column ${index + 1}: key=${col.key}, name=${col.name || 'n/a'}, customName=${col.customName || 'n/a'}`);
       });
       
       // Specifically log any email and phone columns
       const emailColumns = columns.filter(col => col.key && (col.key === 'email' || col.key.startsWith('email.')));
       if (emailColumns.length > 0) {
-        Logger.log(`Email columns (${emailColumns.length}): ${emailColumns.map(c => c.key).join(', ')}`);
       }
       
       const phoneColumns = columns.filter(col => col.key && (col.key === 'phone' || col.key.startsWith('phone.')));
       if (phoneColumns.length > 0) {
-        Logger.log(`Phone columns (${phoneColumns.length}): ${phoneColumns.map(c => c.key).join(', ')}`);
       }
     }
     
@@ -1909,7 +1854,6 @@ function saveColumnPreferences(entityType, sheetName, columns) {
     // Make sure columns includes all necessary data
     const columnsToSave = columns.map(col => {
       // DEBUG: Log each column object being mapped
-      // Logger.log(`SAVE_DEBUG: Mapping column: key=${col.key}, name=${col.name}, customName=${col.customName}`);
       return {
         key: col.key,
         name: col.name || formatColumnName(col.key),
@@ -1920,14 +1864,11 @@ function saveColumnPreferences(entityType, sheetName, columns) {
     });
 
     // DEBUG: Log the final array being prepared for saving
-    Logger.log(`SAVE_DEBUG: Final columnsToSave array prepared (first 5): ${JSON.stringify(columnsToSave.slice(0,5))}`);
     if (columnsToSave.length > 0) {
-        Logger.log(`SAVE_DEBUG: First column in columnsToSave: key=${columnsToSave[0].key}, name=${columnsToSave[0].name}, customName=${columnsToSave[0].customName}`);
     }
     
     // Generate key for saving the preferences
     const userEmail = Session.getEffectiveUser().getEmail();
-    Logger.log(`Saving preferences for user: ${userEmail}`);
     
     // Instead of using user email, use team ID for shared preferences
     let keyIdentifier = userEmail;
@@ -1941,23 +1882,17 @@ function saveColumnPreferences(entityType, sheetName, columns) {
         if (userTeam && userTeam.teamId) {
           // Use team ID instead of email for shared preferences across team
           keyIdentifier = `TEAM_${userTeam.teamId}`;
-          Logger.log(`User is part of team ${userTeam.name} (${userTeam.teamId}), using team-based storage`);
         } else {
-          Logger.log(`User is not part of a team, using personal storage`);
         }
       } else {
-        Logger.log('getUserTeam function not available, defaulting to personal storage');
       }
     } catch (teamError) {
-      Logger.log(`Error getting team info: ${teamError.message}, defaulting to personal storage`);
     }
     
     // Store full column objects
     const columnsKey = `COLUMNS_${sheetName}_${entityType}_${keyIdentifier}`;
     const columnsJson = JSON.stringify(columnsToSave);
     
-    Logger.log(`Saving with key: ${columnsKey}`);
-    Logger.log(`JSON preview (first 100 chars): ${columnsJson.substring(0, 100)}...`);
     
     // Save to Script Properties
     properties.setProperty(columnsKey, columnsJson);
@@ -1980,24 +1915,19 @@ function saveColumnPreferences(entityType, sheetName, columns) {
     const mappingKey = `HEADER_TO_FIELD_MAP_${sheetName}_${entityType}`;
     const mappingJson = JSON.stringify(headerToFieldKeyMap);
     properties.setProperty(mappingKey, mappingJson);
-    Logger.log(`Saved header-to-field mapping with key: ${mappingKey}`);
     
     // Verify the save
     try {
       const savedJson = properties.getProperty(columnsKey);
       const savedColumns = JSON.parse(savedJson);
-      Logger.log(`Save verified: Retrieved ${savedColumns.length} columns`);
     } catch (verifyError) {
-      Logger.log(`Error verifying saved data: ${verifyError.message}`);
     }
     
     // IMPORTANT: Notify TwoWaySyncSettingsUI about column changes
     // This ensures the Sync Status column gets properly repositioned on next sync
     if (typeof handleColumnPreferencesChange === 'function') {
-      Logger.log(`Notifying TwoWaySyncSettingsUI about column changes for sheet: ${sheetName}`);
       handleColumnPreferencesChange(sheetName);
     } else {
-      Logger.log(`handleColumnPreferencesChange function not found, skipping notification`);
     }
     
     // Log column update activity for team members
@@ -2012,18 +1942,14 @@ function saveColumnPreferences(entityType, sheetName, columns) {
             sheetName: sheetName,
             columnCount: columns.length
           });
-          Logger.log(`Logged column update activity for team ${userTeam.teamId}`);
         }
       }
     } catch (activityError) {
-      Logger.log(`Error logging team activity: ${activityError.message}`);
       // Don't fail the save if activity logging fails
     }
     
     return true;
   } catch (error) {
-    Logger.log(`Error saving column preferences: ${error.message}`);
-    Logger.log(`Error stack: ${error.stack}`);
     return false;
   }
 }
@@ -2036,7 +1962,6 @@ function saveColumnPreferences(entityType, sheetName, columns) {
  */
 function getColumnPreferences(entityType, sheetName) {
   try {
-    Logger.log(`Getting column preferences for ${entityType} in sheet "${sheetName}"`);
     
     // Get Script Properties
     const properties = PropertiesService.getScriptProperties();
@@ -2056,73 +1981,58 @@ function getColumnPreferences(entityType, sheetName) {
         if (userTeam && userTeam.teamId) {
           // Check for team-based preferences first
           const teamKey = `COLUMNS_${sheetName}_${entityType}_TEAM_${userTeam.teamId}`;
-          Logger.log(`Looking for team preferences with key: ${teamKey}`);
           
           columnsJson = properties.getProperty(teamKey);
           if (columnsJson) {
-            Logger.log(`Found team-based preferences for ${sheetName}`);
             keyIdentifier = `TEAM_${userTeam.teamId}`;
           } else {
             // If no team preferences found, check for personal preferences 
             // (for backward compatibility with users who already set up preferences)
             const personalKey = `COLUMNS_${sheetName}_${entityType}_${userEmail}`;
-            Logger.log(`No team preferences, checking personal preferences with key: ${personalKey}`);
             
             const personalJson = properties.getProperty(personalKey);
             if (personalJson) {
-              Logger.log(`Found personal preferences, will migrate to team preferences`);
               columnsJson = personalJson;
               
               // Migrate personal preferences to team preferences
               properties.setProperty(teamKey, personalJson);
-              Logger.log(`Migrated personal preferences to team preferences`);
               
               keyIdentifier = `TEAM_${userTeam.teamId}`;
             }
           }
         } else {
-          Logger.log(`User is not part of a team, using personal storage`);
         }
       } else {
-        Logger.log('getUserTeam function not available, defaulting to personal storage');
       }
     } catch (teamError) {
-      Logger.log(`Error getting team info: ${teamError.message}, defaulting to personal storage`);
     }
     
     // If we couldn't find team preferences or personal preferences to migrate, 
     // fall back to personal preferences
     if (!columnsJson) {
       const personalKey = `COLUMNS_${sheetName}_${entityType}_${userEmail}`;
-      Logger.log(`Looking for personal preferences with key: ${personalKey}`);
       
       columnsJson = properties.getProperty(personalKey);
     }
     
     if (!columnsJson) {
-      Logger.log(`No saved preferences found for key: ${keyIdentifier}`);
       return [];
     }
     
     try {
       const savedColumns = JSON.parse(columnsJson);
-      Logger.log(`Found ${savedColumns.length} saved columns using key identifier: ${keyIdentifier}`);
       
       // Log first few columns to help debug
       if (savedColumns.length > 0) {
-        Logger.log('First 5 saved columns:');
         savedColumns.slice(0, 5).forEach((col, index) => {
-          Logger.log(`Column ${index + 1}: key=${col.key}, name=${col.name}`);
         });
       }
       
       return savedColumns;
     } catch (parseError) {
-      Logger.log(`Error parsing saved columns: ${parseError.message}`);
       return [];
     }
   } catch (error) {
-    Logger.log(`Error getting column preferences: ${error.message}`);
     return [];
   }
 }
@@ -2136,12 +2046,9 @@ function getColumnPreferences(entityType, sheetName) {
  */
 function handleSaveColumns(selectedColumns, entityType, sheetName) {
   try {
-    Logger.log(`Handling save columns request for ${entityType} in "${sheetName}"`);
-    Logger.log(`Received ${selectedColumns.length} columns to save`);
     
     // Check if user has permission to modify settings
     if (!PaymentService.canModifySettings()) {
-      Logger.log(`Permission denied: User cannot modify settings`);
       return {
         success: false,
         message: "Only team admins can modify column settings",
@@ -2153,7 +2060,6 @@ function handleSaveColumns(selectedColumns, entityType, sheetName) {
     try {
       PaymentService.enforceColumnLimit(selectedColumns.length);
     } catch (limitError) {
-      Logger.log(`Column limit exceeded: ${limitError.message}`);
       return {
         success: false,
         message: limitError.message,
@@ -2163,9 +2069,7 @@ function handleSaveColumns(selectedColumns, entityType, sheetName) {
     
     // Log a sample of columns being saved
     if (selectedColumns.length > 0) {
-      Logger.log(`Sample columns being saved:`);
       selectedColumns.slice(0, 3).forEach((col, idx) => {
-        Logger.log(`Column ${idx+1}: key=${col.key}, name=${col.name || 'unnamed'}`);
       });
     }
     
@@ -2173,28 +2077,22 @@ function handleSaveColumns(selectedColumns, entityType, sheetName) {
     const saveResult = saveColumnPreferences(entityType, sheetName, selectedColumns);
     
     if (saveResult) {
-      Logger.log(`Successfully saved column preferences`);
       
       // If we're viewing this entity type in this sheet, refresh the data
       const activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
       
       if (activeSheet && activeSheet.getName() === sheetName) {
-        Logger.log(`Active sheet matches saved sheet, refreshing data`);
         try {
           // Refresh data if the sheet is currently displaying this entity type
           const sheetEntityType = SyncService.getSheetEntityType(activeSheet);
           
           if (sheetEntityType === entityType) {
-            Logger.log(`Sheet entity type matches, running sync`);
             SyncService.syncFromPipedrive();
           } else {
-            Logger.log(`Sheet entity type (${sheetEntityType}) doesn't match saved entity type (${entityType})`);
           }
         } catch (refreshError) {
-          Logger.log(`Error refreshing data: ${refreshError.message}`);
         }
       } else {
-        Logger.log(`Active sheet does not match saved sheet, skipping refresh`);
       }
       
       return {
@@ -2203,7 +2101,6 @@ function handleSaveColumns(selectedColumns, entityType, sheetName) {
         columns: selectedColumns.length
       };
     } else {
-      Logger.log(`Error saving column preferences`);
       return {
         success: false,
         message: "Error saving column preferences",
@@ -2211,8 +2108,6 @@ function handleSaveColumns(selectedColumns, entityType, sheetName) {
       };
     }
   } catch (error) {
-    Logger.log(`Error in handleSaveColumns: ${error.message}`);
-    Logger.log(`Error stack: ${error.stack}`);
     
     return {
       success: false,
@@ -2242,8 +2137,6 @@ function showColumnSelector() {
     // Use the SettingsDialogUI with columns tab
     SettingsDialogUI.showSettings('columns');
   } catch (e) {
-    Logger.log(`Error in showColumnSelector: ${e.message}`);
-    Logger.log(`Stack trace: ${e.stack}`);
     SpreadsheetApp.getUi().alert('Error', 'Failed to open column selector: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
@@ -2307,7 +2200,6 @@ function formatEntityTypeName(entityType) {
  * @return {Object} Object with available and selected columns
  */
 function getColumnsDataForEntity(entityType, sheetName) {
-  Logger.log(`=== getColumnsDataForEntity CALLED with entityType: ${entityType}, sheetName: ${sheetName} ===`);
   
   // TEMPORARY TEST: Return empty data to see if function is called
   if (false) { // Set to true to test
@@ -2318,7 +2210,6 @@ function getColumnsDataForEntity(entityType, sheetName) {
   }
   
   try {
-    Logger.log(`Getting column data for entity type ${entityType} in sheet ${sheetName}`);
     
     let availableColumns = [];
     const selectedColumns = getColumnPreferences(entityType, sheetName) || [];
@@ -2327,7 +2218,6 @@ function getColumnsDataForEntity(entityType, sheetName) {
     try {
       // Initialize the custom fields cache to get proper field names
       const customFieldCache = initializeCustomFieldsCache(entityType);
-      Logger.log(`Initialized custom field cache with ${Object.keys(customFieldCache || {}).length} fields`);
       
       // Get field definitions based on entity type to get proper field names
       let fieldDefinitions = [];
@@ -2441,10 +2331,8 @@ function getColumnsDataForEntity(entityType, sheetName) {
         }
         
         // Log all columns before filtering to debug
-        Logger.log(`[getColumnsDataForEntity] Total columns before filtering: ${availableColumns.length}`);
         availableColumns.forEach((col, idx) => {
           if (!col.key) {
-            Logger.log(`[getColumnsDataForEntity] Column ${idx} has NO KEY: name="${col.name}", parentKey="${col.parentKey || 'null'}"`);
           }
         });
         
@@ -2453,34 +2341,27 @@ function getColumnsDataForEntity(entityType, sheetName) {
         const beforeFilterCount = availableColumns.length;
         availableColumns = availableColumns.filter(col => {
           if (!col.key) {
-            Logger.log(`[getColumnsDataForEntity] REMOVING keyless field: name="${col.name}", parentKey="${col.parentKey || 'null'}"`);
             return false;
           }
           return true;
         });
-        Logger.log(`[getColumnsDataForEntity] Filtered ${beforeFilterCount - availableColumns.length} keyless entries before improveColumnNamesForUI. Remaining: ${availableColumns.length}`);
         
         // Improve column names for the UI (only process entries that have keys)
         availableColumns = improveColumnNamesForUI(availableColumns, entityType);
       }
     } catch (error) {
-      Logger.log(`Error getting available columns: ${error.message}`);
-      Logger.log(`Stack: ${error.stack}`);
       throw error;
     }
     
     // Final check before returning
     const keylessCount = availableColumns.filter(col => !col.key).length;
     if (keylessCount > 0) {
-      Logger.log(`[getColumnsDataForEntity] ERROR: Still have ${keylessCount} keyless columns before returning!`);
       availableColumns.forEach((col, idx) => {
         if (!col.key) {
-          Logger.log(`[getColumnsDataForEntity] Keyless column ${idx}: name="${col.name}", parentKey="${col.parentKey || 'null'}"`);
         }
       });
       // Force filter them out one more time
       availableColumns = availableColumns.filter(col => col.key);
-      Logger.log(`[getColumnsDataForEntity] Force filtered to ${availableColumns.length} columns`);
     }
     
     return {
@@ -2488,8 +2369,6 @@ function getColumnsDataForEntity(entityType, sheetName) {
       selectedColumns
     };
   } catch (error) {
-    Logger.log(`Error in getColumnsDataForEntity: ${error.message}`);
-    Logger.log(`Stack: ${error.stack}`);
     
     // Return a minimal set of columns as fallback
     return {
@@ -2812,7 +2691,6 @@ function extractColumnsFromData(data, entityType) {
       }
       // Special handling for email/phone/im arrays at the top level
       else if (Array.isArray(value) && (key === 'email' || key === 'phone' || key === 'im')) {
-        Logger.log(`Processing ${key} array field with ${value.length} items`);
         
         // Determine category
         let category = mainCategoryName;
@@ -2833,7 +2711,6 @@ function extractColumnsFromData(data, entityType) {
             const fieldKey = `${key}.${label}`;
             const fieldName = `${formatColumnName(key)} - ${capitalizedLabel}`;
             addColumn(fieldKey, fieldName, false, null, category, false);
-            Logger.log(`Added ${key} field: ${fieldName} with key: ${fieldKey}`);
         }
       }
     }
@@ -2873,11 +2750,8 @@ function extractColumnsFromData(data, entityType) {
       return a.name.localeCompare(b.name);
     });
 
-    Logger.log(`Extracted and categorized ${columns.length} columns for entity type ${entityType}`);
     return columns;
   } catch (e) {
-    Logger.log(`Error extracting columns: ${e.message}`);
-    Logger.log(`Stack: ${e.stack}`);
     return getFallbackColumns(entityType); // Ensure fallback includes category
   }
 }
@@ -3304,7 +3178,6 @@ function getFormattedColumnName(key) {
  */
 function improveColumnNamesForUI(columns, entityType) {
   try {
-    Logger.log(`Improving column names for ${columns.length} columns of type ${entityType}`);
     
     // First pass: identify date/time range fields
     const dateRangeFields = new Map();
@@ -3490,7 +3363,6 @@ function improveColumnNamesForUI(columns, entityType) {
       return column;
     });
   } catch (e) {
-    Logger.log(`Error improving column names: ${e.message}`);
     // Return original columns if there's an error
     return columns;
   }

@@ -87,7 +87,6 @@ TwoWaySyncSettingsUI.showTwoWaySyncSettings = function() {
       
     SpreadsheetApp.getUi().showModalDialog(html, 'Two-Way Sync Settings');
   } catch (error) {
-    Logger.log(`Error showing two-way sync settings: ${error.message}`);
     SpreadsheetApp.getUi().alert('Error', `Failed to show settings: ${error.message}`, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 };
@@ -104,7 +103,6 @@ TwoWaySyncSettingsUI.handleColumnPreferencesChange = function(sheetName) {
     
     // When columns are changed and two-way sync is enabled, handle tracking column
     if (twoWaySyncEnabled) {
-      Logger.log(`Two-way sync is enabled for sheet "${sheetName}". Adjusting sync column.`);
       
       // When columns are changed, delete the tracking column property to force repositioning
       const twoWaySyncTrackingColumnKey = `TWOWAY_SYNC_TRACKING_COLUMN_${sheetName}`;
@@ -118,10 +116,8 @@ TwoWaySyncSettingsUI.handleColumnPreferencesChange = function(sheetName) {
       const twoWaySyncRecreateTriggersKey = `TWOWAY_SYNC_RECREATE_TRIGGERS_${sheetName}`;
       scriptProperties.setProperty(twoWaySyncRecreateTriggersKey, 'true');
       
-      Logger.log(`Removed tracking column property for sheet "${sheetName}" to ensure correct positioning on next sync.`);
     }
   } catch (e) {
-    Logger.log(`Error in handleColumnPreferencesChange: ${e.message}`);
     throw e;
   }
 };
@@ -160,7 +156,6 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
 
       // NEW: Also track when columns have been removed (causing a left shift)
       if (previousPos >= 0 && currentPos >= 0 && currentPos < previousPos) {
-        Logger.log(`Detected column removal: Sync Status moved left from ${previousPos} to ${currentPos}`);
 
         // Check all columns between previous and current positions (inclusive)
         // Important: Don't just check columns in between, check ALL columns from 0 to max(previousPos)
@@ -180,7 +175,6 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
                 cleanupColumnFormatting(activeSheet, colLetter);
               }
             } catch (e) {
-              Logger.log(`Error checking column ${colLetter}: ${e.message}`);
             }
           }
         }
@@ -204,7 +198,6 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
         if (typeof setupOnEditTrigger === 'function') {
           setupOnEditTrigger();
         } else {
-          Logger.log('Warning: setupOnEditTrigger function not found');
         }
       }
       
@@ -325,14 +318,12 @@ function saveTwoWaySyncSettings(enableTwoWaySync, trackingColumn) {
         if (typeof removeOnEditTrigger === 'function') {
           removeOnEditTrigger();
         } else {
-          Logger.log('Warning: removeOnEditTrigger function not found');
         }
       }
     }
 
     return true;
   } catch (error) {
-    Logger.log(`Error saving two-way sync settings: ${error.message}`);
     throw error;
   }
 }
@@ -754,7 +745,6 @@ function checkAndRecreateTriggers(sheetName) {
     const shouldRecreateTriggers = scriptProperties.getProperty(twoWaySyncRecreateTriggersKey) === 'true';
     
     if (twoWaySyncEnabled && shouldRecreateTriggers) {
-      Logger.log(`Recreating onEdit trigger for sheet "${sheetName}" after column changes`);
       
       // Remove the existing trigger first
       if (typeof SyncService !== 'undefined' && typeof SyncService.removeOnEditTrigger === 'function') {
@@ -773,12 +763,10 @@ function checkAndRecreateTriggers(sheetName) {
       // Clear the flag
       scriptProperties.deleteProperty(twoWaySyncRecreateTriggersKey);
       
-      Logger.log(`Successfully recreated onEdit trigger for sheet "${sheetName}"`);
     }
     
     return true;
   } catch (e) {
-    Logger.log(`Error in checkAndRecreateTriggers: ${e.message}`);
     return false;
   }
 }
@@ -970,7 +958,6 @@ function createSyncTrigger(triggerData) {
     }
 
   } catch (error) {
-    Logger.log('Error creating trigger: ' + error.message);
     return {
       success: false,
       error: error.message
@@ -991,7 +978,6 @@ function syncSheetFromTrigger(event) {
     const sheetName = scriptProperties.getProperty(`TRIGGER_${triggerId}_SHEET`);
 
     if (!sheetName) {
-      Logger.log('No sheet name found for trigger: ' + triggerId);
       return;
     }
 
@@ -1000,7 +986,6 @@ function syncSheetFromTrigger(event) {
     const sheet = spreadsheet.getSheetByName(sheetName);
 
     if (!sheet) {
-      Logger.log(`Sheet "${sheetName}" not found in the spreadsheet.`);
       return;
     }
 
@@ -1016,7 +1001,6 @@ function syncSheetFromTrigger(event) {
 
     // If two-way sync is enabled, push changes to Pipedrive first
     if (twoWaySyncEnabled) {
-      Logger.log(`Two-way sync is enabled for sheet "${sheetName}". Pushing changes to Pipedrive before pulling new data.`);
       pushChangesToPipedrive(true); // Pass true to indicate this is a scheduled sync
     }
 
@@ -1045,15 +1029,12 @@ function syncSheetFromTrigger(event) {
         syncProductsFromFilter();
         break;
       default:
-        Logger.log('Unknown entity type: ' + entityType);
         break;
     }
 
     // Log the completion
-    Logger.log(`Scheduled sync completed for sheet "${sheetName}" with entity type "${entityType}"`);
 
   } catch (error) {
-    Logger.log('Error in scheduled sync: ' + error.message);
   }
 }
 
@@ -1078,7 +1059,6 @@ function deleteTrigger(triggerId) {
             ScriptApp.deleteTrigger(allTriggers[i]);
             found = true;
           } catch (e) {
-            Logger.log(`Error deleting trigger ${id}: ${e.message}`);
             allDeleted = false;
           }
           break;
@@ -1103,9 +1083,7 @@ function deleteTrigger(triggerId) {
           }
         });
         
-        Logger.log(`Cleaned up properties for trigger ID: ${id}`);
       } catch (e) {
-        Logger.log(`Error cleaning up properties for trigger ${id}: ${e.message}`);
       }
     });
 
@@ -1114,7 +1092,6 @@ function deleteTrigger(triggerId) {
       error: allDeleted ? null : "Some triggers could not be deleted. Stale references have been cleaned up."
     };
   } catch (error) {
-    Logger.log('Error deleting trigger: ' + error.message);
     return {
       success: false,
       error: error.message
