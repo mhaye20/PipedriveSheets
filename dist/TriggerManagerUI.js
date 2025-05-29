@@ -143,6 +143,17 @@ const TriggerManagerUI = {
               description: `Every ${hourInterval} hour${hourInterval > 1 ? 's' : ''}${sheetInfo}`
             };
 
+          case 'minutely':
+            let minuteInterval = 1;
+            try {
+              minuteInterval = trigger.getMinutes() || 1;
+            } catch (e) { }
+
+            return {
+              type: 'Minutes',
+              description: `Every ${minuteInterval} minute${minuteInterval > 1 ? 's' : ''}${sheetInfo}`
+            };
+
           case 'daily':
             let timeStr = '';
             
@@ -270,6 +281,10 @@ const TriggerManagerUI = {
         // Hourly trigger
         const hourlyInterval = parseInt(triggerData.hourlyInterval) || 1;
         trigger = builder.everyHours(hourlyInterval).create();
+      } else if (frequency === 'minutely') {
+        // Minutely trigger
+        const minuteInterval = parseInt(triggerData.minuteInterval) || 1;
+        trigger = builder.everyMinutes(minuteInterval).create();
       } else if (frequency === 'daily') {
         // Daily trigger
         const hour = parseInt(triggerData.hour) || 8;

@@ -117,6 +117,13 @@ SettingsDialogUI.showSettings = function(initialTab = 'settings') {
       }
     }
     
+    // Get current plan for column limits
+    const currentPlan = PaymentService.getCurrentPlan();
+    
+    // Check if user can modify settings
+    const canModifySettings = PaymentService.canModifySettings();
+    const isTeamAdmin = PaymentService.isTeamAdmin();
+    
     // Create the data script with either real data or empty defaults
     template.dataScript = `<script>
       // Pass all available columns and selected columns to the front-end
@@ -125,6 +132,9 @@ SettingsDialogUI.showSettings = function(initialTab = 'settings') {
       window.entityType = "${savedEntityType}";
       window.sheetName = "${activeSheetName}";
       window.entityTypeName = "${formattedEntityType}";
+      window.currentPlan = ${JSON.stringify(currentPlan)};
+      window.canModifySettings = ${canModifySettings};
+      window.isTeamAdmin = ${isTeamAdmin};
     </script>`;
     
     template.entityTypeName = formattedEntityType;
@@ -2098,6 +2108,28 @@ function handleSaveColumns(selectedColumns, entityType, sheetName) {
   try {
     Logger.log(`Handling save columns request for ${entityType} in "${sheetName}"`);
     Logger.log(`Received ${selectedColumns.length} columns to save`);
+    
+    // Check if user has permission to modify settings
+    if (!PaymentService.canModifySettings()) {
+      Logger.log(`Permission denied: User cannot modify settings`);
+      return {
+        success: false,
+        message: "Only team admins can modify column settings",
+        error: "PERMISSION_DENIED"
+      };
+    }
+    
+    // Check column limits based on user's plan
+    try {
+      PaymentService.enforceColumnLimit(selectedColumns.length);
+    } catch (limitError) {
+      Logger.log(`Column limit exceeded: ${limitError.message}`);
+      return {
+        success: false,
+        message: limitError.message,
+        error: "COLUMN_LIMIT_EXCEEDED"
+      };
+    }
     
     // Log a sample of columns being saved
     if (selectedColumns.length > 0) {

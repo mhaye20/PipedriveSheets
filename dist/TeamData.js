@@ -5,6 +5,7 @@
  * - Team creation, joining, and leaving
  * - Team members management
  * - Team preferences and settings
+ * - Team activity logging
  */
 
 /**
@@ -208,6 +209,11 @@ function createTeam(teamName) {
       // Update email map
       updateEmailToTeamMap();
       
+      // Log team creation activity
+      logTeamActivity(teamId, 'team_created', userEmail, {
+        teamName: teamName
+      });
+      
       // Store verification status in user properties for future sessions
       try {
         const userProperties = PropertiesService.getUserProperties();
@@ -285,6 +291,11 @@ function joinTeam(teamId) {
     if (saveTeamsData(teamsData)) {
       // Update email map
       updateEmailToTeamMap();
+      
+      // Log member joined activity
+      logTeamActivity(teamId, 'member_joined', userEmail, {
+        teamName: teamsData[teamId].name
+      });
       
       // Store verification status in user properties for future sessions
       try {
@@ -432,6 +443,14 @@ function leaveTeam() {
       }
     }
     
+    // Log the activity before saving (in case team gets deleted)
+    const wasTeamDeleted = !teamsData[teamId]; // Check if team was deleted
+    if (!wasTeamDeleted) {
+      logTeamActivity(teamId, 'member_left', userEmail, {
+        teamName: team.name
+      });
+    }
+    
     // Save teams data
     saveTeamsData(teamsData);
     
@@ -506,6 +525,12 @@ function addTeamMember(email) {
     if (saveTeamsData(teamsData)) {
       // Update email map
       updateEmailToTeamMap();
+      
+      // Log member added activity
+      logTeamActivity(teamId, 'member_added', userEmail, {
+        targetEmail: email
+      });
+      
       return { success: true, message: 'Member added successfully.' };
     } else {
       return { success: false, message: 'Failed to save team data.' };
@@ -613,6 +638,11 @@ function promoteTeamMember(email) {
     
     // Save the teams data
     if (saveTeamsData(teamsData)) {
+      // Log member promoted activity
+      logTeamActivity(teamId, 'member_promoted', userEmail, {
+        targetEmail: email
+      });
+      
       return { success: true, message: 'Member promoted to admin successfully.' };
     } else {
       return { success: false, message: 'Failed to update team data.' };
@@ -701,6 +731,11 @@ function demoteTeamMember(email) {
     
     // Save the teams data
     if (saveTeamsData(teamsData)) {
+      // Log member demoted activity
+      logTeamActivity(teamId, 'member_demoted', userEmail, {
+        targetEmail: email
+      });
+      
       return { success: true, message: 'Admin demoted to member successfully.' };
     } else {
       return { success: false, message: 'Failed to update team data.' };
@@ -774,6 +809,12 @@ function removeTeamMember(email) {
     if (saveTeamsData(teamsData)) {
       // Update email map
       updateEmailToTeamMap();
+      
+      // Log member removed activity
+      logTeamActivity(teamId, 'member_removed', userEmail, {
+        targetEmail: email
+      });
+      
       return { success: true, message: 'Member removed successfully.' };
     } else {
       return { success: false, message: 'Failed to update team data.' };
@@ -825,6 +866,12 @@ function renameTeam(newName) {
     
     // Save the teams data
     if (saveTeamsData(teamsData)) {
+      // Log team renamed activity
+      logTeamActivity(teamId, 'team_renamed', userEmail, {
+        newName: newName.trim(),
+        oldName: team.name // Note: this will be the new name since we already updated it
+      });
+      
       return { success: true, message: 'Team renamed successfully.' };
     } else {
       return { success: false, message: 'Failed to update team data.' };
@@ -835,6 +882,209 @@ function renameTeam(newName) {
   }
 }
 
+/**
+ * Activity Logging System
+ */
+
+/**
+ * Logs a team activity
+ * @param {string} teamId - Team ID
+ * @param {string} action - Action performed (join, leave, add_member, etc.)
+ * @param {string} actorEmail - Email of user who performed the action
+ * @param {Object} details - Additional details about the action
+ */
+function logTeamActivity(teamId, action, actorEmail, details = {}) {
+  try {
+    const docProps = PropertiesService.getDocumentProperties();
+    const activityKey = `TEAM_ACTIVITY_${teamId}`;
+    
+    // Get existing activities
+    let activities = [];
+    const existingActivities = docProps.getProperty(activityKey);
+    if (existingActivities) {
+      activities = JSON.parse(existingActivities);
+    }
+    
+    // Create new activity entry
+    const activity = {
+      id: Utilities.getUuid(),
+      timestamp: new Date().toISOString(),
+      action: action,
+      actor: actorEmail,
+      details: details
+    };
+    
+    // Add to the beginning of the array (most recent first)
+    activities.unshift(activity);
+    
+    // Keep only the last 50 activities to prevent data bloat
+    if (activities.length > 50) {
+      activities = activities.slice(0, 50);
+    }
+    
+    // Save back to properties
+    docProps.setProperty(activityKey, JSON.stringify(activities));
+    
+    Logger.log(`Logged activity for team ${teamId}: ${action} by ${actorEmail}`);
+  } catch (e) {
+    Logger.log(`Error logging team activity: ${e.message}`);
+  }
+}
+
+/**
+ * Gets recent team activities
+ * @param {string} teamId - Team ID
+ * @param {number} limit - Maximum number of activities to return (default: 20)
+ * @return {Array} Array of activity objects
+ */
+function getTeamActivities(teamId, limit = 20) {
+  try {
+    const docProps = PropertiesService.getDocumentProperties();
+    const activityKey = `TEAM_ACTIVITY_${teamId}`;
+    
+    const existingActivities = docProps.getProperty(activityKey);
+    if (!existingActivities) {
+      return [];
+    }
+    
+    const activities = JSON.parse(existingActivities);
+    return activities.slice(0, limit);
+  } catch (e) {
+    Logger.log(`Error getting team activities: ${e.message}`);
+    return [];
+  }
+}
+
+/**
+ * Formats an activity for display
+ * @param {Object} activity - Activity object
+ * @return {Object} Formatted activity with description and formatted time
+ */
+function formatTeamActivity(activity) {
+  const timeAgo = getTimeAgo(activity.timestamp);
+  const actor = activity.actor;
+  
+  let description = '';
+  
+  switch (activity.action) {
+    case 'team_created':
+      description = `${actor} created the team`;
+      break;
+    case 'member_joined':
+      description = `${actor} joined the team`;
+      break;
+    case 'member_added':
+      description = `${actor} added ${activity.details.targetEmail} to the team`;
+      break;
+    case 'member_left':
+      description = `${actor} left the team`;
+      break;
+    case 'member_removed':
+      description = `${actor} removed ${activity.details.targetEmail} from the team`;
+      break;
+    case 'member_promoted':
+      description = `${actor} promoted ${activity.details.targetEmail} to admin`;
+      break;
+    case 'member_demoted':
+      description = `${actor} demoted ${activity.details.targetEmail} to member`;
+      break;
+    case 'team_renamed':
+      description = `${actor} renamed the team to "${activity.details.newName}"`;
+      break;
+    case 'settings_changed':
+      description = `${actor} modified ${activity.details.setting} settings`;
+      break;
+    case 'sync_performed':
+      description = `${actor} performed a sync for ${activity.details.entityType}`;
+      break;
+    case 'columns_updated':
+      description = `${actor} updated column preferences for ${activity.details.entityType}`;
+      break;
+    case 'filter_changed':
+      description = `${actor} changed filter to ${activity.details.filterName}`;
+      break;
+    case 'trigger_created':
+      description = `${actor} created a ${activity.details.frequency} sync trigger`;
+      break;
+    case 'trigger_deleted':
+      description = `${actor} deleted a sync trigger`;
+      break;
+    case 'twoway_sync_enabled':
+      description = `${actor} enabled two-way sync`;
+      break;
+    case 'twoway_sync_disabled':
+      description = `${actor} disabled two-way sync`;
+      break;
+    default:
+      description = `${actor} performed ${activity.action}`;
+  }
+  
+  return {
+    ...activity,
+    description: description,
+    timeAgo: timeAgo
+  };
+}
+
+/**
+ * Helper function to get time ago string
+ * @param {string} timestamp - ISO timestamp
+ * @return {string} Human readable time ago
+ */
+function getTimeAgo(timestamp) {
+  const now = new Date();
+  const then = new Date(timestamp);
+  const diffMs = now.getTime() - then.getTime();
+  
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  
+  if (diffSeconds < 60) {
+    return 'just now';
+  } else if (diffMinutes < 60) {
+    return `${diffMinutes} minute${diffMinutes > 1 ? 's' : ''} ago`;
+  } else if (diffHours < 24) {
+    return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+  } else if (diffDays < 7) {
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  } else {
+    return then.toLocaleDateString();
+  }
+}
+
+/**
+ * Gets formatted team activities for the current user's team
+ * @return {Array} Array of formatted activity objects for display
+ */
+function getFormattedTeamActivities() {
+  try {
+    // Get current user email
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      throw new Error('Unable to determine user email');
+    }
+    
+    // Get user's team
+    const userTeam = getUserTeam(userEmail);
+    if (!userTeam) {
+      return []; // User is not in a team
+    }
+    
+    // Get raw activities
+    const rawActivities = getTeamActivities(userTeam.teamId, 20);
+    
+    // Format activities for display
+    const formattedActivities = rawActivities.map(activity => formatTeamActivity(activity));
+    
+    return formattedActivities;
+  } catch (e) {
+    Logger.log(`Error in getFormattedTeamActivities: ${e.message}`);
+    throw new Error(`Failed to load team activities: ${e.message}`);
+  }
+}
+
 // Explicitly export these functions to ensure they're globally accessible
 this.addTeamMember = addTeamMember;
 this.deleteTeam = deleteTeam;
@@ -842,4 +1092,8 @@ this.promoteTeamMember = promoteTeamMember;
 this.demoteTeamMember = demoteTeamMember;
 this.removeTeamMember = removeTeamMember;
 this.joinTeam = joinTeam;
-this.renameTeam = renameTeam; 
+this.renameTeam = renameTeam;
+this.logTeamActivity = logTeamActivity;
+this.getTeamActivities = getTeamActivities;
+this.formatTeamActivity = formatTeamActivity;
+this.getFormattedTeamActivities = getFormattedTeamActivities; 

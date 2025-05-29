@@ -10271,6 +10271,11 @@ function logObjectStructure(obj, label) {
  * @param {boolean} enableTimestamp - Whether to enable timestamp after sync
  */
 function saveSettings(apiKey, entityType, filterId, subdomain, sheetName, enableTimestamp = false) {
+  // Check if user has permission to modify settings
+  if (!PaymentService.canModifySettings()) {
+    throw new Error('Only team admins can modify settings');
+  }
+
   const scriptProperties = PropertiesService.getScriptProperties();
 
   // Note: In OAuth flow, we don't save API key or subdomain as they're handled by OAuth

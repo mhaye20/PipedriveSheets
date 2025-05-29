@@ -89,8 +89,20 @@
         <? } ?>
         <? } else { ?>
         
-        <!-- Manage Team Tab -->
-        <div id="manage-tab" class="tab-content active">
+        <!-- Team Management Tabs -->
+        <div class="tabs">
+          <div class="tab active" data-tab="team-overview">
+            <i class="material-icons">groups</i>
+            <span>Team Overview</span>
+          </div>
+          <div class="tab" data-tab="team-activity">
+            <i class="material-icons">history</i>
+            <span>Recent Activity</span>
+          </div>
+        </div>
+        
+        <!-- Team Overview Tab -->
+        <div id="team-overview-tab" class="tab-content active">
           <div class="card team-dashboard">
             <div class="card-header">
               <div class="team-name-container">
@@ -210,6 +222,30 @@
                   <span class="button-text">Delete Team</span>
                 </button>
                 <? } ?>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Team Activity Tab -->
+        <div id="team-activity-tab" class="tab-content">
+          <div class="card">
+            <div class="card-header">
+              <i class="material-icons">history</i>
+              <h4>Recent Team Activity</h4>
+            </div>
+            <div class="card-body">
+              <div id="activity-loading" class="activity-loading" style="display: none;">
+                <div class="spinner"></div>
+                <span>Loading activities...</span>
+              </div>
+              <div id="activity-list" class="activity-list">
+                <!-- Activities will be loaded here -->
+              </div>
+              <div id="no-activity" class="no-activity" style="display: none;">
+                <i class="material-icons">timeline</i>
+                <p>No recent activities found.</p>
+                <p class="tooltip">Team activities will appear here as members perform actions.</p>
               </div>
             </div>
           </div>

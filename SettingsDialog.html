@@ -1803,6 +1803,83 @@
     let filtersForEntity = {};
     
     // Function to toggle API details visibility - defined in global scope
+    function applyReadOnlyMode() {
+      // Add read-only notification to settings tab
+      const settingsTab = document.getElementById('settings-tab');
+      if (settingsTab) {
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+          background-color: #fef7e0;
+          border-left: 3px solid #f4b400;
+          padding: 12px 16px;
+          margin-bottom: 16px;
+          border-radius: 4px;
+          font-size: 13px;
+          color: #5f6368;
+        `;
+        notification.innerHTML = `
+          <strong>Read-Only Mode:</strong> Only team admins can modify settings. 
+          Contact your team admin to make changes.
+        `;
+        settingsTab.insertBefore(notification, settingsTab.firstChild);
+      }
+      
+      // Disable form elements in settings tab
+      const settingsInputs = document.querySelectorAll('#settings-tab input, #settings-tab select, #settings-tab button');
+      settingsInputs.forEach(input => {
+        if (input.type !== 'button' || input.textContent !== 'Cancel') {
+          input.disabled = true;
+          input.style.opacity = '0.6';
+          input.style.cursor = 'not-allowed';
+        }
+      });
+      
+      // Add read-only notification to columns tab
+      const columnsTab = document.getElementById('columns-tab');
+      if (columnsTab) {
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+          background-color: #fef7e0;
+          border-left: 3px solid #f4b400;
+          padding: 12px 16px;
+          margin-bottom: 16px;
+          border-radius: 4px;
+          font-size: 13px;
+          color: #5f6368;
+        `;
+        notification.innerHTML = `
+          <strong>Read-Only Mode:</strong> Only team admins can modify column settings. 
+          Contact your team admin to make changes.
+        `;
+        const header = columnsTab.querySelector('.header');
+        if (header) {
+          header.appendChild(notification);
+        }
+      }
+      
+      // Disable column modification buttons
+      const columnsButtons = document.querySelectorAll('#columns-tab button, #columns-tab .add-btn, #columns-tab .remove-btn, #columns-tab .rename-btn');
+      columnsButtons.forEach(button => {
+        if (button.textContent !== 'Cancel' && button.textContent !== 'Help & Tips') {
+          button.disabled = true;
+          button.style.opacity = '0.6';
+          button.style.cursor = 'not-allowed';
+        }
+      });
+      
+      // Override addColumn function to prevent changes
+      window.originalAddColumn = window.addColumn;
+      window.addColumn = function() {
+        showStatus('error', 'Only team admins can modify column settings');
+      };
+      
+      // Override removeColumn function to prevent changes
+      window.originalRemoveColumn = window.removeColumn;
+      window.removeColumn = function() {
+        showStatus('error', 'Only team admins can modify column settings');
+      };
+    }
+
     function toggleApiDetails() {
       console.log("toggleApiDetails called");
       
@@ -1919,6 +1996,11 @@
 
     // Load filters immediately for the currently selected entity type
     document.addEventListener('DOMContentLoaded', function () {
+      // Check read-only permissions and apply restrictions
+      if (typeof window.canModifySettings !== 'undefined' && !window.canModifySettings) {
+        applyReadOnlyMode();
+      }
+      
       loadFiltersForEntity();
       addRippleEffect();
     });
@@ -3020,6 +3102,17 @@
 
     // Column management
     function addColumn(column) {
+      // Check column limit before adding
+      if (typeof window.currentPlan !== 'undefined' && window.currentPlan) {
+        const plan = window.currentPlan;
+        const columnLimit = plan.details && plan.details.limits && plan.details.limits.columns;
+        
+        if (columnLimit > 0 && selectedColumns.length >= columnLimit) {
+          showStatus('error', `Column limit reached (${columnLimit}). Upgrade to select more columns.`);
+          return;
+        }
+      }
+
       // Find the column in the original available columns array to ensure we have complete data
       const fullColumn = window.originalAvailableColumns.find(col => col.key === column.key);
       if (fullColumn) {
@@ -3036,6 +3129,7 @@
 
         renderAvailableList(searchBox.value);
         renderSelectedList();
+        updateColumnCounts(); // Update counts and warnings
       }
     }
 
@@ -3051,6 +3145,7 @@
         selectedColumns.splice(index, 1);
         renderAvailableList(searchBox.value);
         renderSelectedList();
+        updateColumnCounts(); // Update counts and warnings
       }
     }
 
@@ -3149,9 +3244,61 @@
       renderSelectedList();
       renderAvailableList();
 
-      // Update column counts
+      // Update column counts with limit checking
+      updateColumnCounts();
+    }
+
+    function updateColumnCounts() {
       selectedCountEl.textContent = selectedColumns.length;
       availableCountEl.textContent = availableColumns.length;
+      
+      // Add column limit warning for free plan users
+      if (typeof window.currentPlan !== 'undefined' && window.currentPlan) {
+        const plan = window.currentPlan;
+        const columnLimit = plan.details && plan.details.limits && plan.details.limits.columns;
+        
+        if (columnLimit > 0) { // Only show warning if there's a limit
+          const selectedHeader = document.querySelector('.column-header');
+          const existingWarning = document.querySelector('.column-limit-warning');
+          
+          // Remove existing warning
+          if (existingWarning) {
+            existingWarning.remove();
+          }
+          
+          if (selectedColumns.length >= columnLimit) {
+            // Add warning when at limit
+            const warning = document.createElement('div');
+            warning.className = 'column-limit-warning';
+            warning.style.cssText = `
+              color: #d93025;
+              font-size: 12px;
+              margin-top: 8px;
+              padding: 8px 12px;
+              background-color: #fce8e6;
+              border-radius: 4px;
+              border-left: 3px solid #d93025;
+            `;
+            warning.textContent = `Column limit reached (${columnLimit}). Upgrade to select more columns.`;
+            selectedHeader.parentNode.insertBefore(warning, selectedHeader.nextSibling);
+          } else if (selectedColumns.length >= columnLimit - 1) {
+            // Add warning when approaching limit
+            const warning = document.createElement('div');
+            warning.className = 'column-limit-warning';
+            warning.style.cssText = `
+              color: #f4b400;
+              font-size: 12px;
+              margin-top: 8px;
+              padding: 8px 12px;
+              background-color: #fef7e0;
+              border-radius: 4px;
+              border-left: 3px solid #f4b400;
+            `;
+            warning.textContent = `Approaching column limit (${selectedColumns.length}/${columnLimit}). Upgrade for unlimited columns.`;
+            selectedHeader.parentNode.insertBefore(warning, selectedHeader.nextSibling);
+          }
+        }
+      }
     }
 
     // Initialize the application

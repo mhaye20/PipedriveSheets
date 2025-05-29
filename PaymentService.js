@@ -312,9 +312,10 @@ const PaymentService = {
         details: {
           name: 'Team',
           limits: {
-            rows: 5000,
+            rows: -1, // unlimited
             filters: -1,
-            users: 5
+            users: 5,
+            columns: -1 // unlimited
           },
           features: ['two_way_sync', 'scheduled_sync', 'bulk_operations', 'team_features', 'shared_filters', 'admin_dashboard', 'priority_support']
         }
@@ -449,9 +450,10 @@ const PaymentService = {
               details: {
                 name: 'Team',
                 limits: {
-                  rows: 5000,
+                  rows: -1, // unlimited
                   filters: -1,
-                  users: 5
+                  users: 5,
+                  columns: -1 // unlimited
                 },
                 features: ['two_way_sync', 'scheduled_sync', 'bulk_operations', 'team_features', 'shared_filters', 'admin_dashboard', 'priority_support']
               }
@@ -496,25 +498,28 @@ const PaymentService = {
         limits: {
           rows: 50,
           filters: 1,
-          users: 1
+          users: 1,
+          columns: 5
         },
         features: ['manual_sync', 'basic_support']
       },
       'pro': {
         name: 'Pro',
         limits: {
-          rows: 5000,
+          rows: -1, // unlimited
           filters: -1, // unlimited
-          users: 1
+          users: 1,
+          columns: -1 // unlimited
         },
         features: ['two_way_sync', 'scheduled_sync', 'bulk_operations', 'priority_support']
       },
       'team': {
         name: 'Team',
         limits: {
-          rows: 5000,
+          rows: -1, // unlimited
           filters: -1,
-          users: 5
+          users: 5,
+          columns: -1 // unlimited
         },
         features: ['two_way_sync', 'scheduled_sync', 'bulk_operations', 'team_features', 'shared_filters', 'admin_dashboard', 'priority_support']
       }
@@ -543,13 +548,62 @@ const PaymentService = {
     const plan = this.getCurrentPlan();
     const limit = plan.details.limits.rows;
     
+    // -1 means unlimited rows
     if (limit > 0 && currentRows > limit) {
       throw new Error(`Your ${plan.details.name} plan allows up to ${limit} rows. Please upgrade to sync more data.`);
     }
     
     return true;
   },
+
+  /**
+   * Enforce column limits based on plan
+   */
+  enforceColumnLimit(selectedColumns) {
+    const plan = this.getCurrentPlan();
+    const limit = plan.details.limits.columns;
+    
+    // -1 means unlimited columns
+    if (limit > 0 && selectedColumns > limit) {
+      throw new Error(`Your ${plan.details.name} plan allows up to ${limit} columns. Please upgrade to select more columns.`);
+    }
+    
+    return true;
+  },
   
+  /**
+   * Check if current user is a team admin
+   */
+  isTeamAdmin() {
+    const userEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+    
+    if (!userEmail || !isUserInTeam(userEmail)) {
+      return false;
+    }
+    
+    const userTeam = getUserTeam(userEmail);
+    return userTeam && userTeam.role === 'Admin';
+  },
+
+  /**
+   * Check if current user can modify settings (either not in team or is team admin)
+   */
+  canModifySettings() {
+    const userEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+    
+    if (!userEmail) {
+      return false;
+    }
+    
+    // If not in a team, user can modify their own settings
+    if (!isUserInTeam(userEmail)) {
+      return true;
+    }
+    
+    // If in a team, only admins can modify settings
+    return this.isTeamAdmin();
+  },
+
   /**
    * Show upgrade dialog
    */

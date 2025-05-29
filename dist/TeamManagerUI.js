@@ -663,6 +663,86 @@ TeamManagerUI.getStyles = function() {
       border: 1px dashed var(--border-color);
       display: none;
     }
+    
+    /* Activity styles */
+    .activity-loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      color: var(--text-medium);
+      font-size: 14px;
+    }
+    
+    .activity-loading .spinner {
+      margin-right: 12px;
+    }
+    
+    .activity-list {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    
+    .activity-item {
+      display: flex;
+      align-items: flex-start;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border-light);
+      animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .activity-item:last-child {
+      border-bottom: none;
+    }
+    
+    .activity-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background-color: var(--primary-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 12px;
+      flex-shrink: 0;
+    }
+    
+    .activity-icon .material-icons {
+      font-size: 16px;
+      color: var(--primary-color);
+    }
+    
+    .activity-content {
+      flex: 1;
+    }
+    
+    .activity-description {
+      font-size: 14px;
+      line-height: 1.4;
+      margin-bottom: 4px;
+      color: var(--text-dark);
+    }
+    
+    .activity-time {
+      font-size: 12px;
+      color: var(--text-light);
+    }
+    
+    .no-activity {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-medium);
+    }
+    
+    .no-activity .material-icons {
+      font-size: 48px;
+      color: var(--text-light);
+      margin-bottom: 16px;
+    }
+    
+    .no-activity p {
+      margin: 8px 0;
+    }
   `;
 };
 
@@ -685,6 +765,11 @@ TeamManagerUI.getScripts = function() {
           section.classList.remove('active');
         });
         document.getElementById(tabId + '-tab').classList.add('active');
+        
+        // Load activity data when switching to activity tab
+        if (tabId === 'team-activity') {
+          loadTeamActivity();
+        }
       });
     });
     
@@ -1643,6 +1728,116 @@ TeamManagerUI.getScripts = function() {
           .removeTeamMember(email);
       });
     });
+    
+    // Load team activity function
+    function loadTeamActivity() {
+      const activityList = document.getElementById('activity-list');
+      const activityLoading = document.getElementById('activity-loading');
+      const noActivity = document.getElementById('no-activity');
+      
+      if (!activityList || !activityLoading || !noActivity) {
+        console.error('Activity UI elements not found');
+        return;
+      }
+      
+      // Show loading state
+      activityLoading.style.display = 'flex';
+      activityList.style.display = 'none';
+      noActivity.style.display = 'none';
+      
+      // Call server-side function to get team activities
+      google.script.run
+        .withSuccessHandler(function(activities) {
+          // Hide loading state
+          activityLoading.style.display = 'none';
+          
+          if (activities && activities.length > 0) {
+            // Display activities
+            activityList.innerHTML = '';
+            
+            activities.forEach(function(activity) {
+              const activityItem = createActivityItem(activity);
+              activityList.appendChild(activityItem);
+            });
+            
+            activityList.style.display = 'block';
+          } else {
+            // Show no activity message
+            noActivity.style.display = 'block';
+          }
+        })
+        .withFailureHandler(function(error) {
+          // Hide loading state
+          activityLoading.style.display = 'none';
+          
+          // Show error message
+          activityList.innerHTML = 
+            '<div style="text-align: center; padding: 20px; color: var(--error-color);">' +
+              '<i class="material-icons" style="font-size: 48px; margin-bottom: 16px;">error</i>' +
+              '<p>Error loading activities: ' + error.message + '</p>' +
+            '</div>';
+          activityList.style.display = 'block';
+        })
+        .getFormattedTeamActivities();
+    }
+    
+    // Create activity item HTML element
+    function createActivityItem(activity) {
+      const item = document.createElement('div');
+      item.className = 'activity-item';
+      
+      // Get icon based on activity action
+      const icon = getActivityIcon(activity.action);
+      
+      item.innerHTML = 
+        '<div class="activity-icon">' +
+          '<i class="material-icons">' + icon + '</i>' +
+        '</div>' +
+        '<div class="activity-content">' +
+          '<div class="activity-description">' + activity.description + '</div>' +
+          '<div class="activity-time">' + activity.timeAgo + '</div>' +
+        '</div>';
+      
+      return item;
+    }
+    
+    // Get appropriate icon for activity type
+    function getActivityIcon(action) {
+      switch (action) {
+        case 'team_created':
+          return 'group_add';
+        case 'member_joined':
+        case 'member_added':
+          return 'person_add';
+        case 'member_left':
+        case 'member_removed':
+          return 'person_remove';
+        case 'member_promoted':
+          return 'upgrade';
+        case 'member_demoted':
+          return 'remove_moderator';
+        case 'team_renamed':
+          return 'edit';
+        case 'settings_changed':
+          return 'settings';
+        case 'sync_performed':
+          return 'sync';
+        case 'columns_updated':
+          return 'view_column';
+        case 'filter_changed':
+          return 'filter_list';
+        case 'trigger_created':
+          return 'schedule';
+        case 'trigger_deleted':
+          return 'schedule_send';
+        case 'twoway_sync_enabled':
+          return 'sync_alt';
+        case 'twoway_sync_disabled':
+          return 'sync_disabled';
+        default:
+          return 'info';
+      }
+    }
     
     // Close button handler
     document.getElementById('close-button').addEventListener('click', function() {
