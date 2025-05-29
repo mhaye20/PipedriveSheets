@@ -32,9 +32,25 @@ if (typeof UI === 'undefined') {
 let VERIFIED_USERS = {};
 
 /**
- * Creates the menu when the spreadsheet opens
+ * Runs when the add-on is installed
+ * @param {Object} e The event parameter for simple onInstall trigger
  */
-function onOpen() {
+function onInstall(e) {
+  // Call onOpen to set up the menu
+  onOpen(e);
+  
+  // Set a flag to show welcome message on first use
+  const userProperties = PropertiesService.getUserProperties();
+  userProperties.setProperty('FIRST_INSTALL', 'true');
+  
+  Logger.log('Add-on installed for user');
+}
+
+/**
+ * Creates the menu when the spreadsheet opens
+ * @param {Object} e The event parameter (optional)
+ */
+function onOpen(e) {
   try {
     // First check if user was previously verified as a team member
     const userProperties = PropertiesService.getUserProperties();
@@ -92,6 +108,13 @@ function onOpen() {
         5
       );
       userProperties.setProperty('HAS_SEEN_WELCOME', 'true');
+    }
+    
+    // Check if this is the first install
+    const isFirstInstall = userProperties.getProperty('FIRST_INSTALL');
+    if (isFirstInstall === 'true') {
+      userProperties.deleteProperty('FIRST_INSTALL');
+      // You can add special first-install logic here if needed
     }
       
   } catch (error) {
