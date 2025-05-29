@@ -1990,6 +1990,26 @@ function saveColumnPreferences(entityType, sheetName, columns) {
       Logger.log(`handleColumnPreferencesChange function not found, skipping notification`);
     }
     
+    // Log column update activity for team members
+    try {
+      if (userEmail) {
+        // Check if user is in a team
+        const userTeam = getUserTeam(userEmail);
+        if (userTeam) {
+          // Log the activity
+          logTeamActivity(userTeam.teamId, 'columns_updated', userEmail, {
+            entityType: entityType,
+            sheetName: sheetName,
+            columnCount: columns.length
+          });
+          Logger.log(`Logged column update activity for team ${userTeam.teamId}`);
+        }
+      }
+    } catch (activityError) {
+      Logger.log(`Error logging team activity: ${activityError.message}`);
+      // Don't fail the save if activity logging fails
+    }
+    
     return true;
   } catch (error) {
     Logger.log(`Error saving column preferences: ${error.message}`);

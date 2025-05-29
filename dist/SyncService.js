@@ -621,6 +621,27 @@ function syncPipedriveDataToSheet(
       `Successfully synced ${items.length} items from Pipedrive to sheet "${sheetName}"`
     );
 
+    // Log sync activity for team members
+    try {
+      const userEmail = Session.getActiveUser().getEmail();
+      if (userEmail) {
+        // Check if user is in a team
+        const userTeam = getUserTeam(userEmail);
+        if (userTeam) {
+          // Log the sync activity
+          logTeamActivity(userTeam.teamId, 'sync_performed', userEmail, {
+            entityType: entityType,
+            sheetName: sheetName,
+            itemCount: items.length
+          });
+          Logger.log(`Logged sync activity for team ${userTeam.teamId}`);
+        }
+      }
+    } catch (activityError) {
+      Logger.log(`Error logging team activity: ${activityError.message}`);
+      // Don't fail the sync if activity logging fails
+    }
+
     // Mark Phase 3 as completed
     updateSyncStatus(
       "3",

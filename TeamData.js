@@ -995,10 +995,16 @@ function formatTeamActivity(activity) {
       description = `${actor} modified ${activity.details.setting} settings`;
       break;
     case 'sync_performed':
-      description = `${actor} performed a sync for ${activity.details.entityType}`;
+      const entityType = activity.details.entityType || 'data';
+      const sheetName = activity.details.sheetName || 'sheet';
+      const itemCount = activity.details.itemCount || 0;
+      description = `${actor} synced ${itemCount} ${entityType.toLowerCase()} to "${sheetName}"`;
       break;
     case 'columns_updated':
-      description = `${actor} updated column preferences for ${activity.details.entityType}`;
+      const columnEntityType = activity.details.entityType || 'data';
+      const columnSheetName = activity.details.sheetName || 'sheet';
+      const columnCount = activity.details.columnCount || 0;
+      description = `${actor} updated column preferences for ${columnEntityType.toLowerCase()} (${columnCount} columns) in "${columnSheetName}"`;
       break;
     case 'filter_changed':
       description = `${actor} changed filter to ${activity.details.filterName}`;
