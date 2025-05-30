@@ -1,6 +1,12 @@
 /**
- * PaymentService - Handles Stripe integration and license validation
+ * PaymentService - Handles Stripe recurring subscription integration and license validation
  * This runs in Google™ Apps Script environment
+ * 
+ * Features:
+ * - Creates recurring subscription checkout sessions for monthly/annual plans
+ * - Validates subscription status and feature access
+ * - Manages customer portal access for subscription management
+ * - Handles team subscription inheritance
  */
 
 const PaymentService = {
@@ -29,11 +35,20 @@ const PaymentService = {
       
       const data = JSON.parse(response.getContentText());
       
-      // Cache the result for 1 minute (reduced from 5) to detect cancellations faster
+      // Cache the result for 1 minute to detect subscription changes faster
       const cache = CacheService.getUserCache();
       cache.put('subscription_status', JSON.stringify(data), 60);
       
-      return data;
+      // Ensure we return consistent subscription data
+      return {
+        plan: data.plan || 'free',
+        status: data.status || 'active',
+        expiresAt: data.expiresAt,
+        features: data.features || [],
+        cancelAt: data.cancelAt,
+        canceledAt: data.canceledAt,
+        message: data.message
+      };
     } catch (error) {
       console.error('Error fetching subscription status:', error);
       return {
@@ -45,7 +60,7 @@ const PaymentService = {
   },
   
   /**
-   * Create a Stripe checkout session for upgrading
+   * Create a Stripe checkout session for recurring subscription
    */
   createCheckoutSession(planType) {
     try {
@@ -78,6 +93,11 @@ const PaymentService = {
         }
       }
       
+      // Validate plan type for recurring subscriptions
+      const validPlans = ['pro_monthly', 'pro_annual', 'team_monthly', 'team_annual'];
+      if (!validPlans.includes(planType)) {
+        throw new Error('Invalid subscription plan type');
+      }
       
       // Get the current spreadsheet URL for proper redirect
       const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -87,11 +107,10 @@ const PaymentService = {
         email: userEmail,
         googleUserId: userId,
         scriptId: ScriptApp.getScriptId(),
-        planType: planType, // 'pro_monthly', 'pro_annual', 'team_monthly', 'team_annual'
-        successUrl: spreadsheetUrl + '?upgrade=success', // Redirect back to this spreadsheet
+        planType: planType, // This will be used to select the correct Stripe Price ID
+        successUrl: spreadsheetUrl + '?upgrade=success',
         cancelUrl: spreadsheetUrl + '?upgrade=cancelled'
       };
-      
       
       const response = UrlFetchApp.fetch(`${this.API_URL}/create-checkout-session`, {
         method: 'POST',
@@ -99,18 +118,17 @@ const PaymentService = {
           'Content-Type': 'application/json',
         },
         payload: JSON.stringify(payload),
-        muteHttpExceptions: true // This will return the error response instead of throwing
+        muteHttpExceptions: true
       });
-      
       
       if (response.getResponseCode() !== 200) {
         const errorText = response.getContentText();
         
         try {
           const errorData = JSON.parse(errorText);
-          throw new Error(errorData.error || 'Failed to create payment session');
+          throw new Error(errorData.error || 'Failed to create subscription checkout session');
         } catch (e) {
-          throw new Error('Failed to create payment session: ' + errorText);
+          throw new Error('Failed to create subscription checkout session: ' + errorText);
         }
       }
       
@@ -122,7 +140,7 @@ const PaymentService = {
       
       return data.checkoutUrl;
     } catch (error) {
-      console.error('Error creating checkout session:', error);
+      console.error('Error creating recurring subscription checkout session:', error);
       throw error;
     }
   },
@@ -269,7 +287,27 @@ const PaymentService = {
     };
     
     const allowedPlans = featureMatrix[feature] || [];
-    return allowedPlans.includes(subscription.plan);
+    
+    // Check if plan allows feature AND subscription is active
+    if (!allowedPlans.includes(subscription.plan)) {
+      return false;
+    }
+    
+    // Check subscription status - must be active and not expired
+    if (subscription.status !== 'active') {
+      return false;
+    }
+    
+    // Check if subscription is canceled and past due date
+    if (subscription.cancelAt) {
+      const cancelDate = new Date(subscription.cancelAt);
+      const now = new Date();
+      if (now >= cancelDate) {
+        return false;
+      }
+    }
+    
+    return true;
   },
   
   /**
@@ -611,7 +649,7 @@ const PaymentService = {
   },
   
   /**
-   * Create a Stripe customer portal session for managing subscription
+   * Create a Stripe customer portal session for managing recurring subscription
    */
   createCustomerPortalSession() {
     try {
@@ -619,6 +657,9 @@ const PaymentService = {
       const userId = Session.getTemporaryActiveUserKey() || 'anonymous-' + Utilities.getUuid();
       const scriptId = ScriptApp.getScriptId();
       
+      if (!userEmail) {
+        throw new Error('Email address is required to access subscription management');
+      }
       
       const payload = {
         email: userEmail,
@@ -626,7 +667,6 @@ const PaymentService = {
         scriptId: scriptId,
         returnUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl()
       };
-      
       
       const response = UrlFetchApp.fetch(`${this.API_URL}/create-portal-session`, {
         method: 'POST',
@@ -637,9 +677,8 @@ const PaymentService = {
         muteHttpExceptions: true
       });
       
-      
       if (response.getResponseCode() === 404) {
-        throw new Error('Portal endpoint not available. Please try again later.');
+        throw new Error('Subscription management portal is not available. Please contact support.');
       }
       
       if (response.getResponseCode() !== 200) {
@@ -649,12 +688,12 @@ const PaymentService = {
           const errorMessage = errorData.error || 'Failed to create portal session';
           
           if (errorMessage.includes('No active subscription')) {
-            throw new Error('No active subscription found. Please ensure you have completed payment.');
+            throw new Error('No active subscription found. Please ensure you have an active paid subscription.');
           }
           
           throw new Error(errorMessage);
         } catch (parseError) {
-          throw new Error('Failed to create portal session');
+          throw new Error('Failed to access subscription management portal');
         }
       }
       
@@ -667,6 +706,7 @@ const PaymentService = {
       return data.portalUrl;
       
     } catch (error) {
+      console.error('Error creating customer portal session:', error);
       throw error;
     }
   }
