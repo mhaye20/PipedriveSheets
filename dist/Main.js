@@ -247,10 +247,12 @@ function showUpgradeDialog() {
   try {
     const currentPlan = PaymentService.getCurrentPlan();
     
-    if (currentPlan.plan !== 'free') {
-      // User already has a subscription, redirect to manage subscription
+    // Only redirect to subscription management if user has Team plan
+    // Pro users should be able to upgrade to Team plan
+    if (currentPlan.plan === 'team') {
+      // User already has a Team subscription, redirect to manage subscription
       SpreadsheetApp.getUi().alert(
-        'Active Subscription',
+        'Active Team Subscription',
         `You already have an active ${currentPlan.details.name} subscription. Redirecting to subscription management...`,
         SpreadsheetApp.getUi().ButtonSet.OK
       );
@@ -260,7 +262,7 @@ function showUpgradeDialog() {
   } catch (error) {
   }
   
-  // Show upgrade dialog for free users
+  // Show upgrade dialog for free users and Pro users (who can upgrade to Team)
   PaymentService.showUpgradeDialog();
 }
 
