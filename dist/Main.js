@@ -106,15 +106,6 @@ function sendWelcomeEmail() {
 }
 
 /**
- * Test function to send welcome email to yourself
- * Remove this after testing
- */
-function testWelcomeEmail() {
-  sendWelcomeEmail();
-  SpreadsheetApp.getUi().alert('Test email sent! Check your inbox.');
-}
-
-/**
  * Creates the menu when the spreadsheet opens
  * @param {Object} e The event parameter (optional)
  */
