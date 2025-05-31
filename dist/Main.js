@@ -43,6 +43,74 @@ function onInstall(e) {
   const userProperties = PropertiesService.getUserProperties();
   userProperties.setProperty('FIRST_INSTALL', 'true');
   
+  // Send welcome email to new user
+  sendWelcomeEmail();
+}
+
+/**
+ * Sends a welcome email to new users who install the add-on
+ */
+function sendWelcomeEmail() {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) return;
+    
+    const subject = "Welcome to PipedriveSheets! 🎉";
+    const htmlBody = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #4285F4;">Thanks for being an early user! 🚀</h2>
+        
+        <p>Hey there!</p>
+        
+        <p>I just wanted to personally thank you for installing PipedriveSheets. As an early user, you're helping shape this tool into something amazing for the entire community.</p>
+        
+        <p>Here's what makes this special: <strong>I'm committed to responding to every email within 24 hours</strong>. Seriously! If you run into any issues, have feature requests, or just want to share feedback, don't hesitate to reach out.</p>
+        
+        <p>Some quick tips to get started:</p>
+        <ul>
+          <li>Look for the "Pipedrive" menu in your Google Sheet</li>
+          <li>Start with "Get Started with Pipedrive" to connect your account</li>
+          <li>The Help section has guides for all the features</li>
+        </ul>
+        
+        <p>I'm genuinely excited to see how you use PipedriveSheets and would love to hear about your experience. Every piece of feedback helps me make it better for everyone.</p>
+        
+        <p>Thanks again for being part of this journey!</p>
+        
+        <p>Cheers,<br>
+        The PipedriveSheets Team<br>
+        <a href="mailto:support@pipedrivesheets.com">support@pipedrivesheets.com</a></p>
+        
+        <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+        <p style="font-size: 12px; color: #666;">
+          P.S. This email was sent because you installed the PipedriveSheets Google Sheets add-on. 
+          If you have any questions, just reply to this email!
+        </p>
+      </div>
+    `;
+    
+    // Send the email from your custom domain
+    MailApp.sendEmail({
+      to: userEmail,
+      subject: subject,
+      htmlBody: htmlBody,
+      name: 'PipedriveSheets Support',
+      replyTo: 'support@pipedrivesheets.com'
+    });
+    
+  } catch (error) {
+    // Silently fail - don't interrupt the installation process
+    console.log('Failed to send welcome email:', error);
+  }
+}
+
+/**
+ * Test function to send welcome email to yourself
+ * Remove this after testing
+ */
+function testWelcomeEmail() {
+  sendWelcomeEmail();
+  SpreadsheetApp.getUi().alert('Test email sent! Check your inbox.');
 }
 
 /**
