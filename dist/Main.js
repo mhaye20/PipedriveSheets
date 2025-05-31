@@ -77,8 +77,9 @@ function sendWelcomeEmail() {
         
         <p>Thanks again for being part of this journey!</p>
         
-        <p>Cheers,<br>
-        The PipedriveSheets Team<br>
+        <p>Best,<br>
+        Mike Haye<br>
+        Founder, PipedriveSheets<br>
         <a href="mailto:support@pipedrivesheets.com">support@pipedrivesheets.com</a></p>
         
         <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
