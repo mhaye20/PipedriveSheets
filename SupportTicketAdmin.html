@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Support Ticket Admin</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f8f9fa;
+    }
+    
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 25px;
+      padding-bottom: 15px;
+      border-bottom: 2px solid #e1e5e9;
+    }
+    
+    .header h2 {
+      margin: 0;
+      color: #333;
+      font-size: 24px;
+    }
+    
+    .admin-badge {
+      background: #dc3545;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 15px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    
+    .filters {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 20px;
+      align-items: center;
+    }
+    
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    
+    .filter-group label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #666;
+    }
+    
+    .filter-group select {
+      padding: 8px 12px;
+      border: 1px solid #e1e5e9;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 15px;
+      margin-bottom: 25px;
+    }
+    
+    .stat-card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .stat-number {
+      font-size: 28px;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    
+    .stat-label {
+      font-size: 12px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .stat-open { color: #28a745; }
+    .stat-progress { color: #ffc107; }
+    .stat-resolved { color: #6c757d; }
+    .stat-high { color: #dc3545; }
+    
+    .tickets-container {
+      max-height: 600px;
+      overflow-y: auto;
+    }
+    
+    .ticket-row {
+      background: white;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      cursor: pointer;
+      transition: all 0.3s;
+      border-left: 4px solid #e1e5e9;
+    }
+    
+    .ticket-row:hover:not(.loading) {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      transform: translateY(-1px);
+    }
+    
+    .ticket-row.loading {
+      position: relative;
+      pointer-events: none;
+      opacity: 0.7;
+    }
+    
+    .ticket-row.loading::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+    }
+    
+    .ticket-loading-spinner {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 24px;
+      height: 24px;
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #4285F4;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      z-index: 10;
+      display: none;
+    }
+    
+    .ticket-row.loading .ticket-loading-spinner {
+      display: block;
+    }
+    
+    .ticket-row.high { border-left-color: #dc3545; }
+    .ticket-row.medium { border-left-color: #ffc107; }
+    .ticket-row.low { border-left-color: #28a745; }
+    
+    .ticket-main {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+    
+    .ticket-info {
+      flex: 1;
+    }
+    
+    .ticket-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #333;
+      margin: 0 0 5px 0;
+    }
+    
+    .ticket-customer {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 5px;
+    }
+    
+    .ticket-badges {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    
+    .badge {
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+    
+    .status-open { background: #d4edda; color: #155724; }
+    .status-in_progress { background: #fff3cd; color: #856404; }
+    .status-resolved { background: #d1ecf1; color: #0c5460; }
+    .status-closed { background: #f8d7da; color: #721c24; }
+    
+    .priority-high { background: #dc3545; color: white; }
+    .priority-medium { background: #ffc107; color: #333; }
+    .priority-low { background: #28a745; color: white; }
+    
+    .ticket-actions {
+      display: flex;
+      gap: 8px;
+      margin-left: 15px;
+    }
+    
+    .action-btn {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 60px;
+      box-sizing: border-box;
+    }
+    
+    .action-btn.loading {
+      pointer-events: none;
+      opacity: 0.7;
+    }
+    
+    .action-btn .btn-text {
+      transition: opacity 0.3s;
+    }
+    
+    .action-btn.loading .btn-text {
+      opacity: 0;
+    }
+    
+    .action-btn .btn-spinner {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top: 2px solid white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    
+    .action-btn.loading .btn-spinner {
+      opacity: 1;
+    }
+    
+    .btn-view {
+      background: #4285F4;
+      color: white;
+    }
+    
+    .btn-resolve {
+      background: #28a745;
+      color: white;
+    }
+    
+    .btn-close {
+      background: #6c757d;
+      color: white;
+    }
+    
+    .ticket-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: #999;
+      margin-top: 10px;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #666;
+      background: white;
+      border-radius: 8px;
+    }
+    
+    .refresh-btn {
+      background: #6c757d;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 100px;
+      box-sizing: border-box;
+      transition: background-color 0.3s;
+    }
+    
+    .refresh-btn:hover:not(.loading) {
+      background: #545b62;
+    }
+    
+    .refresh-btn.loading {
+      pointer-events: none;
+      opacity: 0.7;
+    }
+    
+    .refresh-btn .btn-text {
+      transition: opacity 0.3s;
+    }
+    
+    .refresh-btn.loading .btn-text {
+      opacity: 0;
+    }
+    
+    .refresh-btn .btn-spinner {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top: 2px solid white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    
+    .refresh-btn.loading .btn-spinner {
+      opacity: 1;
+    }
+    
+    .unread-indicator {
+      width: 8px;
+      height: 8px;
+      background: #dc3545;
+      border-radius: 50%;
+      margin-left: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>🛠️ Support Ticket Admin</h2>
+    <div class="admin-badge">ADMIN</div>
+  </div>
+  
+  <div class="filters">
+    <div class="filter-group">
+      <label>Status</label>
+      <select id="status-filter" onchange="filterTickets()">
+        <option value="">All Status</option>
+        <option value="open">Open</option>
+        <option value="in_progress">In Progress</option>
+        <option value="resolved">Resolved</option>
+        <option value="closed">Closed</option>
+      </select>
+    </div>
+    
+    <div class="filter-group">
+      <label>Priority</label>
+      <select id="priority-filter" onchange="filterTickets()">
+        <option value="">All Priority</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+    </div>
+    
+    <div class="filter-group">
+      <label>Type</label>
+      <select id="type-filter" onchange="filterTickets()">
+        <option value="">All Types</option>
+        <option value="bug">Bug Report</option>
+        <option value="feature">Feature Request</option>
+        <option value="help">Help</option>
+        <option value="integration">Integration</option>
+        <option value="billing">Billing</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    
+    <button id="refresh-btn" class="refresh-btn" onclick="refreshWithLoading()">
+      <div class="btn-spinner"></div>
+      <span class="btn-text">🔄 Refresh</span>
+    </button>
+  </div>
+  
+  <div id="stats" class="stats-grid" style="display: none;">
+    <div class="stat-card">
+      <div class="stat-number stat-open" id="open-count">0</div>
+      <div class="stat-label">Open</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-progress" id="progress-count">0</div>
+      <div class="stat-label">In Progress</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-resolved" id="resolved-count">0</div>
+      <div class="stat-label">Resolved</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-high" id="high-priority-count">0</div>
+      <div class="stat-label">High Priority</div>
+    </div>
+  </div>
+  
+  <div id="loading" class="loading">
+    <p>📥 Loading tickets...</p>
+  </div>
+  
+  <div id="tickets-container" class="tickets-container" style="display: none;">
+    <!-- Tickets will be loaded here -->
+  </div>
+  
+  <div id="empty-state" class="empty-state" style="display: none;">
+    <h3>📋 No Tickets Found</h3>
+    <p>No support tickets match your current filters.</p>
+  </div>
+
+  <script>
+    let allTickets = [];
+    let filteredTickets = [];
+    
+    // Load tickets on page load
+    window.addEventListener('load', function() {
+      loadTickets();
+    });
+    
+    function showButtonLoading(buttonId) {
+      const button = document.getElementById(buttonId);
+      if (button) {
+        button.classList.add('loading');
+      }
+    }
+    
+    function hideButtonLoading(buttonId) {
+      const button = document.getElementById(buttonId);
+      if (button) {
+        button.classList.remove('loading');
+      }
+    }
+    
+    function showTicketRowLoading(ticketId) {
+      const row = document.getElementById(`ticket-row-${ticketId}`);
+      if (row) {
+        row.classList.add('loading');
+      }
+    }
+    
+    function hideTicketRowLoading(ticketId) {
+      const row = document.getElementById(`ticket-row-${ticketId}`);
+      if (row) {
+        row.classList.remove('loading');
+      }
+    }
+    
+    function loadTickets() {
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('tickets-container').style.display = 'none';
+      document.getElementById('empty-state').style.display = 'none';
+      document.getElementById('stats').style.display = 'none';
+      
+      google.script.run
+        .withSuccessHandler(function(tickets) {
+          allTickets = tickets || [];
+          filteredTickets = allTickets;
+          displayTickets();
+        })
+        .withFailureHandler(function(error) {
+          showError('Error loading tickets: ' + error.message);
+        })
+        .getAllTickets();
+    }
+    
+    function displayTickets() {
+      document.getElementById('loading').style.display = 'none';
+      
+      updateStats();
+      
+      if (filteredTickets.length === 0) {
+        document.getElementById('empty-state').style.display = 'block';
+        return;
+      }
+      
+      const container = document.getElementById('tickets-container');
+      container.innerHTML = '';
+      container.style.display = 'block';
+      
+      filteredTickets.forEach(function(ticket) {
+        const ticketRow = createTicketRow(ticket);
+        container.appendChild(ticketRow);
+      });
+    }
+    
+    function createTicketRow(ticket) {
+      const row = document.createElement('div');
+      row.className = `ticket-row ${ticket.priority}`;
+      
+      const main = document.createElement('div');
+      main.className = 'ticket-main';
+      
+      const info = document.createElement('div');
+      info.className = 'ticket-info';
+      
+      const title = document.createElement('h3');
+      title.className = 'ticket-title';
+      title.textContent = ticket.subject;
+      
+      const customer = document.createElement('div');
+      customer.className = 'ticket-customer';
+      customer.textContent = `${ticket.name} (${ticket.email})`;
+      
+      const badges = document.createElement('div');
+      badges.className = 'ticket-badges';
+      
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `badge status-${ticket.status}`;
+      statusBadge.textContent = ticket.status.replace('_', ' ');
+      
+      const priorityBadge = document.createElement('span');
+      priorityBadge.className = `badge priority-${ticket.priority}`;
+      priorityBadge.textContent = ticket.priority;
+      
+      const idBadge = document.createElement('span');
+      idBadge.className = 'badge';
+      idBadge.style.background = '#e9ecef';
+      idBadge.style.color = '#495057';
+      idBadge.textContent = `#${ticket.id}`;
+      
+      badges.appendChild(statusBadge);
+      badges.appendChild(priorityBadge);
+      badges.appendChild(idBadge);
+      
+      // Check for unread messages (admin hasn't replied recently)
+      const hasUnread = ticket.lastUserActivity && 
+        (!ticket.lastAdminActivity || 
+         new Date(ticket.lastUserActivity) > new Date(ticket.lastAdminActivity));
+      
+      if (hasUnread) {
+        const unreadIndicator = document.createElement('div');
+        unreadIndicator.className = 'unread-indicator';
+        badges.appendChild(unreadIndicator);
+      }
+      
+      info.appendChild(title);
+      info.appendChild(customer);
+      info.appendChild(badges);
+      
+      const actions = document.createElement('div');
+      actions.className = 'ticket-actions';
+      
+      const viewBtn = document.createElement('button');
+      viewBtn.className = 'action-btn btn-view';
+      viewBtn.id = `view-btn-${ticket.id}`;
+      viewBtn.innerHTML = '<div class="btn-spinner"></div><span class="btn-text">View</span>';
+      viewBtn.onclick = (e) => {
+        e.stopPropagation();
+        showButtonLoading(`view-btn-${ticket.id}`);
+        // Don't show card loading when view button is clicked
+        google.script.run
+          .withSuccessHandler(function() {
+            hideButtonLoading(`view-btn-${ticket.id}`);
+          })
+          .withFailureHandler(function(error) {
+            hideButtonLoading(`view-btn-${ticket.id}`);
+            alert('Error opening ticket: ' + error.message);
+          })
+          .viewSupportTicket(ticket.id);
+      };
+      
+      if (ticket.status === 'open' || ticket.status === 'in_progress') {
+        const resolveBtn = document.createElement('button');
+        resolveBtn.className = 'action-btn btn-resolve';
+        resolveBtn.id = `resolve-btn-${ticket.id}`;
+        resolveBtn.innerHTML = '<div class="btn-spinner"></div><span class="btn-text">Resolve</span>';
+        resolveBtn.onclick = (e) => {
+          e.stopPropagation();
+          showButtonLoading(`resolve-btn-${ticket.id}`);
+          updateTicketStatus(ticket.id, 'resolved', `resolve-btn-${ticket.id}`);
+        };
+        actions.appendChild(resolveBtn);
+      }
+      
+      if (ticket.status !== 'closed') {
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'action-btn btn-close';
+        closeBtn.id = `close-btn-${ticket.id}`;
+        closeBtn.innerHTML = '<div class="btn-spinner"></div><span class="btn-text">Close</span>';
+        closeBtn.onclick = (e) => {
+          e.stopPropagation();
+          showButtonLoading(`close-btn-${ticket.id}`);
+          updateTicketStatus(ticket.id, 'closed', `close-btn-${ticket.id}`);
+        };
+        actions.appendChild(closeBtn);
+      }
+      
+      actions.appendChild(viewBtn);
+      
+      main.appendChild(info);
+      main.appendChild(actions);
+      
+      const meta = document.createElement('div');
+      meta.className = 'ticket-meta';
+      
+      const created = document.createElement('span');
+      created.textContent = `Created: ${formatDate(ticket.createdAt)}`;
+      
+      const messageCount = document.createElement('span');
+      messageCount.textContent = `💬 ${ticket.messages ? ticket.messages.length : 1} messages`;
+      
+      meta.appendChild(created);
+      meta.appendChild(messageCount);
+      
+      // Add loading spinner to ticket row
+      const loadingSpinner = document.createElement('div');
+      loadingSpinner.className = 'ticket-loading-spinner';
+      
+      row.appendChild(main);
+      row.appendChild(meta);
+      row.appendChild(loadingSpinner);
+      
+      // Add unique ID for loading state management
+      row.id = `ticket-row-${ticket.id}`;
+      
+      row.onclick = () => {
+        showTicketRowLoading(ticket.id);
+        viewTicket(ticket.id);
+      };
+      
+      return row;
+    }
+    
+    function updateStats() {
+      const stats = {
+        open: 0,
+        inProgress: 0,
+        resolved: 0,
+        highPriority: 0
+      };
+      
+      filteredTickets.forEach(ticket => {
+        if (ticket.status === 'open') stats.open++;
+        if (ticket.status === 'in_progress') stats.inProgress++;
+        if (ticket.status === 'resolved') stats.resolved++;
+        if (ticket.priority === 'high') stats.highPriority++;
+      });
+      
+      document.getElementById('open-count').textContent = stats.open;
+      document.getElementById('progress-count').textContent = stats.inProgress;
+      document.getElementById('resolved-count').textContent = stats.resolved;
+      document.getElementById('high-priority-count').textContent = stats.highPriority;
+      document.getElementById('stats').style.display = 'grid';
+    }
+    
+    function filterTickets() {
+      const statusFilter = document.getElementById('status-filter').value;
+      const priorityFilter = document.getElementById('priority-filter').value;
+      const typeFilter = document.getElementById('type-filter').value;
+      
+      filteredTickets = allTickets.filter(ticket => {
+        if (statusFilter && ticket.status !== statusFilter) return false;
+        if (priorityFilter && ticket.priority !== priorityFilter) return false;
+        if (typeFilter && ticket.type !== typeFilter) return false;
+        return true;
+      });
+      
+      displayTickets();
+    }
+    
+    function viewTicket(ticketId) {
+      // This would open the admin ticket view - for now, we'll use the same view
+      google.script.run
+        .withSuccessHandler(function() {
+          // Loading will clear when dialog opens or on error
+          hideTicketRowLoading(ticketId);
+        })
+        .withFailureHandler(function(error) {
+          hideTicketRowLoading(ticketId);
+          alert('Error opening ticket: ' + error.message);
+        })
+        .viewSupportTicket(ticketId);
+    }
+    
+    function updateTicketStatus(ticketId, status, buttonId) {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (buttonId) hideButtonLoading(buttonId);
+          if (result.success) {
+            loadTickets(); // Refresh the list
+          } else {
+            alert('Error updating ticket: ' + result.error);
+          }
+        })
+        .withFailureHandler(function(error) {
+          if (buttonId) hideButtonLoading(buttonId);
+          alert('Error updating ticket: ' + error.message);
+        })
+        .updateTicketStatus(ticketId, status);
+    }
+    
+    function refreshWithLoading() {
+      const refreshBtn = document.getElementById('refresh-btn');
+      refreshBtn.classList.add('loading');
+      
+      // Add a small delay to show the loading animation
+      setTimeout(() => {
+        loadTickets();
+        
+        // Hide loading state after tickets are loaded
+        setTimeout(() => {
+          refreshBtn.classList.remove('loading');
+        }, 500);
+      }, 100);
+    }
+    
+    function formatDate(dateString) {
+      const date = new Date(dateString);
+      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    }
+    
+    function showError(message) {
+      document.getElementById('loading').innerHTML = 
+        '<p style="color: #dc3545;">❌ ' + message + '</p>';
+    }
+    
+    // Auto-refresh every 2 minutes
+    setInterval(function() {
+      loadTickets();
+    }, 120000);
+  </script>
+</body>
+</html>

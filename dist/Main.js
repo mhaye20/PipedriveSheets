@@ -871,6 +871,154 @@ function testShowJoinTeamDialog() {
 }
 
 /**
+ * Shows the support ticket request form
+ */
+function showSupportTicket() {
+  try {
+    const html = HtmlService.createTemplateFromFile('SupportTicket');
+    const htmlOutput = html.evaluate()
+      .setWidth(550)
+      .setHeight(650);
+    
+    SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Submit Support Request');
+  } catch (e) {
+    SpreadsheetApp.getUi().alert('Error', 'Failed to open support form: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+/**
+ * Shows the user's support tickets
+ */
+function showMyTickets() {
+  try {
+    viewSupportTickets();
+  } catch (e) {
+    SpreadsheetApp.getUi().alert('Error', 'Failed to load support tickets: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+/**
+ * Submits a support ticket
+ * @param {Object} ticketData - The ticket form data
+ * @return {Object} Result with success status and ticket ID
+ */
+function submitSupportTicket(ticketData) {
+  return SupportTicketService.createTicket(ticketData);
+}
+
+/**
+ * Gets user information for form pre-population
+ * @return {Object} User information
+ */
+function getUserInfo() {
+  return SupportTicketService.getUserInfo();
+}
+
+/**
+ * Views a specific support ticket
+ * @param {string} ticketId - The ticket ID to view
+ */
+function viewSupportTicket(ticketId) {
+  try {
+    const html = HtmlService.createTemplateFromFile('SupportTicketView');
+    html.ticketId = ticketId;
+    
+    const htmlOutput = html.evaluate()
+      .setWidth(700)
+      .setHeight(600);
+    
+    SpreadsheetApp.getUi().showModalDialog(htmlOutput, `Support Ticket #${ticketId}`);
+  } catch (e) {
+    SpreadsheetApp.getUi().alert('Error', 'Failed to open ticket: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+/**
+ * Views all support tickets for the current user
+ */
+function viewSupportTickets() {
+  try {
+    const html = HtmlService.createTemplateFromFile('SupportTicketsList');
+    
+    const htmlOutput = html.evaluate()
+      .setWidth(800)
+      .setHeight(600);
+    
+    SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'My Support Tickets');
+  } catch (e) {
+    SpreadsheetApp.getUi().alert('Error', 'Failed to load tickets: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+/**
+ * Gets tickets for the current user
+ * @return {Array} Array of user's tickets
+ */
+function getUserTickets() {
+  return SupportTicketService.getUserTickets();
+}
+
+/**
+ * Gets a specific ticket
+ * @param {string} ticketId - The ticket ID
+ * @return {Object|null} The ticket object or null
+ */
+function getTicket(ticketId) {
+  return SupportTicketService.getTicket(ticketId);
+}
+
+/**
+ * Adds a message to a ticket
+ * @param {string} ticketId - The ticket ID
+ * @param {string} message - The message content
+ * @return {Object} Result with success status
+ */
+function addTicketMessage(ticketId, message) {
+  return SupportTicketService.addMessage(ticketId, message, false);
+}
+
+/**
+ * Gets all tickets (admin function)
+ * @return {Array} Array of all tickets
+ */
+function getAllTickets() {
+  return SupportTicketService.getAllTickets();
+}
+
+/**
+ * Updates ticket status (admin function)
+ * @param {string} ticketId - The ticket ID
+ * @param {string} status - New status
+ * @return {Object} Result with success status
+ */
+function updateTicketStatus(ticketId, status) {
+  return SupportTicketService.updateTicketStatus(ticketId, status);
+}
+
+/**
+ * Shows the admin support ticket interface
+ * (Only accessible by admin users)
+ */
+function showSupportTicketAdmin() {
+  try {
+    // Check if user is admin
+    if (!SupportTicketService.isAdminUser()) {
+      SpreadsheetApp.getUi().alert('Access Denied', 'You do not have admin privileges.', SpreadsheetApp.getUi().ButtonSet.OK);
+      return;
+    }
+    
+    const html = HtmlService.createTemplateFromFile('SupportTicketAdmin');
+    const htmlOutput = html.evaluate()
+      .setWidth(900)
+      .setHeight(700);
+    
+    SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Support Ticket Admin Panel');
+  } catch (e) {
+    SpreadsheetApp.getUi().alert('Error', 'Failed to open admin panel: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+/**
  * Test function to simulate first installation and auto-team creation
  * Use this to test the team creation flow for new installers
  */

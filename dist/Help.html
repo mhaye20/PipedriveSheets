@@ -198,6 +198,75 @@
         background-color: #f0f7ff;
         border-color: var(--primary-color);
       }
+      
+      .support-option {
+        position: relative;
+        overflow: hidden;
+      }
+      
+      .support-option.loading {
+        pointer-events: none;
+        opacity: 0.7;
+      }
+      
+      .support-option.loading::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      
+      .loading-spinner {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 24px;
+        height: 24px;
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid var(--primary-color);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        z-index: 10;
+        display: none;
+      }
+      
+      .support-option.loading .loading-spinner {
+        display: block;
+      }
+      
+      .loading-text {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 14px;
+        color: var(--primary-color);
+        font-weight: 500;
+        z-index: 10;
+        display: none;
+        margin-top: 35px;
+      }
+      
+      .support-option.loading .loading-text {
+        display: block;
+      }
+      
+      @keyframes spin {
+        0% { transform: translate(-50%, -50%) rotate(0deg); }
+        100% { transform: translate(-50%, -50%) rotate(360deg); }
+      }
+      
+      .support-option:hover:not(.loading) {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-hover);
+      }
     </style>
   </head>
   <body>
@@ -209,6 +278,7 @@
     <div class="tab-container">
       <div class="tab-buttons">
         <button class="tab-button active" onclick="openTab(event, 'help')">Help</button>
+        <button class="tab-button" onclick="openTab(event, 'support')">Support</button>
         <button class="tab-button" onclick="openTab(event, 'about')">About</button>
         <button class="tab-button" onclick="openTab(event, 'version')">Version History</button>
       </div>
@@ -253,6 +323,58 @@
           </ol>
         </div>
         <? } ?>
+      </div>
+      
+      <div id="support" class="tab-content">
+        <div class="feature-card early-version">
+          <h4>📞 Get Personal Support</h4>
+          <p>Need help? I'm here to support you personally!</p>
+          <p>I typically respond to all support requests within 24 hours. Whether you have a bug report, feature request, or just need help getting set up - don't hesitate to reach out.</p>
+        </div>
+        
+        <div class="section">
+          <h4>Support Options</h4>
+          
+          <div id="new-ticket-option" class="feature-card support-option" style="cursor: pointer; margin-bottom: 12px;" onclick="openSupportTicket()">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Opening support form...</div>
+            <h4 style="color: #4285f4; margin-bottom: 8px;">🎫 Submit New Support Request</h4>
+            <p style="margin: 0;">Create a new support ticket for bugs, feature requests, or general help. I'll respond within 24 hours with personal assistance.</p>
+          </div>
+          
+          <div id="view-tickets-option" class="feature-card support-option" style="cursor: pointer; margin-bottom: 12px;" onclick="viewMyTickets()">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Loading your tickets...</div>
+            <h4 style="color: #4285f4; margin-bottom: 8px;">📋 View My Support Tickets</h4>
+            <p style="margin: 0;">Check the status of your existing support requests and continue conversations with our support team.</p>
+          </div>
+          
+          <div id="quick-email-option" class="feature-card support-option" style="cursor: pointer;" onclick="sendQuickEmail()">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Opening email...</div>
+            <h4 style="color: #4285f4; margin-bottom: 8px;">📧 Send Quick Email</h4>
+            <p style="margin: 0;">For simple questions, send a quick email directly to <span style="color: #4285f4;">support@pipedrivesheets.com</span></p>
+          </div>
+        </div>
+        
+        <div class="section">
+          <h4>What to Include in Your Request</h4>
+          <ul>
+            <li><b>Bug Reports:</b> What you were trying to do, what happened, and any error messages</li>
+            <li><b>Feature Requests:</b> Describe what you'd like to see and how it would help your workflow</li>
+            <li><b>Integration Issues:</b> Your Pipedrive setup details and which fields you're working with</li>
+            <li><b>General Help:</b> What you're trying to accomplish and where you're getting stuck</li>
+          </ul>
+        </div>
+        
+        <div class="section">
+          <h4>Response Times</h4>
+          <ul>
+            <li><b>High Priority:</b> Within 12 hours (critical bugs, data issues)</li>
+            <li><b>Medium Priority:</b> Within 24 hours (general support, feature requests)</li>
+            <li><b>Low Priority:</b> Within 48 hours (documentation questions, enhancement ideas)</li>
+          </ul>
+        </div>
       </div>
       
       <div id="about" class="tab-content">
@@ -327,6 +449,69 @@
         
         // Add active class to the button that opened the tab
         evt.currentTarget.classList.add('active');
+      }
+      
+      function showLoadingState(elementId) {
+        const element = document.getElementById(elementId);
+        if (element) {
+          element.classList.add('loading');
+        }
+      }
+      
+      function hideLoadingState(elementId) {
+        const element = document.getElementById(elementId);
+        if (element) {
+          element.classList.remove('loading');
+        }
+      }
+      
+      function openSupportTicket() {
+        showLoadingState('new-ticket-option');
+        
+        google.script.run
+          .withSuccessHandler(function() {
+            // Close help dialog when support ticket opens
+            google.script.host.close();
+          })
+          .withFailureHandler(function(error) {
+            hideLoadingState('new-ticket-option');
+            alert('Error opening support ticket: ' + error.message);
+          })
+          .showSupportTicket();
+      }
+      
+      function viewMyTickets() {
+        showLoadingState('view-tickets-option');
+        
+        google.script.run
+          .withSuccessHandler(function() {
+            // Close help dialog when ticket list opens
+            google.script.host.close();
+          })
+          .withFailureHandler(function(error) {
+            hideLoadingState('view-tickets-option');
+            alert('Error opening support tickets: ' + error.message);
+          })
+          .showMyTickets();
+      }
+      
+      function sendQuickEmail() {
+        showLoadingState('quick-email-option');
+        
+        // Show loading for a brief moment then open email
+        setTimeout(function() {
+          const subject = encodeURIComponent('PipedriveSheets Support Request');
+          const body = encodeURIComponent('Hi there,\n\nI need help with PipedriveSheets.\n\n[Please describe your question or issue here]\n\nThanks!');
+          const mailtoLink = `mailto:support@pipedrivesheets.com?subject=${subject}&body=${body}`;
+          
+          // For Google Apps Script, we need to use window.open
+          window.open(mailtoLink, '_blank');
+          
+          // Hide loading state after a short delay
+          setTimeout(function() {
+            hideLoadingState('quick-email-option');
+          }, 500);
+        }, 300);
       }
     </script>
   </body>

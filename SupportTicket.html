@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Support Request</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f8f9fa;
+    }
+    
+    .container {
+      max-width: 500px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    
+    .header {
+      background: #4285F4;
+      color: white;
+      padding: 20px;
+      text-align: center;
+    }
+    
+    .header h2 {
+      margin: 0;
+      font-size: 24px;
+    }
+    
+    .header p {
+      margin: 5px 0 0 0;
+      opacity: 0.9;
+      font-size: 14px;
+    }
+    
+    .form-container {
+      padding: 30px;
+    }
+    
+    .form-group {
+      margin-bottom: 20px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: #333;
+    }
+    
+    input[type="text"], input[type="email"], select, textarea {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e1e5e9;
+      border-radius: 6px;
+      font-size: 14px;
+      box-sizing: border-box;
+      transition: border-color 0.3s;
+    }
+    
+    input[type="text"]:focus, input[type="email"]:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #4285F4;
+    }
+    
+    textarea {
+      resize: vertical;
+      min-height: 120px;
+      font-family: Arial, sans-serif;
+    }
+    
+    .priority-group {
+      display: flex;
+      gap: 15px;
+      margin-top: 8px;
+    }
+    
+    .priority-option {
+      flex: 1;
+      padding: 12px;
+      border: 2px solid #e1e5e9;
+      border-radius: 6px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      background: white;
+    }
+    
+    .priority-option:hover {
+      border-color: #4285F4;
+      background: #f8f9ff;
+    }
+    
+    .priority-option.selected {
+      border-color: #4285F4;
+      background: #4285F4;
+      color: white;
+    }
+    
+    .priority-option input[type="radio"] {
+      display: none;
+    }
+    
+    .priority-high { border-color: #dc3545; }
+    .priority-high.selected { background: #dc3545; border-color: #dc3545; }
+    .priority-medium { border-color: #ffc107; }
+    .priority-medium.selected { background: #ffc107; border-color: #ffc107; color: #333; }
+    .priority-low { border-color: #28a745; }
+    .priority-low.selected { background: #28a745; border-color: #28a745; }
+    
+    .buttons {
+      display: flex;
+      gap: 12px;
+      margin-top: 30px;
+    }
+    
+    .btn {
+      flex: 1;
+      padding: 14px 24px;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    
+    .btn-primary {
+      background: #4285F4;
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #3367D6;
+    }
+    
+    .btn-primary:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    
+    .btn-secondary {
+      background: #6c757d;
+      color: white;
+    }
+    
+    .btn-secondary:hover {
+      background: #545b62;
+    }
+    
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 20px;
+      color: #666;
+    }
+    
+    .loading-spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #4285F4;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 15px auto;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .success {
+      display: none;
+      text-align: center;
+      padding: 30px;
+      color: #28a745;
+    }
+    
+    .success h3 {
+      color: #28a745;
+      margin-bottom: 15px;
+    }
+    
+    .ticket-id {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 6px;
+      margin: 15px 0;
+      font-family: monospace;
+      font-weight: bold;
+      color: #333;
+    }
+    
+    .footer-links {
+      margin-top: 20px;
+    }
+    
+    .footer-links button {
+      background: none;
+      border: none;
+      color: #4285F4;
+      text-decoration: underline;
+      cursor: pointer;
+      margin-right: 15px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>📞 Support Request</h2>
+      <p>We typically respond within 24 hours</p>
+    </div>
+    
+    <div id="form-view" class="form-container">
+      <form id="support-form">
+        <div class="form-group">
+          <label for="name">Your Name</label>
+          <input type="text" id="name" name="name" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input type="email" id="email" name="email" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="type">Request Type</label>
+          <select id="type" name="type" required>
+            <option value="">Select type...</option>
+            <option value="bug">🐛 Bug Report</option>
+            <option value="feature">💡 Feature Request</option>
+            <option value="help">❓ How-to / Help</option>
+            <option value="integration">🔧 Integration Issue</option>
+            <option value="billing">💳 Billing Question</option>
+            <option value="other">📝 Other</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label>Priority Level</label>
+          <div class="priority-group">
+            <div class="priority-option priority-high" onclick="selectPriority('high')">
+              <input type="radio" name="priority" value="high" id="priority-high">
+              <strong>High</strong><br>
+              <small>Urgent issue</small>
+            </div>
+            <div class="priority-option priority-medium" onclick="selectPriority('medium')">
+              <input type="radio" name="priority" value="medium" id="priority-medium">
+              <strong>Medium</strong><br>
+              <small>Normal request</small>
+            </div>
+            <div class="priority-option priority-low" onclick="selectPriority('low')">
+              <input type="radio" name="priority" value="low" id="priority-low">
+              <strong>Low</strong><br>
+              <small>When you can</small>
+            </div>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label for="subject">Subject</label>
+          <input type="text" id="subject" name="subject" placeholder="Brief description of your request" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="description">Description</label>
+          <textarea id="description" name="description" placeholder="Please provide details about your issue or request. Include any error messages, steps you've tried, or specific features you'd like to see." required></textarea>
+        </div>
+        
+        <div class="buttons">
+          <button type="button" class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="submit-btn">Submit Request</button>
+        </div>
+      </form>
+    </div>
+    
+    <div id="loading-view" class="loading">
+      <div class="loading-spinner"></div>
+      <p>📤 Submitting your request...</p>
+    </div>
+    
+    <div id="success-view" class="success">
+      <h3>✅ Request Submitted Successfully!</h3>
+      <p>Your support ticket has been created and we'll respond within 24 hours.</p>
+      
+      <div class="ticket-id">
+        Ticket ID: <span id="ticket-number"></span>
+      </div>
+      
+      <p>You can reference this ticket ID in future communications. We've also sent a confirmation email to your address.</p>
+      
+      <div class="footer-links">
+        <button onclick="viewTicket()">View Ticket</button>
+        <button onclick="google.script.host.close()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Auto-populate user email if available
+    google.script.run
+      .withSuccessHandler(function(userInfo) {
+        if (userInfo.email) {
+          document.getElementById('email').value = userInfo.email;
+        }
+        if (userInfo.name) {
+          document.getElementById('name').value = userInfo.name;
+        }
+      })
+      .withFailureHandler(function(error) {
+        // Silently handle error - user can manually enter email
+      })
+      .getUserInfo();
+    
+    // Priority selection
+    function selectPriority(priority) {
+      // Remove selected class from all options
+      document.querySelectorAll('.priority-option').forEach(option => {
+        option.classList.remove('selected');
+      });
+      
+      // Add selected class to clicked option
+      document.querySelector('.priority-' + priority).classList.add('selected');
+      
+      // Check the radio button
+      document.getElementById('priority-' + priority).checked = true;
+    }
+    
+    // Default to medium priority
+    selectPriority('medium');
+    
+    // Form submission
+    document.getElementById('support-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      
+      // Get form data
+      const formData = {
+        name: document.getElementById('name').value,
+        email: document.getElementById('email').value,
+        type: document.getElementById('type').value,
+        priority: document.querySelector('input[name="priority"]:checked').value,
+        subject: document.getElementById('subject').value,
+        description: document.getElementById('description').value
+      };
+      
+      // Validate form
+      if (!formData.name || !formData.email || !formData.type || !formData.priority || !formData.subject || !formData.description) {
+        alert('Please fill in all required fields.');
+        return;
+      }
+      
+      // Show loading
+      document.getElementById('form-view').style.display = 'none';
+      document.getElementById('loading-view').style.display = 'block';
+      
+      // Submit the form
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            document.getElementById('loading-view').style.display = 'none';
+            document.getElementById('success-view').style.display = 'block';
+            document.getElementById('ticket-number').textContent = result.ticketId;
+            
+            // Store ticket ID for viewing
+            window.currentTicketId = result.ticketId;
+          } else {
+            alert('Error: ' + result.error);
+            document.getElementById('loading-view').style.display = 'none';
+            document.getElementById('form-view').style.display = 'block';
+          }
+        })
+        .withFailureHandler(function(error) {
+          alert('Error submitting request: ' + error.message);
+          document.getElementById('loading-view').style.display = 'none';
+          document.getElementById('form-view').style.display = 'block';
+        })
+        .submitSupportTicket(formData);
+    });
+    
+    // View ticket function
+    function viewTicket() {
+      if (window.currentTicketId) {
+        google.script.run
+          .withSuccessHandler(function() {
+            google.script.host.close();
+          })
+          .viewSupportTicket(window.currentTicketId);
+      }
+    }
+  </script>
+</body>
+</html>

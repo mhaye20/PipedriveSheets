@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>My Support Tickets</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f8f9fa;
+    }
+    
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 25px;
+    }
+    
+    .header h2 {
+      margin: 0;
+      color: #333;
+      font-size: 24px;
+    }
+    
+    .new-ticket-btn {
+      background: #4285F4;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: background-color 0.3s;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 140px;
+      box-sizing: border-box;
+    }
+    
+    .new-ticket-btn:hover:not(.loading) {
+      background: #3367D6;
+    }
+    
+    .new-ticket-btn.loading {
+      pointer-events: none;
+      opacity: 0.8;
+    }
+    
+    .new-ticket-btn .btn-text {
+      transition: opacity 0.3s;
+    }
+    
+    .new-ticket-btn.loading .btn-text {
+      opacity: 0;
+    }
+    
+    .new-ticket-btn .btn-spinner {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top: 2px solid white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    
+    .new-ticket-btn.loading .btn-spinner {
+      opacity: 1;
+    }
+    
+    .tickets-container {
+      max-height: 500px;
+      overflow-y: auto;
+    }
+    
+    .ticket-card {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 15px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      cursor: pointer;
+      transition: all 0.3s;
+      border-left: 4px solid #e1e5e9;
+    }
+    
+    .ticket-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      transform: translateY(-1px);
+    }
+    
+    .ticket-card.high {
+      border-left-color: #dc3545;
+    }
+    
+    .ticket-card.medium {
+      border-left-color: #ffc107;
+    }
+    
+    .ticket-card.low {
+      border-left-color: #28a745;
+    }
+    
+    .ticket-header {
+      display: flex;
+      justify-content: between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+    
+    .ticket-title {
+      flex: 1;
+      font-size: 16px;
+      font-weight: 600;
+      color: #333;
+      margin: 0 0 4px 0;
+    }
+    
+    .ticket-id {
+      font-size: 12px;
+      color: #666;
+      font-family: monospace;
+      margin-left: 15px;
+    }
+    
+    .ticket-meta {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 10px;
+      font-size: 13px;
+    }
+    
+    .status-badge {
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+    
+    .status-open { background: #d4edda; color: #155724; }
+    .status-in_progress { background: #fff3cd; color: #856404; }
+    .status-resolved { background: #d1ecf1; color: #0c5460; }
+    .status-closed { background: #f8d7da; color: #721c24; }
+    
+    .priority-badge {
+      padding: 3px 6px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+    
+    .priority-high { background: #dc3545; color: white; }
+    .priority-medium { background: #ffc107; color: #333; }
+    .priority-low { background: #28a745; color: white; }
+    
+    .type-badge {
+      padding: 3px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      background: #e9ecef;
+      color: #495057;
+    }
+    
+    .ticket-preview {
+      color: #666;
+      line-height: 1.4;
+      margin-bottom: 12px;
+    }
+    
+    .ticket-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: #999;
+    }
+    
+    .message-count {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    
+    .unread-badge {
+      background: #dc3545;
+      color: white;
+      border-radius: 50%;
+      padding: 2px 6px;
+      font-size: 10px;
+      font-weight: bold;
+      min-width: 16px;
+      text-align: center;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+    
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #4285F4;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px auto;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #666;
+    }
+    
+    .empty-state h3 {
+      color: #999;
+      margin-bottom: 10px;
+    }
+    
+    .empty-state p {
+      margin-bottom: 25px;
+      line-height: 1.5;
+    }
+    
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+      justify-content: center;
+    }
+    
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    
+    .btn-primary {
+      background: #4285F4;
+      color: white;
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 200px;
+      box-sizing: border-box;
+    }
+    
+    .btn-primary:hover:not(.loading) {
+      background: #3367D6;
+    }
+    
+    .btn-primary.loading {
+      pointer-events: none;
+      opacity: 0.8;
+    }
+    
+    .btn-primary .btn-text {
+      transition: opacity 0.3s;
+    }
+    
+    .btn-primary.loading .btn-text {
+      opacity: 0;
+    }
+    
+    .btn-primary .btn-spinner {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top: 2px solid white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    
+    .btn-primary.loading .btn-spinner {
+      opacity: 1;
+    }
+    
+    .btn-secondary {
+      background: #6c757d;
+      color: white;
+    }
+    
+    .btn-secondary:hover {
+      background: #545b62;
+    }
+    
+    .stats {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 25px;
+    }
+    
+    .stat-card {
+      background: white;
+      padding: 15px;
+      border-radius: 6px;
+      text-align: center;
+      flex: 1;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .stat-number {
+      font-size: 24px;
+      font-weight: bold;
+      color: #4285F4;
+    }
+    
+    .stat-label {
+      font-size: 12px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>📋 My Support Tickets</h2>
+    <button id="new-ticket-btn" class="new-ticket-btn" onclick="openNewTicket()">
+      <div class="btn-spinner"></div>
+      <span class="btn-text">➕ New Ticket</span>
+    </button>
+  </div>
+  
+  <div id="stats" class="stats" style="display: none;">
+    <div class="stat-card">
+      <div class="stat-number" id="open-count">0</div>
+      <div class="stat-label">Open</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" id="resolved-count">0</div>
+      <div class="stat-label">Resolved</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" id="total-count">0</div>
+      <div class="stat-label">Total</div>
+    </div>
+  </div>
+  
+  <div id="loading" class="loading">
+    <div class="loading-spinner"></div>
+    <p>📥 Loading your tickets...</p>
+  </div>
+  
+  <div id="tickets-container" class="tickets-container" style="display: none;">
+    <!-- Tickets will be loaded here -->
+  </div>
+  
+  <div id="empty-state" class="empty-state" style="display: none;">
+    <h3>🎫 No Support Tickets Yet</h3>
+    <p>You haven't submitted any support tickets yet.<br>
+    When you need help, don't hesitate to reach out!</p>
+    <button id="first-ticket-btn" class="btn btn-primary" onclick="openNewTicketFromEmpty()">
+      <div class="btn-spinner"></div>
+      <span class="btn-text">Create Your First Ticket</span>
+    </button>
+  </div>
+  
+  <div class="actions">
+    <button class="btn btn-secondary" onclick="refreshTickets()">🔄 Refresh</button>
+    <button class="btn btn-secondary" onclick="google.script.host.close()">Close</button>
+  </div>
+
+  <script>
+    // Load tickets on page load
+    window.addEventListener('load', function() {
+      loadTickets();
+    });
+    
+    function loadTickets() {
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('tickets-container').style.display = 'none';
+      document.getElementById('empty-state').style.display = 'none';
+      document.getElementById('stats').style.display = 'none';
+      
+      google.script.run
+        .withSuccessHandler(function(tickets) {
+          displayTickets(tickets);
+        })
+        .withFailureHandler(function(error) {
+          showError('Error loading tickets: ' + error.message);
+        })
+        .getUserTickets();
+    }
+    
+    function displayTickets(tickets) {
+      document.getElementById('loading').style.display = 'none';
+      
+      if (!tickets || tickets.length === 0) {
+        document.getElementById('empty-state').style.display = 'block';
+        return;
+      }
+      
+      // Show stats
+      updateStats(tickets);
+      
+      // Show tickets
+      const container = document.getElementById('tickets-container');
+      container.innerHTML = '';
+      container.style.display = 'block';
+      
+      tickets.forEach(function(ticket) {
+        const ticketCard = createTicketCard(ticket);
+        container.appendChild(ticketCard);
+      });
+    }
+    
+    function createTicketCard(ticket) {
+      const card = document.createElement('div');
+      card.className = `ticket-card ${ticket.priority}`;
+      card.onclick = () => openTicket(ticket.id);
+      
+      const header = document.createElement('div');
+      header.className = 'ticket-header';
+      
+      const title = document.createElement('h3');
+      title.className = 'ticket-title';
+      title.textContent = ticket.subject;
+      
+      const ticketId = document.createElement('span');
+      ticketId.className = 'ticket-id';
+      ticketId.textContent = `#${ticket.id}`;
+      
+      header.appendChild(title);
+      header.appendChild(ticketId);
+      
+      const meta = document.createElement('div');
+      meta.className = 'ticket-meta';
+      
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `status-badge status-${ticket.status}`;
+      statusBadge.textContent = ticket.status.replace('_', ' ');
+      
+      const priorityBadge = document.createElement('span');
+      priorityBadge.className = `priority-badge priority-${ticket.priority}`;
+      priorityBadge.textContent = ticket.priority;
+      
+      const typeBadge = document.createElement('span');
+      typeBadge.className = 'type-badge';
+      typeBadge.textContent = getTypeLabel(ticket.type);
+      
+      meta.appendChild(statusBadge);
+      meta.appendChild(priorityBadge);
+      meta.appendChild(typeBadge);
+      
+      const preview = document.createElement('div');
+      preview.className = 'ticket-preview';
+      preview.textContent = truncateText(ticket.description, 150);
+      
+      const footer = document.createElement('div');
+      footer.className = 'ticket-footer';
+      
+      const messageCount = document.createElement('div');
+      messageCount.className = 'message-count';
+      messageCount.innerHTML = `💬 ${ticket.messages ? ticket.messages.length : 1} messages`;
+      
+      const date = document.createElement('span');
+      date.textContent = formatDate(ticket.createdAt);
+      
+      footer.appendChild(messageCount);
+      footer.appendChild(date);
+      
+      card.appendChild(header);
+      card.appendChild(meta);
+      card.appendChild(preview);
+      card.appendChild(footer);
+      
+      return card;
+    }
+    
+    function updateStats(tickets) {
+      const stats = {
+        open: 0,
+        resolved: 0,
+        total: tickets.length
+      };
+      
+      tickets.forEach(ticket => {
+        if (ticket.status === 'open' || ticket.status === 'in_progress') {
+          stats.open++;
+        } else if (ticket.status === 'resolved') {
+          stats.resolved++;
+        }
+      });
+      
+      document.getElementById('open-count').textContent = stats.open;
+      document.getElementById('resolved-count').textContent = stats.resolved;
+      document.getElementById('total-count').textContent = stats.total;
+      document.getElementById('stats').style.display = 'flex';
+    }
+    
+    function getTypeLabel(type) {
+      const types = {
+        'bug': '🐛 Bug',
+        'feature': '💡 Feature',
+        'help': '❓ Help',
+        'integration': '🔧 Integration',
+        'billing': '💳 Billing',
+        'other': '📝 Other'
+      };
+      return types[type] || type;
+    }
+    
+    function truncateText(text, maxLength) {
+      if (text.length <= maxLength) return text;
+      return text.substring(0, maxLength) + '...';
+    }
+    
+    function formatDate(dateString) {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffTime = Math.abs(now - date);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays === 1) {
+        return 'Today';
+      } else if (diffDays === 2) {
+        return 'Yesterday';
+      } else if (diffDays <= 7) {
+        return `${diffDays - 1} days ago`;
+      } else {
+        return date.toLocaleDateString();
+      }
+    }
+    
+    function openTicket(ticketId) {
+      google.script.run
+        .withSuccessHandler(function() {
+          // Close this dialog when ticket view opens
+          google.script.host.close();
+        })
+        .viewSupportTicket(ticketId);
+    }
+    
+    function openNewTicket() {
+      const button = document.getElementById('new-ticket-btn');
+      button.classList.add('loading');
+      
+      google.script.run
+        .withSuccessHandler(function() {
+          // Close this dialog when new ticket form opens
+          google.script.host.close();
+        })
+        .withFailureHandler(function(error) {
+          // Remove loading state on error
+          button.classList.remove('loading');
+          alert('Error opening new ticket form: ' + error.message);
+        })
+        .showSupportTicket();
+    }
+    
+    function openNewTicketFromEmpty() {
+      const button = document.getElementById('first-ticket-btn');
+      button.classList.add('loading');
+      
+      google.script.run
+        .withSuccessHandler(function() {
+          // Close this dialog when new ticket form opens
+          google.script.host.close();
+        })
+        .withFailureHandler(function(error) {
+          // Remove loading state on error
+          button.classList.remove('loading');
+          alert('Error opening new ticket form: ' + error.message);
+        })
+        .showSupportTicket();
+    }
+    
+    function refreshTickets() {
+      loadTickets();
+    }
+    
+    function showError(message) {
+      document.getElementById('loading').innerHTML = 
+        '<p style="color: #dc3545;">❌ ' + message + '</p>';
+    }
+  </script>
+</body>
+</html>
