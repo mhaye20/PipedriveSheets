@@ -4,7 +4,7 @@ A Google Sheets™ Add-on that connects to Pipedrive CRM and syncs data between 
 
 ## Features
 
-- **Fetch Pipedrive Data**: Import deals, persons, organizations, activities, leads, and products based on saved filters.
+- **Fetch Pipedrive Data**: Import deals, persons, organizations, activities, leads, and products based on saved filters or fetch all data.
 - **Customizable Columns**: Select which fields to display in your sheet.
 - **Two-Way Sync**: Edit data in Google Sheets™ and push changes back to Pipedrive.
 - **Team Collaboration**: Share filters and column preferences with your team.

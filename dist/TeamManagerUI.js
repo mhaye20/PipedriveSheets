@@ -1122,6 +1122,49 @@ TeamManagerUI.getScripts = function() {
                 // Add the new element to the container
                 membersContainer.appendChild(newMember);
                 
+                // Update member count display
+                var currentCount = document.querySelectorAll('.team-member').length;
+                var memberCountEl = document.querySelector('.member-count');
+                if (memberCountEl) {
+                  memberCountEl.textContent = currentCount + '/5';
+                }
+                
+                // Check if we need to hide the "add member" form and show limit message
+                if (currentCount >= 5) {
+                  // Hide add member form
+                  var addMemberForm = document.querySelector('.add-member-form');
+                  if (addMemberForm) {
+                    var parentSection = addMemberForm.closest('.section');
+                    if (parentSection) {
+                      parentSection.style.display = 'none';
+                    }
+                  }
+                  // Show limit message by creating it if it doesn't exist
+                  var limitMessage = document.querySelector('.member-limit-message');
+                  if (!limitMessage) {
+                    var limitSection = document.createElement('div');
+                    limitSection.className = 'section';
+                    limitSection.innerHTML = 
+                      '<div class="member-limit-message">' +
+                        '<i class="material-icons">info</i>' +
+                        '<span>Your team has reached the maximum of 5 members allowed in the team plan.</span>' +
+                      '</div>';
+                    
+                    // Insert after the team members section
+                    var teamMembersSection = document.querySelector('.section:has(.team-members)');
+                    if (teamMembersSection && teamMembersSection.nextSibling) {
+                      teamMembersSection.parentNode.insertBefore(limitSection, teamMembersSection.nextSibling);
+                    } else if (teamMembersSection) {
+                      teamMembersSection.parentNode.appendChild(limitSection);
+                    }
+                  } else {
+                    var limitParentSection = limitMessage.closest('.section');
+                    if (limitParentSection) {
+                      limitParentSection.style.display = 'block';
+                    }
+                  }
+                }
+                
                 // Trigger animation after a small delay
                 setTimeout(function() {
                   newMember.style.transition = 'all 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)';
@@ -1197,6 +1240,10 @@ TeamManagerUI.getScripts = function() {
                               // Add slide-out animation
                               memberElement.classList.add('slide-out-left');
                               
+                              // Get the members container to check remaining count
+                              var membersContainer = memberElement.closest('.team-members');
+                              var remainingMembers = membersContainer.querySelectorAll('.team-member:not(.slide-out-left)').length - 1;
+                              
                               // After animation completes, remove the element
                               setTimeout(function() {
                                 // Add fade-out effect
@@ -1211,6 +1258,33 @@ TeamManagerUI.getScripts = function() {
                                 // Finally remove after height animation
                                 setTimeout(function() {
                                   memberElement.remove();
+                                  
+                                  // Update member count display using current DOM count
+                                  var currentDomCount = document.querySelectorAll('.team-member').length;
+                                  var memberCountEl = document.querySelector('.member-count');
+                                  if (memberCountEl) {
+                                    memberCountEl.textContent = currentDomCount + '/5';
+                                  }
+                                  
+                                  // Check if we need to show the "add member" form or hide limit message
+                                  if (currentDomCount < 5) {
+                                    // Show add member form if hidden
+                                    var addMemberForm = document.querySelector('.add-member-form');
+                                    if (addMemberForm) {
+                                      var parentSection = addMemberForm.closest('.section');
+                                      if (parentSection) {
+                                        parentSection.style.display = 'block';
+                                      }
+                                    }
+                                    // Hide limit message if visible
+                                    var limitMessage = document.querySelector('.member-limit-message');
+                                    if (limitMessage) {
+                                      var limitParentSection = limitMessage.closest('.section');
+                                      if (limitParentSection) {
+                                        limitParentSection.style.display = 'none';
+                                      }
+                                    }
+                                  }
                                 }, 300);
                               }, 500);
                             }
@@ -1686,6 +1760,36 @@ TeamManagerUI.getScripts = function() {
                   setTimeout(function() {
                     memberElement.remove();
                     
+                    // Update member count display using current DOM count
+                    var currentDomCount = document.querySelectorAll('.team-member').length;
+                    var memberCountEl = document.querySelector('.member-count');
+                    if (memberCountEl) {
+                      memberCountEl.textContent = currentDomCount + '/5';
+                    }
+                    
+                    // Check if we need to show the "add member" form or hide limit message
+                    var addMemberSection = document.querySelector('.section:has(.add-member-form)');
+                    var limitMessageSection = document.querySelector('.section:has(.member-limit-message)');
+                    
+                    if (currentDomCount < 5) {
+                      // Show add member form if hidden by finding the parent section
+                      var addMemberForm = document.querySelector('.add-member-form');
+                      if (addMemberForm) {
+                        var parentSection = addMemberForm.closest('.section');
+                        if (parentSection) {
+                          parentSection.style.display = 'block';
+                        }
+                      }
+                      // Hide limit message if visible
+                      var limitMessage = document.querySelector('.member-limit-message');
+                      if (limitMessage) {
+                        var limitParentSection = limitMessage.closest('.section');
+                        if (limitParentSection) {
+                          limitParentSection.style.display = 'none';
+                        }
+                      }
+                    }
+                    
                     // Check if we need to show the "no members" message
                     if (remainingMembers === 0) {
                       var noMembersMessage = document.createElement('div');
@@ -1864,6 +1968,14 @@ TeamManagerUI.getScripts = function() {
     
     // Hide loading indicator on initial load
     hideLoading();
+    
+    // Store initial member count for tracking
+    var memberCountEl = document.querySelector('.member-count');
+    if (memberCountEl) {
+      var initialCountText = memberCountEl.textContent;
+      var initialCount = parseInt(initialCountText.split('/')[0]);
+      memberCountEl.setAttribute('data-initial-count', initialCount);
+    }
     
     // Initialize tooltip hover behavior for icon buttons
     document.querySelectorAll('[title]').forEach(function(el) {
