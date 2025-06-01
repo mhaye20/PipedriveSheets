@@ -11,10 +11,13 @@
 
 // OAuth scopes needed for the add-on
 const OAUTH_SCOPES = [
-  'https://www.googleapis.com/auth/spreadsheets.currentonly',
-  'https://www.googleapis.com/auth/script.container.ui',
-  'https://www.googleapis.com/auth/script.scriptapp',
-  'https://www.googleapis.com/auth/script.external_request'
+  "https://www.googleapis.com/auth/spreadsheets",
+  "https://www.googleapis.com/auth/script.container.ui",
+  "https://www.googleapis.com/auth/script.scriptapp",
+  "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/script.external_request",
+  "https://www.googleapis.com/auth/userinfo.profile",
+  "https://www.googleapis.com/auth/script.send_mail"
 ];
 
 // Service namespaces
