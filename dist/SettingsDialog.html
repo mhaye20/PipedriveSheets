@@ -2060,6 +2060,23 @@
       defaultOption.textContent = '-- Select a filter --';
       filterSelector.appendChild(defaultOption);
 
+      // Add "All Records" option
+      const allRecordsOption = document.createElement('option');
+      allRecordsOption.value = 'ALL_RECORDS';
+      allRecordsOption.textContent = '📊 All Records (No Filter)';
+      filterSelector.appendChild(allRecordsOption);
+
+      // Check if "All Records" should be selected
+      if (savedFilterId === 'ALL_RECORDS' || savedFilterId === '') {
+        // If savedFilterId is empty or explicitly set to ALL_RECORDS, select the All Records option
+        // This handles both new users and existing users who had no filter
+        if (savedFilterId === '' && filters && filters.length > 0) {
+          // Don't auto-select for existing setups, let user choose
+        } else {
+          allRecordsOption.selected = true;
+        }
+      }
+
       if (filters && filters.length > 0) {
         // Sort filters alphabetically by name
         filters.sort((a, b) => a.name.localeCompare(b.name));
@@ -2089,17 +2106,13 @@
           filterSelector.classList.add('fade-in');
         }
       } else {
-        // No filters found
-        const noFiltersOption = document.createElement('option');
-        noFiltersOption.value = '';
-        noFiltersOption.textContent = 'No filters available for this entity type';
-        filterSelector.appendChild(noFiltersOption);
+        // No filters found - but All Records option is already added above
+        // Select "All Records" by default when no filters are available
+        allRecordsOption.selected = true;
 
-        // Always show manual entry if no filters
-        filterIdInput.style.display = 'block';
-        filterSelector.style.display = 'none';
-        manualEntry = true;
-        document.getElementById('toggleManualEntry').textContent = 'Switch to filter selection';
+        // Display the selector since All Records is a valid option
+        filterSelector.style.display = 'block';
+        filterIdInput.style.display = 'none';
       }
     }
 
@@ -2244,8 +2257,8 @@
       const enableTimestamp = document.getElementById('enableTimestamp').checked;
 
       // Validate inputs
-      if (!filterId) {
-        showStatus('error', 'Filter ID is required');
+      if (!filterId || filterId === '') {
+        showStatus('error', 'Please select a filter or choose "All Records"');
 
         // Shake the filter selector or input to indicate error
         const element = manualEntry ?

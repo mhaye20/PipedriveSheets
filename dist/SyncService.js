@@ -250,6 +250,11 @@ function syncPipedriveDataToSheet(
       filterId = scriptProperties.getProperty(filterIdKey);
     }
 
+    // Handle "All Records" option - convert to null for API calls
+    if (filterId === 'ALL_RECORDS') {
+      filterId = null;
+    }
+
     // Show UI that we are retrieving data
     updateSyncStatus("2", "active", "Retrieving data from Pipedrive...", 10);
 
@@ -271,10 +276,14 @@ function syncPipedriveDataToSheet(
     let items = [];
 
     // Update status to show we're connecting to API
+    const statusMessage = filterId 
+      ? `Retrieving ${entityType} from Pipedrive using filter...`
+      : `Retrieving ALL ${entityType} from Pipedrive (no filter)...`;
+    
     updateSyncStatus(
       "2",
       "active",
-      `Retrieving ${entityType} from Pipedrive...`,
+      statusMessage,
       20
     );
 

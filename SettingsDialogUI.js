@@ -45,8 +45,14 @@ SettingsDialogUI.showSettings = function(initialTab = 'settings') {
     const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
     const timestampEnabledKey = `TIMESTAMP_ENABLED_${activeSheetName}`;
     
-    const savedFilterId = scriptProperties.getProperty(sheetFilterIdKey) || '';
+    let savedFilterId = scriptProperties.getProperty(sheetFilterIdKey) || '';
     const savedEntityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
+    
+    // For API calls in column loading, convert ALL_RECORDS to null, but keep original for UI display
+    let filterIdForApiCalls = savedFilterId;
+    if (filterIdForApiCalls === 'ALL_RECORDS') {
+      filterIdForApiCalls = null;
+    }
     const savedTimestampEnabled = scriptProperties.getProperty(timestampEnabledKey) || 'false';
     
     // Create a template from the HTML file
@@ -79,22 +85,22 @@ SettingsDialogUI.showSettings = function(initialTab = 'settings') {
           let sampleData = [];
           switch (savedEntityType) {
             case ENTITY_TYPES.DEALS:
-              sampleData = PipedriveAPI.getDealsWithFilter(savedFilterId, 1);
+              sampleData = PipedriveAPI.getDealsWithFilter(filterIdForApiCalls, 1);
               break;
             case ENTITY_TYPES.PERSONS:
-              sampleData = PipedriveAPI.getPersonsWithFilter(savedFilterId, 1);
+              sampleData = PipedriveAPI.getPersonsWithFilter(filterIdForApiCalls, 1);
               break;
             case ENTITY_TYPES.ORGANIZATIONS:
-              sampleData = PipedriveAPI.getOrganizationsWithFilter(savedFilterId, 1);
+              sampleData = PipedriveAPI.getOrganizationsWithFilter(filterIdForApiCalls, 1);
               break;
             case ENTITY_TYPES.ACTIVITIES:
-              sampleData = PipedriveAPI.getActivitiesWithFilter(savedFilterId, 1);
+              sampleData = PipedriveAPI.getActivitiesWithFilter(filterIdForApiCalls, 1);
               break;
             case ENTITY_TYPES.LEADS:
-              sampleData = PipedriveAPI.getLeadsWithFilter(savedFilterId, 1);
+              sampleData = PipedriveAPI.getLeadsWithFilter(filterIdForApiCalls, 1);
               break;
             case ENTITY_TYPES.PRODUCTS:
-              sampleData = PipedriveAPI.getProductsWithFilter(savedFilterId, 1);
+              sampleData = PipedriveAPI.getProductsWithFilter(filterIdForApiCalls, 1);
               break;
           }
           
@@ -244,8 +250,13 @@ function showColumnSelectorUI() {
     const sheetFilterIdKey = `FILTER_ID_${activeSheetName}`;
     const sheetEntityTypeKey = `ENTITY_TYPE_${activeSheetName}`;
 
-    const filterId = scriptProperties.getProperty(sheetFilterIdKey);
+    let filterId = scriptProperties.getProperty(sheetFilterIdKey);
     const entityType = scriptProperties.getProperty(sheetEntityTypeKey) || ENTITY_TYPES.DEALS;
+
+    // Handle "All Records" option - convert to null for API calls
+    if (filterId === 'ALL_RECORDS') {
+      filterId = null;
+    }
 
 
     // Check if we can connect to Pipedrive
@@ -287,12 +298,22 @@ function showColumnSelectorUI() {
     if (!sampleData || sampleData.length === 0) {
       // Try to get available filters to provide better error message
       const filters = PipedriveAPI.getFiltersForEntityType(entityType);
+      const originalFilterId = scriptProperties.getProperty(sheetFilterIdKey);
+      
       if (!filters || filters.length === 0) {
-        throw new Error(`No filters found for ${entityType}. Please create a filter in Pipedrive first.`);
-      } else if (!filterId) {
+        if (originalFilterId !== 'ALL_RECORDS' && !originalFilterId) {
+          throw new Error(`No filters found for ${entityType}. Please create a filter in Pipedrive first, or use "All Records" option.`);
+        }
+      } else if (!filterId && originalFilterId !== 'ALL_RECORDS') {
         throw new Error(`No filter selected for ${entityType}. Please configure filter settings first.`);
       }
-      throw new Error(`No ${entityType} data found for the selected filter. Please check your filter settings.`);
+      
+      // If using All Records but no data found, provide better message
+      if (originalFilterId === 'ALL_RECORDS') {
+        throw new Error(`No ${entityType} data found in your Pipedrive account.`);
+      } else {
+        throw new Error(`No ${entityType} data found for the selected filter. Please check your filter settings.`);
+      }
     }
 
     const sampleItem = sampleData[0];
@@ -2251,7 +2272,12 @@ function getColumnsDataForEntity(entityType, sheetName) {
       });
       
       // Get sample data based on filter
-      const filterId = PropertiesService.getScriptProperties().getProperty(`FILTER_ID_${sheetName}`) || '';
+      let filterId = PropertiesService.getScriptProperties().getProperty(`FILTER_ID_${sheetName}`) || '';
+      
+      // Handle "All Records" option - convert to null for API calls
+      if (filterId === 'ALL_RECORDS') {
+        filterId = null;
+      }
       
       let sampleData = [];
       switch (entityType) {
