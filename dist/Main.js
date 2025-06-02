@@ -114,12 +114,13 @@ function sendWelcomeEmail() {
  */
 function onOpen(e) {
   try {
-    // First check if user was previously verified as a team member
+    // First check if user was previously verified as a team member or completed initialization
     const userProperties = PropertiesService.getUserProperties();
     const wasVerified = userProperties.getProperty('VERIFIED_TEAM_MEMBER') === 'true';
+    const wasInitialized = userProperties.getProperty('PIPEDRIVE_INITIALIZED') === 'true';
     
-    if (wasVerified) {
-      // User was previously verified, show full menu immediately
+    if (wasVerified || wasInitialized) {
+      // User was previously verified or initialized, show full menu immediately
       createPipedriveMenu();
       checkForPaymentSuccess();
       return;
@@ -144,6 +145,7 @@ function onOpen(e) {
         
         // Store verification status for future sessions
         userProperties.setProperty('VERIFIED_TEAM_MEMBER', 'true');
+        userProperties.setProperty('PIPEDRIVE_INITIALIZED', 'true');
         
         // Check if user just completed a payment
         checkForPaymentSuccess();
@@ -156,6 +158,7 @@ function onOpen(e) {
         if (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED) {
           // User has authorized - give them access to individual features
           createPipedriveMenu();
+          userProperties.setProperty('PIPEDRIVE_INITIALIZED', 'true');
           checkForPaymentSuccess();
           return;
         }
@@ -265,6 +268,7 @@ function initializePipedriveMenu() {
       // Store verification status for future sessions
       const userProperties = PropertiesService.getUserProperties();
       userProperties.setProperty('VERIFIED_TEAM_MEMBER', 'true');
+      userProperties.setProperty('PIPEDRIVE_INITIALIZED', 'true');
       
       // Show a toast notification instead of a modal
       SpreadsheetApp.getActiveSpreadsheet().toast(
@@ -283,6 +287,10 @@ function initializePipedriveMenu() {
       } else {
         // User is not part of any team - give individual access after OAuth
         createPipedriveMenu();
+        
+        // Store that user has completed initialization for future sessions
+        const userProperties = PropertiesService.getUserProperties();
+        userProperties.setProperty('PIPEDRIVE_INITIALIZED', 'true');
         
         // Show a toast notification 
         SpreadsheetApp.getActiveSpreadsheet().toast(
