@@ -139,7 +139,7 @@ function onOpen(e) {
           hasVerifiedTeamAccess() || 
           forceTeamMembershipCheck(userEmail)) {
         
-        // User has access, create full menu
+        // User has team access, create full menu
         createPipedriveMenu();
         
         // Store verification status for future sessions
@@ -148,6 +148,19 @@ function onOpen(e) {
         // Check if user just completed a payment
         checkForPaymentSuccess();
         return;
+      }
+      
+      // Check if user has previously completed OAuth (can use without team)
+      try {
+        const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
+        if (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED) {
+          // User has authorized - give them access to individual features
+          createPipedriveMenu();
+          checkForPaymentSuccess();
+          return;
+        }
+      } catch (e) {
+        // Continue with initialization menu
       }
     }
     
@@ -241,12 +254,12 @@ function initializePipedriveMenu() {
     // Preload verified users
     preloadVerifiedUsers();
     
-    // Now perform access checks
+    // Check if user has team access (team owner or verified team member)
     if (checkAnyUserAccess(userEmail) || 
         hasVerifiedTeamAccess() || 
         forceTeamMembershipCheck(userEmail)) {
       
-      // Replace the menu with the full Pipedrive menu
+      // User has team access - show full menu with team features
       createPipedriveMenu();
       
       // Store verification status for future sessions
@@ -262,9 +275,24 @@ function initializePipedriveMenu() {
       
       return true;
     } else {
-      // Show the team access request dialog
-      verifyTeamAccess();
-      return false;
+      // Check if user is an invited team member who needs verification
+      if (isUserInTeam(userEmail)) {
+        // User is in a team but needs verification - show team access dialog
+        verifyTeamAccess();
+        return false;
+      } else {
+        // User is not part of any team - give individual access after OAuth
+        createPipedriveMenu();
+        
+        // Show a toast notification 
+        SpreadsheetApp.getActiveSpreadsheet().toast(
+          '✅ Pipedrive menu ready! Check the menu bar above.',
+          'Initialization Complete', 
+          3
+        );
+        
+        return true;
+      }
     }
   } catch (e) {
     
