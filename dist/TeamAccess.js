@@ -372,6 +372,16 @@ function isUserInTeam(email) {
     // Normalize email for case-insensitive comparison
     const normalizedEmail = email.toLowerCase();
     
+    // Check if user is a test user with automatic access (only after initialization)
+    if (TEST_USERS.includes(normalizedEmail)) {
+      // Check if user has been initialized
+      const userProperties = PropertiesService.getUserProperties();
+      const isInitialized = userProperties.getProperty('PIPEDRIVE_INITIALIZED') === 'true';
+      if (isInitialized) {
+        return true;
+      }
+    }
+    
     // Try fast path using email-to-team map
     const emailMapStr = PropertiesService.getDocumentProperties().getProperty('EMAIL_TO_TEAM_MAP');
     if (emailMapStr) {

@@ -71,7 +71,7 @@ function sendWelcomeEmail() {
         
         <p>Some quick tips to get started:</p>
         <ul>
-          <li>Look for the "Pipedrive" menu in your Google Sheet</li>
+          <li>Look for the "Pipedrive" menu in your Google Sheets™</li>
           <li>Start with "Get Started with Pipedrive" to connect your account</li>
           <li>The Help section has guides for all the features</li>
         </ul>
@@ -87,7 +87,7 @@ function sendWelcomeEmail() {
         
         <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
         <p style="font-size: 12px; color: #666;">
-          P.S. This email was sent because you installed the PipedriveSheets Google Sheets add-on. 
+          P.S. This email was sent because you installed the PipedriveSheets Google Sheets™ add-on. 
           If you have any questions, just reply to this email!
         </p>
       </div>
@@ -292,12 +292,22 @@ function initializePipedriveMenu() {
         const userProperties = PropertiesService.getUserProperties();
         userProperties.setProperty('PIPEDRIVE_INITIALIZED', 'true');
         
-        // Show a toast notification 
-        SpreadsheetApp.getActiveSpreadsheet().toast(
-          '✅ Pipedrive menu ready! Check the menu bar above.',
-          'Initialization Complete', 
-          3
-        );
+        // Special handling for test users - grant them team access after initialization
+        if (TEST_USERS.includes(userEmail.toLowerCase())) {
+          userProperties.setProperty('VERIFIED_TEAM_MEMBER', 'true');
+          SpreadsheetApp.getActiveSpreadsheet().toast(
+            '✅ Pipedrive menu ready with full team access! Check the menu bar above.',
+            'Test User Initialization Complete', 
+            3
+          );
+        } else {
+          // Show a toast notification 
+          SpreadsheetApp.getActiveSpreadsheet().toast(
+            '✅ Pipedrive menu ready! Check the menu bar above.',
+            'Initialization Complete', 
+            3
+          );
+        }
         
         return true;
       }

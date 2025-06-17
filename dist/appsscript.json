@@ -26,16 +26,8 @@
   "addOns": {
     "common": {
       "name": "PipedriveSheets",
-      "logoUrl": "https://pipedrive-sheets.vercel.app/logo.png",
-      "universalActions": [{
-        "label": "Open Pipedrive Sync",
-        "runFunction": "onOpen"
-      }]
+      "logoUrl": "https://pipedrive-sheets.vercel.app/logo.png"
     },
-    "sheets": {
-      "homepageTrigger": {
-        "runFunction": "onOpen"
-      }
-    }
+    "sheets": {}
   }
 }

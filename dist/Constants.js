@@ -126,3 +126,25 @@ const DEFAULT_COLUMNS = {
   LEADS: ['id', 'title', 'owner_id', 'person_id', 'organization_id', 'created_at', 'updated_at'],
   PRODUCTS: ['id', 'name', 'code', 'description', 'unit', 'tax', 'active_flag', 'created_at', 'updated_at']
 };
+
+// Test users with automatic full team access
+// These users will bypass all authorization checks and have full admin access
+// To add a test user, simply add their email address to this array
+const TEST_USERS = [
+  'marketplace.apps@pipedrive.com',
+  'connect@mikehaye.com',
+  'gwm-review@google.com'
+];
+
+// Test user plan configurations
+// Define which plan each test user should have: 'free', 'pro', or 'team'
+// If a test user is not specified here, they will default to 'team' plan
+// Plans provide different features and limits:
+// - 'free': 50 rows, 1 filter, 5 columns, basic features only
+// - 'pro': unlimited rows/filters/columns, advanced features, 1 user
+// - 'team': unlimited rows/filters/columns, all features including team collaboration, 5 users
+const TEST_USER_PLANS = {
+  'marketplace.apps@pipedrive.com': 'team',
+  'connect@mikehaye.com': 'pro',
+  'gwm-review@google.com': 'team'
+};

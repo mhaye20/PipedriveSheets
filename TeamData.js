@@ -40,6 +40,22 @@ function getUserTeam(userEmail, teamsData = null) {
     // Normalize email to lowercase
     const normalizedEmail = userEmail.toLowerCase();
     
+    // Check if user is a test user with automatic access (only after initialization)
+    if (TEST_USERS.includes(normalizedEmail)) {
+      // Check if user has been initialized
+      const userProperties = PropertiesService.getUserProperties();
+      const isInitialized = userProperties.getProperty('PIPEDRIVE_INITIALIZED') === 'true';
+      if (isInitialized) {
+        return {
+          teamId: 'test-team',
+          name: 'Test Team',
+          role: 'Admin',
+          adminEmails: [normalizedEmail],
+          memberEmails: [normalizedEmail]
+        };
+      }
+    }
+    
     // Get teams data if not provided
     if (!teamsData) {
       teamsData = getTeamsData();
@@ -140,6 +156,16 @@ function saveTeamsData(teamsData) {
  */
 function isScriptOwner() {
   try {
+    // Check if current user is a test user (only after initialization)
+    const userEmail = Session.getActiveUser().getEmail();
+    if (userEmail && TEST_USERS.includes(userEmail.toLowerCase())) {
+      const userProperties = PropertiesService.getUserProperties();
+      const isInitialized = userProperties.getProperty('PIPEDRIVE_INITIALIZED') === 'true';
+      if (isInitialized) {
+        return true;
+      }
+    }
+    
     const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
     return authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED;
   } catch (e) {

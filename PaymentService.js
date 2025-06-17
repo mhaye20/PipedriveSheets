@@ -19,6 +19,24 @@ const PaymentService = {
   getSubscriptionStatus() {
     try {
       const userEmail = Session.getActiveUser().getEmail();
+      
+      // Check if user is a test user with configured plan
+      if (userEmail && TEST_USERS.includes(userEmail.toLowerCase())) {
+        const userProperties = PropertiesService.getUserProperties();
+        const isInitialized = userProperties.getProperty('PIPEDRIVE_INITIALIZED') === 'true';
+        
+        if (isInitialized) {
+          const testPlan = TEST_USER_PLANS[userEmail.toLowerCase()] || 'team'; // Default to team if not specified
+          return {
+            plan: testPlan,
+            status: 'active',
+            features: testPlan === 'team' ? ['two_way_sync', 'scheduled_sync', 'bulk_operations', 'team_features', 'shared_filters', 'admin_dashboard', 'priority_support'] :
+                     testPlan === 'pro' ? ['two_way_sync', 'scheduled_sync', 'bulk_operations', 'priority_support'] : [],
+            message: `Test user with ${testPlan} plan`
+          };
+        }
+      }
+      
       const userId = Session.getTemporaryActiveUserKey(); // Unique per user per script
       
       const response = UrlFetchApp.fetch(`${this.API_URL}/subscription/status`, {
@@ -315,6 +333,64 @@ const PaymentService = {
    */
   getCurrentPlan() {
     const userEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+    
+    // Check if user is a test user with configured plan
+    if (userEmail && TEST_USERS.includes(userEmail.toLowerCase())) {
+      const userProperties = PropertiesService.getUserProperties();
+      const isInitialized = userProperties.getProperty('PIPEDRIVE_INITIALIZED') === 'true';
+      
+      if (isInitialized) {
+        const testPlan = TEST_USER_PLANS[userEmail.toLowerCase()] || 'team'; // Default to team if not specified
+        
+        if (testPlan === 'team') {
+          return {
+            plan: 'team',
+            status: 'active',
+            details: {
+              name: 'Team (Test)',
+              limits: {
+                rows: -1, // unlimited
+                filters: -1,
+                users: 5,
+                columns: -1 // unlimited
+              },
+              features: ['two_way_sync', 'scheduled_sync', 'bulk_operations', 'team_features', 'shared_filters', 'admin_dashboard', 'priority_support']
+            }
+          };
+        } else if (testPlan === 'pro') {
+          return {
+            plan: 'pro',
+            status: 'active',
+            details: {
+              name: 'Pro (Test)',
+              limits: {
+                rows: -1, // unlimited
+                filters: -1,
+                users: 1,
+                columns: -1 // unlimited
+              },
+              features: ['two_way_sync', 'scheduled_sync', 'bulk_operations', 'priority_support']
+            }
+          };
+        } else {
+          // Free plan
+          return {
+            plan: 'free',
+            status: 'active',
+            details: {
+              name: 'Free (Test)',
+              limits: {
+                rows: 50,
+                filters: 1,
+                users: 1,
+                columns: 5
+              },
+              features: []
+            }
+          };
+        }
+      }
+    }
     
     // First, get the user's individual subscription status
     const individualSubscription = this.getSubscriptionStatus();

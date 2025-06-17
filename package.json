@@ -1,7 +1,7 @@
 {
   "name": "PipedriveSheets",
   "version": "1.0.0",
-  "description": "Google Apps Script with Pipedrive integration",
+  "description": "Google™ Apps Script with Pipedrive integration",
   "scripts": {
     "build": "webpack --config webpack.gas.js",
     "deploy": "npm run build && cd dist && clasp push"
