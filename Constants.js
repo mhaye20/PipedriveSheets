@@ -133,7 +133,8 @@ const DEFAULT_COLUMNS = {
 const TEST_USERS = [
   'marketplace.apps@pipedrive.com',
   'connect@mikehaye.com',
-  'gwm-review@google.com'
+  'gwm-review@google.com',
+  'gsmtestuser@marketplacetest.net'
 ];
 
 // Test user plan configurations
@@ -146,5 +147,6 @@ const TEST_USERS = [
 const TEST_USER_PLANS = {
   'marketplace.apps@pipedrive.com': 'team',
   'connect@mikehaye.com': 'pro',
-  'gwm-review@google.com': 'team'
+  'gwm-review@google.com': 'team',
+  'gsmtestuser@marketplacetest.net': 'team'
 };
