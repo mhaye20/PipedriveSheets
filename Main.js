@@ -172,14 +172,14 @@ function onOpen(e) {
     
     if (userEmail) {
       // User email is available, try automatic initialization
-      
-      // Preload verified users
-      preloadVerifiedUsers();
-      
-      // Check access
-      if (checkAnyUserAccess(userEmail) || 
-          hasVerifiedTeamAccess() || 
-          forceTeamMembershipCheck(userEmail)) {
+      try {
+        // Preload verified users
+        preloadVerifiedUsers();
+        
+        // Check access
+        if (checkAnyUserAccess(userEmail) || 
+            hasVerifiedTeamAccess() || 
+            forceTeamMembershipCheck(userEmail)) {
         
         // User has team access, create full menu
         createPipedriveMenu();
@@ -193,18 +193,22 @@ function onOpen(e) {
         return;
       }
       
-      // Check if user has previously completed OAuth (can use without team)
-      try {
-        const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
-        if (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED) {
-          // User has authorized - give them access to individual features
-          createPipedriveMenu();
-          userProperties.setProperty('PIPEDRIVE_INITIALIZED', 'true');
-          checkForPaymentSuccess();
-          return;
+        // Check if user has previously completed OAuth (can use without team)
+        try {
+          const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
+          if (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED) {
+            // User has authorized - give them access to individual features
+            createPipedriveMenu();
+            userProperties.setProperty('PIPEDRIVE_INITIALIZED', 'true');
+            checkForPaymentSuccess();
+            return;
+          }
+        } catch (e) {
+          // Continue with initialization menu
         }
-      } catch (e) {
-        // Continue with initialization menu
+      } catch (accessError) {
+        // Error checking access, continue to initialization menu
+        console.log('Error checking access:', accessError);
       }
     }
     
@@ -235,11 +239,12 @@ function onOpen(e) {
     }
       
   } catch (error) {
+    console.log('Error in onOpen:', error);
     
-    // Fallback to initialization menu
+    // Fallback to initialization menu with friendly text
     const ui = SpreadsheetApp.getUi();
     ui.createMenu('Pipedrive')
-      .addItem('Initialize Pipedrive Menu', 'initializePipedriveMenu')
+      .addItem('🚀 Get Started with Pipedrive', 'initializePipedriveMenu')
       .addToUi();
   }
 }
