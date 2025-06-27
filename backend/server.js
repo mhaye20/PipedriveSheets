@@ -122,6 +122,42 @@ app.post('/api/create-checkout-session', async (req, res) => {
   }
 });
 
+// Track new installations
+app.post('/api/track-install', async (req, res) => {
+  try {
+    const { email, domain, installTime, source, authMode } = req.body;
+    
+    // Validate required fields
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Valid email is required' });
+    }
+    
+    // Store installation data
+    const { data, error } = await supabase
+      .from('installations')
+      .insert({
+        email: email.toLowerCase(),
+        domain: domain || email.split('@')[1],
+        install_time: installTime || new Date().toISOString(),
+        source: source || 'unknown',
+        auth_mode: authMode || 'unknown',
+        created_at: new Date().toISOString()
+      });
+    
+    if (error) {
+      console.error('Error tracking installation:', error);
+      // Don't fail the installation process
+      return res.json({ success: true, message: 'Installation tracked with warning' });
+    }
+    
+    res.json({ success: true, message: 'Installation tracked successfully' });
+  } catch (error) {
+    console.error('Error in track-install endpoint:', error);
+    // Don't fail the installation process
+    res.json({ success: true, message: 'Installation tracked with error' });
+  }
+});
+
 // Check subscription status
 app.post('/api/subscription/status', async (req, res) => {
   try {
@@ -327,6 +363,77 @@ app.post('/api/create-portal-session', async (req, res) => {
     res.json({ portalUrl: portalSession.url });
   } catch (error) {
     console.error('Error creating portal session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Analytics endpoint to view installation data
+app.get('/api/analytics/installations', async (req, res) => {
+  try {
+    const { apiKey, timeRange = '30d', groupBy = 'day' } = req.query;
+    
+    // Simple API key authentication for analytics
+    if (apiKey !== process.env.ANALYTICS_API_KEY) {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+    
+    // Calculate date range
+    const endDate = new Date();
+    const startDate = new Date();
+    if (timeRange === '7d') {
+      startDate.setDate(startDate.getDate() - 7);
+    } else if (timeRange === '30d') {
+      startDate.setDate(startDate.getDate() - 30);
+    } else if (timeRange === '90d') {
+      startDate.setDate(startDate.getDate() - 90);
+    } else if (timeRange === 'all') {
+      startDate.setFullYear(2020); // Beginning of time for this app
+    }
+    
+    // Fetch installation data
+    const { data: installations, error } = await supabase
+      .from('installations')
+      .select('*')
+      .gte('install_time', startDate.toISOString())
+      .lte('install_time', endDate.toISOString())
+      .order('install_time', { ascending: false });
+    
+    if (error) {
+      throw error;
+    }
+    
+    // Basic analytics
+    const analytics = {
+      summary: {
+        totalInstalls: installations.length,
+        timeRange: timeRange,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString()
+      },
+      bySource: {},
+      byDomain: {},
+      recentInstalls: installations.slice(0, 10)
+    };
+    
+    // Group by source
+    installations.forEach(install => {
+      analytics.bySource[install.source] = (analytics.bySource[install.source] || 0) + 1;
+      analytics.byDomain[install.domain] = (analytics.byDomain[install.domain] || 0) + 1;
+    });
+    
+    // Convert to sorted arrays
+    analytics.bySource = Object.entries(analytics.bySource)
+      .sort(([,a], [,b]) => b - a)
+      .map(([source, count]) => ({ source, count }));
+    
+    analytics.byDomain = Object.entries(analytics.byDomain)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 20) // Top 20 domains
+      .map(([domain, count]) => ({ domain, count }));
+    
+    res.json(analytics);
+  } catch (error) {
+    console.error('Error fetching analytics:', error);
     res.status(500).json({ error: error.message });
   }
 });

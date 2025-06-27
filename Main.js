@@ -46,8 +46,49 @@ function onInstall(e) {
   const userProperties = PropertiesService.getUserProperties();
   userProperties.setProperty('FIRST_INSTALL', 'true');
   
+  // Track the installation
+  trackInstallation(e);
+  
   // Send welcome email to new user
   sendWelcomeEmail();
+}
+
+/**
+ * Tracks installation to backend analytics
+ * @param {Object} e The event parameter from onInstall trigger
+ */
+function trackInstallation(e) {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    const domain = userEmail ? userEmail.split('@')[1] : 'unknown';
+    
+    const installData = {
+      email: userEmail || 'unknown',
+      domain: domain,
+      installTime: new Date().toISOString(),
+      source: e?.source || 'marketplace', // Allow custom source or default to marketplace
+      authMode: e?.authMode || 'unknown'
+    };
+    
+    // Get backend URL from script properties or use default
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const backendUrl = scriptProperties.getProperty('BACKEND_URL') || 'https://pipedrivesheets-backend.vercel.app';
+    
+    // Send tracking data to backend
+    UrlFetchApp.fetch(`${backendUrl}/api/track-install`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify(installData),
+      muteHttpExceptions: true // Don't throw errors that could interrupt installation
+    });
+    
+    console.log('Installation tracked successfully');
+  } catch (error) {
+    // Silently fail - don't interrupt the installation process
+    console.log('Failed to track installation:', error);
+  }
 }
 
 /**
@@ -253,6 +294,14 @@ function checkForPaymentSuccess() {
 function initializePipedriveMenu() {
   try {
     const userEmail = Session.getActiveUser().getEmail();
+    
+    // Track manual initialization (if not already tracked)
+    const userProperties = PropertiesService.getUserProperties();
+    const hasTrackedInstall = userProperties.getProperty('HAS_TRACKED_INSTALL');
+    if (!hasTrackedInstall) {
+      trackInstallation({ authMode: 'FULL', source: 'manual' });
+      userProperties.setProperty('HAS_TRACKED_INSTALL', 'true');
+    }
     
     // Preload verified users
     preloadVerifiedUsers();

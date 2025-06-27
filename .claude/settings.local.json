@@ -28,7 +28,8 @@
       "Bash(mkdir:*)",
       "WebFetch(domain:pipedrivesheets.com)",
       "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"function getDealsWithFilter|function getPersonsWithFilter\" /mnt/c/Users/mhaye/Music/PipedriveSheets/PipedriveAPI.js)",
-      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 50 -B 5 \"function getColumnsDataForEntity|getColumnsDataForEntity.*=\" /mnt/c/Users/mhaye/Music/PipedriveSheets/SettingsDialogUI.js)"
+      "Bash(/home/mightymolato/.nvm/versions/node/v24.1.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 50 -B 5 \"function getColumnsDataForEntity|getColumnsDataForEntity.*=\" /mnt/c/Users/mhaye/Music/PipedriveSheets/SettingsDialogUI.js)",
+      "Bash(explorer.exe analytics-viewer.html)"
     ],
     "deny": []
   }
