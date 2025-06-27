@@ -72,7 +72,7 @@ function trackInstallation(e) {
     
     // Get backend URL from script properties or use default
     const scriptProperties = PropertiesService.getScriptProperties();
-    const backendUrl = scriptProperties.getProperty('BACKEND_URL') || 'https://pipedrivesheets-backend.vercel.app';
+    const backendUrl = scriptProperties.getProperty('BACKEND_URL') || 'https://pipedrive-sheets.vercel.app';
     
     // Send tracking data to backend
     UrlFetchApp.fetch(`${backendUrl}/api/track-install`, {
