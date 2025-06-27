@@ -39,18 +39,19 @@ let VERIFIED_USERS = {};
  * @param {Object} e The event parameter for simple onInstall trigger
  */
 function onInstall(e) {
+  console.log('onInstall triggered', e);
+  
   // Call onOpen to set up the menu
   onOpen(e);
   
-  // Set a flag to show welcome message on first use
+  // Set flags for deferred actions when we have full auth
   const userProperties = PropertiesService.getUserProperties();
   userProperties.setProperty('FIRST_INSTALL', 'true');
+  userProperties.setProperty('PENDING_INSTALL_TRACKING', 'marketplace');
+  userProperties.setProperty('PENDING_WELCOME_EMAIL', 'true');
   
-  // Track the installation
-  trackInstallation(e);
-  
-  // Send welcome email to new user
-  sendWelcomeEmail();
+  // Note: We can't track or send emails here due to auth limitations
+  // These will be handled on first open with full auth
 }
 
 /**
@@ -59,6 +60,8 @@ function onInstall(e) {
  */
 function trackInstallation(e) {
   try {
+    console.log('trackInstallation called with event:', e);
+    
     const userEmail = Session.getActiveUser().getEmail();
     const domain = userEmail ? userEmail.split('@')[1] : 'unknown';
     
@@ -67,15 +70,20 @@ function trackInstallation(e) {
       domain: domain,
       installTime: new Date().toISOString(),
       source: e?.source || 'marketplace', // Allow custom source or default to marketplace
-      authMode: e?.authMode || 'unknown'
+      authMode: e?.authMode || 'unknown',
+      deferred: e?.deferred || false
     };
+    
+    console.log('Installation data:', installData);
     
     // Get backend URL from script properties or use default
     const scriptProperties = PropertiesService.getScriptProperties();
     const backendUrl = scriptProperties.getProperty('BACKEND_URL') || 'https://pipedrive-sheets.vercel.app';
     
+    console.log('Sending to backend URL:', `${backendUrl}/api/track-install`);
+    
     // Send tracking data to backend
-    UrlFetchApp.fetch(`${backendUrl}/api/track-install`, {
+    const response = UrlFetchApp.fetch(`${backendUrl}/api/track-install`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -84,10 +92,50 @@ function trackInstallation(e) {
       muteHttpExceptions: true // Don't throw errors that could interrupt installation
     });
     
+    console.log('Backend response:', response.getContentText());
     console.log('Installation tracked successfully');
   } catch (error) {
     // Silently fail - don't interrupt the installation process
-    console.log('Failed to track installation:', error);
+    console.log('Failed to track installation:', error.toString());
+  }
+}
+
+/**
+ * Handles deferred actions from marketplace installation
+ * This runs when we finally have full authorization
+ */
+function handleDeferredInstallActions() {
+  try {
+    const userProperties = PropertiesService.getUserProperties();
+    
+    // Check for pending installation tracking
+    const pendingTracking = userProperties.getProperty('PENDING_INSTALL_TRACKING');
+    if (pendingTracking) {
+      console.log('Processing deferred installation tracking');
+      
+      // Now we have full auth, we can get the email
+      const userEmail = Session.getActiveUser().getEmail();
+      
+      // Track the installation with proper email
+      trackInstallation({
+        source: pendingTracking,
+        authMode: 'FULL',
+        deferred: true
+      });
+      
+      // Clear the pending flag
+      userProperties.deleteProperty('PENDING_INSTALL_TRACKING');
+    }
+    
+    // Check for pending welcome email
+    const pendingEmail = userProperties.getProperty('PENDING_WELCOME_EMAIL');
+    if (pendingEmail) {
+      console.log('Sending deferred welcome email');
+      sendWelcomeEmail();
+      userProperties.deleteProperty('PENDING_WELCOME_EMAIL');
+    }
+  } catch (error) {
+    console.log('Error handling deferred actions:', error);
   }
 }
 
@@ -155,6 +203,11 @@ function sendWelcomeEmail() {
  */
 function onOpen(e) {
   try {
+    // Handle deferred actions from marketplace install
+    if (e && e.authMode === ScriptApp.AuthMode.FULL) {
+      handleDeferredInstallActions();
+    }
+    
     // First check if user was previously verified as a team member or completed initialization
     const userProperties = PropertiesService.getUserProperties();
     const wasVerified = userProperties.getProperty('VERIFIED_TEAM_MEMBER') === 'true';
@@ -303,7 +356,10 @@ function initializePipedriveMenu() {
     // Track manual initialization (if not already tracked)
     const userProperties = PropertiesService.getUserProperties();
     const hasTrackedInstall = userProperties.getProperty('HAS_TRACKED_INSTALL');
-    if (!hasTrackedInstall) {
+    const pendingTracking = userProperties.getProperty('PENDING_INSTALL_TRACKING');
+    
+    // Only track if not already tracked and not pending from marketplace
+    if (!hasTrackedInstall && !pendingTracking) {
       trackInstallation({ authMode: 'FULL', source: 'manual' });
       userProperties.setProperty('HAS_TRACKED_INSTALL', 'true');
     }
@@ -969,6 +1025,31 @@ function testShowJoinTeamDialog() {
     return true;
   } catch (e) {
     SpreadsheetApp.getUi().alert('Error', 'Failed to show join team dialog: ' + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+    return false;
+  }
+}
+
+/**
+ * Test function to manually trigger installation tracking
+ * Use this to verify the tracking endpoint is working correctly
+ */
+function testInstallationTracking() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    
+    // Create test event object similar to what onInstall receives
+    const testEvent = {
+      authMode: ScriptApp.AuthMode.FULL,
+      source: 'test_manual'
+    };
+    
+    // Call trackInstallation with test event
+    trackInstallation(testEvent);
+    
+    ui.alert('Test Complete', 'Installation tracking test has been sent. Check the backend logs for confirmation.', ui.ButtonSet.OK);
+    return true;
+  } catch (e) {
+    ui.alert('Error', 'Failed to test installation tracking: ' + e.message, ui.ButtonSet.OK);
     return false;
   }
 }
