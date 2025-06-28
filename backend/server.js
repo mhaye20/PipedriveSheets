@@ -438,6 +438,270 @@ app.get('/api/analytics/installations', async (req, res) => {
   }
 });
 
+// Send welcome email endpoint using Brevo
+app.post('/api/send-email', async (req, res) => {
+  try {
+    const { to, type } = req.body;
+    
+    if (!to || !to.includes('@')) {
+      return res.status(400).json({ error: 'Valid recipient email is required' });
+    }
+    
+    // Check for Brevo API key
+    if (!process.env.BREVO_API_KEY) {
+      console.error('BREVO_API_KEY environment variable is not set');
+      return res.status(500).json({ 
+        error: 'Email service not configured',
+        message: 'Welcome email queued for later processing'
+      });
+    }
+    
+    if (type === 'welcome') {
+      console.log(`Sending welcome email to: ${to}`);
+      
+      // Use Brevo template ID #1 for welcome emails
+      const templateParams = {
+        FIRSTNAME: to.split('@')[0].charAt(0).toUpperCase() + to.split('@')[0].slice(1),
+        EMAIL: to,
+        INSTALL_SOURCE: req.body.installSource || 'Google Workspace Marketplace'
+      };
+      
+      const emailPayload = {
+        sender: {
+          name: 'Mike Haye - PipedriveSheets',
+          email: 'support@pipedrivesheets.com'
+        },
+        to: [{
+          email: to,
+          name: templateParams.FIRSTNAME
+        }],
+        templateId: 1,  // Your welcome email template ID
+        params: templateParams,
+        // Send as contact attributes for Brevo compatibility
+        contact: templateParams,
+        replyTo: {
+          email: 'support@pipedrivesheets.com',
+          name: 'Mike Haye'
+        },
+        tags: ['welcome', 'addon-install']
+      };
+
+      try {
+        const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'api-key': process.env.BREVO_API_KEY
+          },
+          body: JSON.stringify(emailPayload)
+        });
+
+        if (brevoResponse.ok) {
+          const result = await brevoResponse.json();
+          console.log('Welcome email sent successfully:', result.messageId);
+          res.json({ 
+            success: true, 
+            message: 'Welcome email sent successfully',
+            messageId: result.messageId
+          });
+        } else {
+          const errorText = await brevoResponse.text();
+          console.error('Brevo API error:', brevoResponse.status, errorText);
+          res.status(500).json({ 
+            error: 'Failed to send welcome email',
+            details: `Brevo API error: ${brevoResponse.status} ${errorText}`
+          });
+        }
+      } catch (brevoError) {
+        console.error('Failed to send welcome email:', brevoError);
+        res.status(500).json({ 
+          error: 'Failed to send welcome email',
+          details: brevoError.message || brevoError.toString()
+        });
+      }
+    } else {
+      res.status(400).json({ error: 'Unknown email type' });
+    }
+  } catch (error) {
+    console.error('Error in send-email endpoint:', error);
+    res.status(500).json({ error: 'Failed to send email' });
+  }
+});
+
+// Send support ticket emails via Brevo
+app.post('/api/send-support-email', async (req, res) => {
+  try {
+    const { to, type, templateId, params } = req.body;
+    
+    if (!to || !type || !templateId || !params) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: to, type, templateId, params' 
+      });
+    }
+    
+    if (!process.env.BREVO_API_KEY) {
+      return res.status(500).json({ error: 'BREVO_API_KEY not configured' });
+    }
+    
+    console.log(`Sending support email (${type}) to: ${to} using template ${templateId}`);
+    
+    // Email subjects for each type
+    const subjects = {
+      'user_confirmation': `✅ Support Request Received - Ticket #${params.TICKET_ID}`,
+      'admin_notification': `[PipedriveSheets Support] New ${params.PRIORITY} Priority Ticket: ${params.SUBJECT}`,
+      'admin_reply': `💬 Reply to your support ticket #${params.TICKET_ID}`,
+      'user_reply': `[PipedriveSheets Support] User Reply - Ticket #${params.TICKET_ID}`,
+      'ticket_resolved': `✅ Support ticket #${params.TICKET_ID} has been resolved`
+    };
+    
+    // Add instructions to admin link for templates that use it
+    if (type === 'admin_notification' || type === 'user_reply') {
+      params.ADMIN_INSTRUCTIONS = 'Open the spreadsheet below and go to Extensions → Pipedrive → Support Center to view tickets';
+    }
+    
+    try {
+      const emailPayload = {
+        sender: {
+          name: 'Mike Haye - PipedriveSheets',
+          email: 'support@pipedrivesheets.com'
+        },
+        to: [{ 
+          email: to, 
+          name: params.NAME || to.split('@')[0]
+        }],
+        subject: subjects[type] || `PipedriveSheets Support - ${type}`,
+        templateId: templateId,
+        params: params,
+        // Also send as contact attributes for Brevo compatibility
+        contact: params
+      };
+      
+      console.log('Sending to Brevo:', JSON.stringify(emailPayload, null, 2));
+      
+      const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': process.env.BREVO_API_KEY
+        },
+        body: JSON.stringify(emailPayload)
+      });
+      
+      if (brevoResponse.ok) {
+        const result = await brevoResponse.json();
+        console.log('Support email sent successfully:', result);
+        res.json({
+          success: true,
+          message: 'Support email sent successfully',
+          messageId: result.messageId
+        });
+      } else {
+        const errorText = await brevoResponse.text();
+        console.error('Brevo API error:', brevoResponse.status, errorText);
+        res.status(500).json({ 
+          error: 'Failed to send support email',
+          details: `Brevo API error: ${brevoResponse.status} ${errorText}`
+        });
+      }
+    } catch (brevoError) {
+      console.error('Failed to send support email:', brevoError);
+      res.status(500).json({ 
+        error: 'Failed to send support email',
+        details: brevoError.message || brevoError.toString()
+      });
+    }
+  } catch (error) {
+    console.error('Error in send-support-email endpoint:', error);
+    res.status(500).json({ error: 'Failed to send support email' });
+  }
+});
+
+// Test endpoint for Brevo API
+app.post('/api/test-brevo', async (req, res) => {
+  try {
+    const { testEmail, useTemplate } = req.body;
+    
+    if (!testEmail) {
+      return res.status(400).json({ error: 'testEmail is required' });
+    }
+    
+    if (!process.env.BREVO_API_KEY) {
+      return res.status(500).json({ error: 'BREVO_API_KEY not configured' });
+    }
+    
+    console.log(`Testing Brevo API with email: ${testEmail}`);
+    
+    let testPayload;
+    
+    if (useTemplate) {
+      // Test with template
+      testPayload = {
+        sender: {
+          name: 'Mike Haye - PipedriveSheets',
+          email: 'support@pipedrivesheets.com'
+        },
+        to: [{
+          email: testEmail,
+          name: testEmail.split('@')[0]
+        }],
+        templateId: 1,  // Your welcome email template
+        params: {
+          // Add test parameters if your template needs them
+        },
+        tags: ['test', 'template-test']
+      };
+    } else {
+      // Test with HTML content
+      testPayload = {
+        sender: {
+          name: 'Mike Haye - PipedriveSheets',
+          email: 'support@pipedrivesheets.com'
+        },
+        to: [{
+          email: testEmail,
+          name: 'Test User'
+        }],
+        subject: 'Brevo API Test',
+        htmlContent: '<h1>Test Email</h1><p>This is a test email from PipedriveSheets backend using Brevo API.</p>',
+        tags: ['test', 'html-test']
+      };
+    }
+    
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'accept': 'application/json',
+        'api-key': process.env.BREVO_API_KEY
+      },
+      body: JSON.stringify(testPayload)
+    });
+    
+    const responseText = await response.text();
+    console.log(`Brevo response (${response.status}):`, responseText);
+    
+    if (response.ok) {
+      const result = JSON.parse(responseText);
+      res.json({ 
+        success: true, 
+        message: 'Test email sent successfully',
+        messageId: result.messageId,
+        usedTemplate: !!useTemplate
+      });
+    } else {
+      console.error('Brevo test failed:', response.status, responseText);
+      res.status(response.status).json({ 
+        error: 'Brevo API test failed',
+        status: response.status,
+        details: responseText
+      });
+    }
+  } catch (error) {
+    console.error('Test endpoint error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // For Vercel deployment
 if (process.env.VERCEL) {
   module.exports = app;

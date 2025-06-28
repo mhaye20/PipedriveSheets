@@ -2034,13 +2034,34 @@ TeamManagerUI.getScripts = function() {
 };
 
 /**
- * Checks if the current user is the script owner/installer
- * @return {boolean} True if the user is the script owner/installer, false otherwise
+ * Checks if the current user is the script owner/installer or has Team subscription
+ * @return {boolean} True if the user is the script owner/installer or has Team subscription, false otherwise
  */
 TeamManagerUI.isScriptOwner = function() {
   try {
+    // Check if current user is a test user (only after initialization)
+    const userEmail = Session.getActiveUser().getEmail();
+    if (userEmail && TEST_USERS.includes(userEmail.toLowerCase())) {
+      const userProperties = PropertiesService.getUserProperties();
+      const isInitialized = userProperties.getProperty('PIPEDRIVE_INITIALIZED') === 'true';
+      if (isInitialized) {
+        return true;
+      }
+    }
+    
+    // Check if user is the original script installer
     var authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
-    return authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED;
+    if (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED) {
+      return true;
+    }
+    
+    // Also allow users with active Team subscriptions to create teams
+    const plan = PaymentService.getCurrentPlan();
+    if (plan.plan === 'team' && !plan.isInherited && plan.status === 'active') {
+      return true;
+    }
+    
+    return false;
   } catch (e) {
     return false;
   }

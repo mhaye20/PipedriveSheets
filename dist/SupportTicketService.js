@@ -297,11 +297,9 @@ SupportTicketService.isAdminUser = function() {
   try {
     const userEmail = Session.getActiveUser().getEmail();
     const adminEmails = [
-      'support@pipedrivesheets.com',
-      'mike@pipedrivesheets.com',
       'mhaye20@gmail.com',
-      'connect@mikehaye.com',
-      'admin@pipedrivesheets.com'
+      'support@pipedrivesheets.com',
+      'connect@mikehaye.com'
     ];
     
     return adminEmails.includes(userEmail.toLowerCase());
@@ -316,39 +314,31 @@ SupportTicketService.isAdminUser = function() {
  */
 SupportTicketService.sendAdminNotification = function(ticket) {
   try {
-    const subject = `[PipedriveSheets Support] New ${ticket.priority.toUpperCase()} Priority Ticket: ${ticket.subject}`;
-    const htmlBody = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #4285F4;">🎫 New Support Ticket</h2>
-        
-        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0;">
-          <p><strong>Ticket ID:</strong> ${ticket.id}</p>
-          <p><strong>From:</strong> ${ticket.name} (${ticket.email})</p>
-          <p><strong>Type:</strong> ${ticket.type}</p>
-          <p><strong>Priority:</strong> <span style="color: ${ticket.priority === 'high' ? '#dc3545' : ticket.priority === 'medium' ? '#ffc107' : '#28a745'};">${ticket.priority.toUpperCase()}</span></p>
-          <p><strong>Subject:</strong> ${ticket.subject}</p>
-        </div>
-        
-        <div style="background: white; border: 1px solid #dee2e6; padding: 20px; border-radius: 6px;">
-          <h3>Message:</h3>
-          <p style="white-space: pre-wrap;">${ticket.description}</p>
-        </div>
-        
-        <p style="margin-top: 20px;">
-          <a href="https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec?mode=admin&ticketId=${ticket.id}" 
-             style="background: #4285F4; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">
-            View in Admin Panel
-          </a>
-        </p>
-      </div>
-    `;
+    // Get priority color for template
+    const priorityColors = {
+      'high': 'DC2626',
+      'medium': 'F59E0B', 
+      'low': '10B981'
+    };
     
-    MailApp.sendEmail({
+    const emailData = {
       to: 'support@pipedrivesheets.com',
-      subject: subject,
-      htmlBody: htmlBody,
-      name: 'PipedriveSheets Support System'
-    });
+      type: 'admin_notification',
+      templateId: 3,
+      params: {
+        TICKET_ID: ticket.id,
+        NAME: ticket.name,
+        EMAIL: ticket.email,
+        TYPE: ticket.type,
+        PRIORITY: ticket.priority.toUpperCase(),
+        PRIORITY_COLOR: priorityColors[ticket.priority] || '6B7280',
+        SUBJECT: ticket.subject,
+        DESCRIPTION: ticket.description,
+        ADMIN_LINK: SpreadsheetApp.getActiveSpreadsheet().getUrl()
+      }
+    };
+    
+    this.sendEmail(emailData);
   } catch (error) {
     console.error('Error sending admin notification:', error);
   }
@@ -360,39 +350,20 @@ SupportTicketService.sendAdminNotification = function(ticket) {
  */
 SupportTicketService.sendUserConfirmation = function(ticket) {
   try {
-    const subject = `✅ Support Request Received - Ticket #${ticket.id}`;
-    const htmlBody = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #4285F4;">Thanks for contacting PipedriveSheets Support! 🎉</h2>
-        
-        <p>Hi ${ticket.name},</p>
-        
-        <p>We've received your support request and will respond within 24 hours. Here are the details:</p>
-        
-        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0;">
-          <p><strong>Ticket ID:</strong> ${ticket.id}</p>
-          <p><strong>Subject:</strong> ${ticket.subject}</p>
-          <p><strong>Priority:</strong> ${ticket.priority.charAt(0).toUpperCase() + ticket.priority.slice(1)}</p>
-          <p><strong>Type:</strong> ${ticket.type}</p>
-        </div>
-        
-        <p>Please keep this ticket ID for your records. You can reply to this email or access your ticket anytime through the PipedriveSheets add-on by going to Help & About → Support → View My Support Tickets.</p>
-        
-        <p>Thanks for using PipedriveSheets!</p>
-        
-        <p>Best regards,<br>
-        Mike Haye<br>
-        PipedriveSheets Support</p>
-      </div>
-    `;
-    
-    MailApp.sendEmail({
+    const emailData = {
       to: ticket.email,
-      subject: subject,
-      htmlBody: htmlBody,
-      name: 'PipedriveSheets Support',
-      replyTo: 'support@pipedrivesheets.com'
-    });
+      type: 'user_confirmation',
+      templateId: 2,
+      params: {
+        NAME: ticket.name,
+        TICKET_ID: ticket.id,
+        SUBJECT: ticket.subject,
+        PRIORITY: ticket.priority.charAt(0).toUpperCase() + ticket.priority.slice(1),
+        TYPE: ticket.type
+      }
+    };
+    
+    this.sendEmail(emailData);
   } catch (error) {
     console.error('Error sending user confirmation:', error);
   }
@@ -405,39 +376,19 @@ SupportTicketService.sendUserConfirmation = function(ticket) {
  */
 SupportTicketService.sendUserNotification = function(ticket, message) {
   try {
-    const subject = `💬 Reply to your support ticket #${ticket.id}`;
-    const htmlBody = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #4285F4;">New Reply to Your Support Ticket</h2>
-        
-        <p>Hi ${ticket.name},</p>
-        
-        <p>We've replied to your support ticket. Here's the response:</p>
-        
-        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0;">
-          <p><strong>Ticket ID:</strong> ${ticket.id}</p>
-          <p><strong>Subject:</strong> ${ticket.subject}</p>
-        </div>
-        
-        <div style="background: white; border: 1px solid #dee2e6; padding: 20px; border-radius: 6px;">
-          <p><strong>Support Team:</strong></p>
-          <p style="white-space: pre-wrap;">${message.message}</p>
-        </div>
-        
-        <p>You can reply to this email or access your ticket through the PipedriveSheets add-on by going to Help & About → Support → View My Support Tickets.</p>
-        
-        <p>Best regards,<br>
-        PipedriveSheets Support</p>
-      </div>
-    `;
-    
-    MailApp.sendEmail({
+    const emailData = {
       to: ticket.email,
-      subject: subject,
-      htmlBody: htmlBody,
-      name: 'PipedriveSheets Support',
-      replyTo: 'support@pipedrivesheets.com'
-    });
+      type: 'admin_reply',
+      templateId: 4,
+      params: {
+        NAME: ticket.name,
+        TICKET_ID: ticket.id,
+        SUBJECT: ticket.subject,
+        MESSAGE: message.message
+      }
+    };
+    
+    this.sendEmail(emailData);
   } catch (error) {
     console.error('Error sending user notification:', error);
   }
@@ -450,30 +401,21 @@ SupportTicketService.sendUserNotification = function(ticket, message) {
  */
 SupportTicketService.sendAdminReplyNotification = function(ticket, message) {
   try {
-    const subject = `[PipedriveSheets Support] User Reply - Ticket #${ticket.id}`;
-    const htmlBody = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #4285F4;">💬 User Reply</h2>
-        
-        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0;">
-          <p><strong>Ticket ID:</strong> ${ticket.id}</p>
-          <p><strong>From:</strong> ${ticket.name} (${ticket.email})</p>
-          <p><strong>Subject:</strong> ${ticket.subject}</p>
-        </div>
-        
-        <div style="background: white; border: 1px solid #dee2e6; padding: 20px; border-radius: 6px;">
-          <p><strong>New Message:</strong></p>
-          <p style="white-space: pre-wrap;">${message.message}</p>
-        </div>
-      </div>
-    `;
-    
-    MailApp.sendEmail({
+    const emailData = {
       to: 'support@pipedrivesheets.com',
-      subject: subject,
-      htmlBody: htmlBody,
-      name: 'PipedriveSheets Support System'
-    });
+      type: 'user_reply',
+      templateId: 5,
+      params: {
+        TICKET_ID: ticket.id,
+        NAME: ticket.name,
+        EMAIL: ticket.email,
+        SUBJECT: ticket.subject,
+        MESSAGE: message.message,
+        ADMIN_LINK: SpreadsheetApp.getActiveSpreadsheet().getUrl()
+      }
+    };
+    
+    this.sendEmail(emailData);
   } catch (error) {
     console.error('Error sending admin reply notification:', error);
   }
@@ -485,39 +427,50 @@ SupportTicketService.sendAdminReplyNotification = function(ticket, message) {
  */
 SupportTicketService.sendResolutionNotification = function(ticket) {
   try {
-    const subject = `✅ Support ticket #${ticket.id} has been resolved`;
-    const htmlBody = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #28a745;">🎉 Ticket Resolved!</h2>
-        
-        <p>Hi ${ticket.name},</p>
-        
-        <p>Great news! Your support ticket has been marked as resolved.</p>
-        
-        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0;">
-          <p><strong>Ticket ID:</strong> ${ticket.id}</p>
-          <p><strong>Subject:</strong> ${ticket.subject}</p>
-          <p><strong>Status:</strong> Resolved ✅</p>
-        </div>
-        
-        <p>If you need further assistance with this issue, simply reply to this email and we'll reopen the ticket.</p>
-        
-        <p>Thanks for using PipedriveSheets!</p>
-        
-        <p>Best regards,<br>
-        PipedriveSheets Support</p>
-      </div>
-    `;
-    
-    MailApp.sendEmail({
+    const emailData = {
       to: ticket.email,
-      subject: subject,
-      htmlBody: htmlBody,
-      name: 'PipedriveSheets Support',
-      replyTo: 'support@pipedrivesheets.com'
-    });
+      type: 'ticket_resolved',
+      templateId: 6,
+      params: {
+        NAME: ticket.name,
+        TICKET_ID: ticket.id,
+        SUBJECT: ticket.subject
+      }
+    };
+    
+    this.sendEmail(emailData);
   } catch (error) {
     console.error('Error sending resolution notification:', error);
+  }
+};
+
+/**
+ * Sends email via Brevo backend API
+ * @param {Object} emailData - Email data object
+ */
+SupportTicketService.sendEmail = function(emailData) {
+  try {
+    // Get backend URL from script properties or use default
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const backendUrl = scriptProperties.getProperty('BACKEND_URL') || 'https://pipedrive-sheets.vercel.app';
+    
+    // Send email request to backend
+    const response = UrlFetchApp.fetch(`${backendUrl}/api/send-support-email`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify(emailData),
+      muteHttpExceptions: true
+    });
+    
+    if (response.getResponseCode() !== 200) {
+      console.error('Failed to send support email:', response.getContentText());
+    } else {
+      console.log('Support email sent successfully');
+    }
+  } catch (error) {
+    console.error('Error sending support email:', error);
   }
 };
 

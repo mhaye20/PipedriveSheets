@@ -106,15 +106,18 @@ function trackInstallation(e) {
  */
 function handleDeferredInstallActions() {
   try {
+    console.log('handleDeferredInstallActions called');
+    
     const userProperties = PropertiesService.getUserProperties();
+    const userEmail = Session.getActiveUser().getEmail();
+    console.log('User email for deferred actions:', userEmail);
     
     // Check for pending installation tracking
     const pendingTracking = userProperties.getProperty('PENDING_INSTALL_TRACKING');
+    console.log('Pending tracking flag:', pendingTracking);
+    
     if (pendingTracking) {
       console.log('Processing deferred installation tracking');
-      
-      // Now we have full auth, we can get the email
-      const userEmail = Session.getActiveUser().getEmail();
       
       // Track the installation with proper email
       trackInstallation({
@@ -123,77 +126,73 @@ function handleDeferredInstallActions() {
         deferred: true
       });
       
-      // Clear the pending flag
+      // Clear the pending flag and mark as tracked
       userProperties.deleteProperty('PENDING_INSTALL_TRACKING');
+      userProperties.setProperty('HAS_TRACKED_INSTALL', 'true');
     }
     
     // Check for pending welcome email
     const pendingEmail = userProperties.getProperty('PENDING_WELCOME_EMAIL');
+    console.log('Pending welcome email flag:', pendingEmail);
+    
     if (pendingEmail) {
-      console.log('Sending deferred welcome email');
-      sendWelcomeEmail();
+      console.log('Sending deferred welcome email to:', userEmail);
+      sendWelcomeEmail('Google Workspace Marketplace');
       userProperties.deleteProperty('PENDING_WELCOME_EMAIL');
+      userProperties.setProperty('WELCOME_EMAIL_SENT', 'true');
+      console.log('Welcome email process completed');
     }
   } catch (error) {
-    console.log('Error handling deferred actions:', error);
+    console.log('Error handling deferred actions:', error.toString());
   }
 }
 
 /**
  * Sends a welcome email to new users who install the add-on
+ * Uses backend API with Brevo to send from your email address
  */
-function sendWelcomeEmail() {
+function sendWelcomeEmail(installSource = 'manual installation') {
   try {
     const userEmail = Session.getActiveUser().getEmail();
-    if (!userEmail) return;
+    if (!userEmail) {
+      console.log('Cannot send welcome email: no user email');
+      return;
+    }
     
-    const subject = "Welcome to PipedriveSheets! 🎉";
-    const htmlBody = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <h2 style="color: #4285F4;">Thanks for being an early user! 🚀</h2>
-        
-        <p>Hey there!</p>
-        
-        <p>I just wanted to personally thank you for installing PipedriveSheets. As an early user, you're helping shape this tool into something amazing for the entire community.</p>
-        
-        <p>Here's what makes this special: <strong>I'm committed to responding to every email within 24 hours</strong>. Seriously! If you run into any issues, have feature requests, or just want to share feedback, don't hesitate to reach out.</p>
-        
-        <p>Some quick tips to get started:</p>
-        <ul>
-          <li>Look for the "Pipedrive" menu in your Google Sheets™</li>
-          <li>Start with "Get Started with Pipedrive" to connect your account</li>
-          <li>The Help section has guides for all the features</li>
-        </ul>
-        
-        <p>I'm genuinely excited to see how you use PipedriveSheets and would love to hear about your experience. Every piece of feedback helps me make it better for everyone.</p>
-        
-        <p>Thanks again for being part of this journey!</p>
-        
-        <p>Best,<br>
-        Mike Haye<br>
-        Founder, PipedriveSheets<br>
-        <a href="mailto:support@pipedrivesheets.com">support@pipedrivesheets.com</a></p>
-        
-        <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
-        <p style="font-size: 12px; color: #666;">
-          P.S. This email was sent because you installed the PipedriveSheets Google Sheets™ add-on. 
-          If you have any questions, just reply to this email!
-        </p>
-      </div>
-    `;
+    console.log('Sending welcome email to:', userEmail, 'from:', installSource);
     
-    // Send the email from your custom domain
-    MailApp.sendEmail({
+    const emailData = {
       to: userEmail,
-      subject: subject,
-      htmlBody: htmlBody,
-      name: 'PipedriveSheets Support',
-      replyTo: 'support@pipedrivesheets.com'
+      type: 'welcome',
+      installSource: installSource
+    };
+    
+    // Get backend URL from script properties or use default
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const backendUrl = scriptProperties.getProperty('BACKEND_URL') || 'https://pipedrive-sheets.vercel.app';
+    
+    // Send email request to backend
+    const response = UrlFetchApp.fetch(`${backendUrl}/api/send-email`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify(emailData),
+      muteHttpExceptions: true
     });
+    
+    const responseText = response.getContentText();
+    console.log('Welcome email response:', responseText);
+    
+    if (response.getResponseCode() === 200) {
+      console.log('Welcome email sent successfully');
+    } else {
+      console.log('Welcome email failed:', responseText);
+    }
     
   } catch (error) {
     // Silently fail - don't interrupt the installation process
-    console.log('Failed to send welcome email:', error);
+    console.log('Failed to send welcome email:', error.toString());
   }
 }
 
@@ -203,12 +202,24 @@ function sendWelcomeEmail() {
  */
 function onOpen(e) {
   try {
-    // Handle deferred actions from marketplace install
+    // Check if we have limited permissions (marketplace install or limited auth mode)
+    const isLimitedAuth = !e || e.authMode === ScriptApp.AuthMode.NONE || e.authMode === ScriptApp.AuthMode.LIMITED;
+    
+    if (isLimitedAuth) {
+      // Limited permissions - just show basic menu
+      const ui = SpreadsheetApp.getUi();
+      ui.createMenu('Pipedrive')
+        .addItem('🚀 Get Started with Pipedrive', 'initializePipedriveMenu')
+        .addToUi();
+      return;
+    }
+    
+    // Full auth mode - handle deferred actions and full menu
     if (e && e.authMode === ScriptApp.AuthMode.FULL) {
       handleDeferredInstallActions();
     }
     
-    // First check if user was previously verified as a team member or completed initialization
+    // Now we can safely access user properties
     const userProperties = PropertiesService.getUserProperties();
     const wasVerified = userProperties.getProperty('VERIFIED_TEAM_MEMBER') === 'true';
     const wasInitialized = userProperties.getProperty('PIPEDRIVE_INITIALIZED') === 'true';
@@ -357,11 +368,19 @@ function initializePipedriveMenu() {
     const userProperties = PropertiesService.getUserProperties();
     const hasTrackedInstall = userProperties.getProperty('HAS_TRACKED_INSTALL');
     const pendingTracking = userProperties.getProperty('PENDING_INSTALL_TRACKING');
+    const hasReceivedWelcomeEmail = userProperties.getProperty('WELCOME_EMAIL_SENT');
     
     // Only track if not already tracked and not pending from marketplace
     if (!hasTrackedInstall && !pendingTracking) {
       trackInstallation({ authMode: 'FULL', source: 'manual' });
       userProperties.setProperty('HAS_TRACKED_INSTALL', 'true');
+      
+      // Send welcome email for manual installations
+      if (!hasReceivedWelcomeEmail) {
+        console.log('Sending welcome email for manual installation');
+        sendWelcomeEmail();
+        userProperties.setProperty('WELCOME_EMAIL_SENT', 'true');
+      }
     }
     
     // Preload verified users
@@ -451,9 +470,22 @@ function createPipedriveMenu() {
   // For subscription menu items, we'll show both options since onOpen has limited authorization
   // The individual functions will handle showing appropriate content based on actual subscription status
   menu.addItem('💎 Upgrade Plan', 'showUpgradeDialog')
-      .addItem('💳 Manage Subscription', 'showManageSubscription');
+      .addItem('💳 Manage Subscription', 'showManageSubscription')
+      .addItem('ℹ️ Support Center', 'showHelp');
   
-  menu.addItem('ℹ️ Help & About', 'showHelp');
+  // Only show Support Center submenu for admins
+  const userEmail = Session.getActiveUser().getEmail();
+  const adminEmails = [
+    'mhaye20@gmail.com',
+    'support@pipedrivesheets.com', 
+    'connect@mikehaye.com'
+  ];
+  
+  if (userEmail && adminEmails.includes(userEmail.toLowerCase())) {
+    menu.addSeparator()
+        .addSubMenu(ui.createMenu('🎫 Admin Menu')
+            .addItem('📋 View All Tickets', 'showSupportTicketAdmin'));
+  }
       
   menu.addToUi();
 }
@@ -1050,6 +1082,76 @@ function testInstallationTracking() {
     return true;
   } catch (e) {
     ui.alert('Error', 'Failed to test installation tracking: ' + e.message, ui.ButtonSet.OK);
+    return false;
+  }
+}
+
+/**
+ * Test function to manually trigger welcome email
+ * Use this to test the welcome email flow
+ */
+function testWelcomeEmail() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    
+    sendWelcomeEmail();
+    
+    ui.alert('Test Complete', 'Welcome email test has been sent. Check the backend logs for confirmation.', ui.ButtonSet.OK);
+    return true;
+  } catch (e) {
+    ui.alert('Error', 'Failed to test welcome email: ' + e.message, ui.ButtonSet.OK);
+    return false;
+  }
+}
+
+/**
+ * Clear user properties for testing
+ * Use this to reset your installation state
+ */
+function clearUserProperties() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    
+    const response = ui.alert(
+      'Clear User Properties',
+      'This will reset your installation state so you can test welcome emails again.\n\n' +
+      'Properties that will be cleared:\n' +
+      '- HAS_TRACKED_INSTALL\n' +
+      '- WELCOME_EMAIL_SENT\n' +
+      '- PIPEDRIVE_INITIALIZED\n' +
+      '- VERIFIED_TEAM_MEMBER\n\n' +
+      'Continue?',
+      ui.ButtonSet.YES_NO
+    );
+    
+    if (response === ui.Button.YES) {
+      const userProperties = PropertiesService.getUserProperties();
+      
+      // Clear installation-related properties
+      userProperties.deleteProperty('HAS_TRACKED_INSTALL');
+      userProperties.deleteProperty('WELCOME_EMAIL_SENT');
+      userProperties.deleteProperty('PIPEDRIVE_INITIALIZED');
+      userProperties.deleteProperty('VERIFIED_TEAM_MEMBER');
+      userProperties.deleteProperty('PENDING_INSTALL_TRACKING');
+      userProperties.deleteProperty('PENDING_WELCOME_EMAIL');
+      userProperties.deleteProperty('FIRST_INSTALL');
+      userProperties.deleteProperty('HAS_SEEN_WELCOME');
+      
+      ui.alert('Success', 'User properties cleared! You can now test the installation flow again.', ui.ButtonSet.OK);
+      
+      // Refresh the menu to show the "Get Started" state
+      const newUi = SpreadsheetApp.getUi();
+      newUi.createMenu('Pipedrive')
+        .addItem('🚀 Get Started with Pipedrive', 'initializePipedriveMenu')
+        .addToUi();
+        
+      return true;
+    } else {
+      ui.alert('Cancelled', 'User properties were not cleared.', ui.ButtonSet.OK);
+      return false;
+    }
+  } catch (e) {
+    ui.alert('Error', 'Failed to clear user properties: ' + e.message, ui.ButtonSet.OK);
     return false;
   }
 }

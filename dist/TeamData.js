@@ -151,8 +151,8 @@ function saveTeamsData(teamsData) {
 }
 
 /**
- * Checks if the current user is the script owner/installer
- * @return {boolean} True if the user is the script owner/installer, false otherwise
+ * Checks if the current user is the script owner/installer or has Team subscription
+ * @return {boolean} True if the user is the script owner/installer or has Team subscription, false otherwise
  */
 function isScriptOwner() {
   try {
@@ -166,8 +166,19 @@ function isScriptOwner() {
       }
     }
     
+    // Check if user is the original script installer
     const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
-    return authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED;
+    if (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.ENABLED) {
+      return true;
+    }
+    
+    // Also allow users with active Team subscriptions to create teams
+    const plan = PaymentService.getCurrentPlan();
+    if (plan.plan === 'team' && !plan.isInherited && plan.status === 'active') {
+      return true;
+    }
+    
+    return false;
   } catch (e) {
     return false;
   }
@@ -189,11 +200,11 @@ function createTeam(teamName) {
       return { success: false, message: 'Could not determine user email. Please make sure you are logged in.' };
     }
     
-    // Only allow script owners to create teams
+    // Only allow script owners or users with Team subscriptions to create teams
     if (!isScriptOwner()) {
       return { 
         success: false, 
-        message: 'Only the user who installed the extension can create teams. Please contact your administrator to get a team ID to join.' 
+        message: 'Only users with an active Team subscription or the original installer can create teams. Please upgrade to a Team plan or contact your administrator to get a team ID to join.' 
       };
     }
 

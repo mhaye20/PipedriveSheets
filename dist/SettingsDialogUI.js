@@ -199,13 +199,13 @@ SettingsDialogUI.showHelp = function() {
     const html = template.evaluate()
       .setWidth(600)
       .setHeight(500)
-      .setTitle('Help & About')
+      .setTitle('Support Center')
       .setSandboxMode(HtmlService.SandboxMode.IFRAME);
       
     // Show a toast notification
     SpreadsheetApp.getActiveSpreadsheet().toast('Opening help dialog...', 'Pipedrive Sheets', 2);
       
-    SpreadsheetApp.getUi().showModalDialog(html, 'Help & About');
+    SpreadsheetApp.getUi().showModalDialog(html, 'Support Center');
   } catch (error) {
     SpreadsheetApp.getActiveSpreadsheet().toast('Error showing help: ' + error.message, 'Error', 5);
   }
