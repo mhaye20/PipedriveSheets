@@ -480,7 +480,7 @@
       messageCount.innerHTML = `💬 ${ticket.messages ? ticket.messages.length : 1} messages`;
       
       const date = document.createElement('span');
-      date.textContent = formatDate(ticket.createdAt);
+      date.textContent = formatDate(ticket.created_at || ticket.createdAt);
       
       footer.appendChild(messageCount);
       footer.appendChild(date);

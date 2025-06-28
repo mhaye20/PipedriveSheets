@@ -25,33 +25,17 @@ SupportTicketService.createTicket = function(ticketData) {
     const ticketId = this.generateTicketId();
     const userEmail = Session.getActiveUser().getEmail();
     
-    // Create ticket object
+    // Create ticket object with backend field names
     const ticket = {
       id: ticketId,
       userEmail: userEmail,
-      name: ticketData.name,
-      email: ticketData.email,
+      user_name: ticketData.name,  // Changed from 'name'
+      contact_email: ticketData.email,  // Changed from 'email'
       type: ticketData.type,
       priority: ticketData.priority,
       subject: ticketData.subject,
-      description: ticketData.description,
-      status: 'open',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      messages: [
-        {
-          id: Utilities.getUuid(),
-          author: ticketData.name,
-          authorEmail: ticketData.email,
-          message: ticketData.description,
-          timestamp: new Date().toISOString(),
-          isAdmin: false
-        }
-      ],
-      tags: [],
-      assignedTo: null,
-      lastUserActivity: new Date().toISOString(),
-      lastAdminActivity: null
+      description: ticketData.description
+      // Backend will handle: status, timestamps, initial message
     };
     
     // Store the ticket
@@ -84,27 +68,30 @@ SupportTicketService.createTicket = function(ticketData) {
 };
 
 /**
- * Saves a ticket to storage
+ * Saves a ticket to backend storage
  * @param {Object} ticket - The ticket object to save
  * @return {boolean} True if saved successfully
  */
 SupportTicketService.saveTicket = function(ticket) {
   try {
-    const scriptProps = PropertiesService.getScriptProperties();
+    // Get backend URL
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const backendUrl = scriptProperties.getProperty('BACKEND_URL') || 'https://pipedrive-sheets.vercel.app';
     
-    // Get existing tickets
-    const ticketsJson = scriptProps.getProperty('SUPPORT_TICKETS') || '{}';
-    const tickets = JSON.parse(ticketsJson);
+    // Save to backend
+    const response = UrlFetchApp.fetch(`${backendUrl}/api/tickets/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify(ticket),
+      muteHttpExceptions: true
+    });
     
-    // Add/update the ticket
-    tickets[ticket.id] = ticket;
-    
-    // Save back to properties
-    scriptProps.setProperty('SUPPORT_TICKETS', JSON.stringify(tickets));
-    
-    // Also maintain a list of ticket IDs for quick access
-    const ticketIds = Object.keys(tickets);
-    scriptProps.setProperty('SUPPORT_TICKET_IDS', JSON.stringify(ticketIds));
+    if (response.getResponseCode() !== 200) {
+      console.error('Failed to save ticket:', response.getContentText());
+      return false;
+    }
     
     return true;
   } catch (error) {
@@ -114,17 +101,31 @@ SupportTicketService.saveTicket = function(ticket) {
 };
 
 /**
- * Gets a ticket by ID
+ * Gets a ticket by ID from backend
  * @param {string} ticketId - The ticket ID
  * @return {Object|null} The ticket object or null if not found
  */
 SupportTicketService.getTicket = function(ticketId) {
   try {
-    const scriptProps = PropertiesService.getScriptProperties();
-    const ticketsJson = scriptProps.getProperty('SUPPORT_TICKETS') || '{}';
-    const tickets = JSON.parse(ticketsJson);
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const backendUrl = scriptProperties.getProperty('BACKEND_URL') || 'https://pipedrive-sheets.vercel.app';
     
-    return tickets[ticketId] || null;
+    const response = UrlFetchApp.fetch(`${backendUrl}/api/tickets/get`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify({ ticketId: ticketId }),
+      muteHttpExceptions: true
+    });
+    
+    if (response.getResponseCode() !== 200) {
+      console.error('Failed to get ticket:', response.getContentText());
+      return null;
+    }
+    
+    const data = JSON.parse(response.getContentText());
+    return data.ticket;
   } catch (error) {
     console.error('Error getting ticket:', error);
     return null;
@@ -132,28 +133,31 @@ SupportTicketService.getTicket = function(ticketId) {
 };
 
 /**
- * Gets all tickets for the current user
+ * Gets all tickets for the current user from backend
  * @return {Array} Array of user's tickets
  */
 SupportTicketService.getUserTickets = function() {
   try {
     const userEmail = Session.getActiveUser().getEmail();
-    const scriptProps = PropertiesService.getScriptProperties();
-    const ticketsJson = scriptProps.getProperty('SUPPORT_TICKETS') || '{}';
-    const tickets = JSON.parse(ticketsJson);
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const backendUrl = scriptProperties.getProperty('BACKEND_URL') || 'https://pipedrive-sheets.vercel.app';
     
-    const userTickets = [];
-    for (const ticketId in tickets) {
-      const ticket = tickets[ticketId];
-      if (ticket.userEmail === userEmail || ticket.email === userEmail) {
-        userTickets.push(ticket);
-      }
+    const response = UrlFetchApp.fetch(`${backendUrl}/api/tickets/user`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify({ userEmail: userEmail }),
+      muteHttpExceptions: true
+    });
+    
+    if (response.getResponseCode() !== 200) {
+      console.error('Failed to get user tickets:', response.getContentText());
+      return [];
     }
     
-    // Sort by creation date (newest first)
-    userTickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    
-    return userTickets;
+    const data = JSON.parse(response.getContentText());
+    return data.tickets || [];
   } catch (error) {
     console.error('Error getting user tickets:', error);
     return [];
@@ -161,31 +165,37 @@ SupportTicketService.getUserTickets = function() {
 };
 
 /**
- * Gets all tickets (admin function)
+ * Gets all tickets from backend (admin function)
  * @return {Array} Array of all tickets
  */
 SupportTicketService.getAllTickets = function() {
   try {
+    const userEmail = Session.getActiveUser().getEmail();
+    
     // Check if user is admin
     if (!this.isAdminUser()) {
       throw new Error('Access denied: Admin privileges required');
     }
     
-    const scriptProps = PropertiesService.getScriptProperties();
-    const ticketsJson = scriptProps.getProperty('SUPPORT_TICKETS') || '{}';
-    const tickets = JSON.parse(ticketsJson);
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const backendUrl = scriptProperties.getProperty('BACKEND_URL') || 'https://pipedrive-sheets.vercel.app';
     
-    const allTickets = Object.values(tickets);
-    
-    // Sort by priority (high first) then by creation date (newest first)
-    allTickets.sort((a, b) => {
-      const priorityOrder = { 'high': 3, 'medium': 2, 'low': 1 };
-      const priorityDiff = priorityOrder[b.priority] - priorityOrder[a.priority];
-      if (priorityDiff !== 0) return priorityDiff;
-      return new Date(b.createdAt) - new Date(a.createdAt);
+    const response = UrlFetchApp.fetch(`${backendUrl}/api/tickets/all`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify({ adminEmail: userEmail }),
+      muteHttpExceptions: true
     });
     
-    return allTickets;
+    if (response.getResponseCode() !== 200) {
+      console.error('Failed to get all tickets:', response.getContentText());
+      return [];
+    }
+    
+    const data = JSON.parse(response.getContentText());
+    return data.tickets || [];
   } catch (error) {
     console.error('Error getting all tickets:', error);
     return [];
@@ -193,7 +203,7 @@ SupportTicketService.getAllTickets = function() {
 };
 
 /**
- * Adds a message to a ticket
+ * Adds a message to a ticket via backend
  * @param {string} ticketId - The ticket ID
  * @param {string} message - The message content
  * @param {boolean} isAdmin - Whether the message is from admin
@@ -201,53 +211,59 @@ SupportTicketService.getAllTickets = function() {
  */
 SupportTicketService.addMessage = function(ticketId, message, isAdmin = false) {
   try {
+    const userEmail = Session.getActiveUser().getEmail();
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const backendUrl = scriptProperties.getProperty('BACKEND_URL') || 'https://pipedrive-sheets.vercel.app';
+    
+    // Get ticket to verify access and get info for notifications
     const ticket = this.getTicket(ticketId);
     if (!ticket) {
       return { success: false, error: 'Ticket not found' };
     }
     
-    const userEmail = Session.getActiveUser().getEmail();
-    
     // Verify user can access this ticket
-    if (!isAdmin && ticket.userEmail !== userEmail && ticket.email !== userEmail) {
+    if (!isAdmin && ticket.user_email !== userEmail && ticket.contact_email !== userEmail) {
       return { success: false, error: 'Access denied' };
     }
     
-    // Create message object
-    const messageObj = {
-      id: Utilities.getUuid(),
-      author: isAdmin ? 'PipedriveSheets Support' : ticket.name,
-      authorEmail: isAdmin ? 'support@pipedrivesheets.com' : userEmail,
-      message: message,
-      timestamp: new Date().toISOString(),
-      isAdmin: isAdmin
-    };
+    const author = isAdmin ? 'PipedriveSheets Support' : ticket.user_name;
+    const authorEmail = isAdmin ? 'support@pipedrivesheets.com' : userEmail;
     
-    // Add message to ticket
-    ticket.messages.push(messageObj);
-    ticket.updatedAt = new Date().toISOString();
+    // Add message via backend
+    const response = UrlFetchApp.fetch(`${backendUrl}/api/tickets/message`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify({
+        ticketId: ticketId,
+        message: message,
+        author: author,
+        authorEmail: authorEmail,
+        isAdmin: isAdmin
+      }),
+      muteHttpExceptions: true
+    });
     
-    if (isAdmin) {
-      ticket.lastAdminActivity = new Date().toISOString();
-    } else {
-      ticket.lastUserActivity = new Date().toISOString();
-    }
-    
-    // Save the updated ticket
-    const success = this.saveTicket(ticket);
-    
-    if (success) {
-      // Send notification email to the other party
-      if (isAdmin) {
-        this.sendUserNotification(ticket, messageObj);
-      } else {
-        this.sendAdminReplyNotification(ticket, messageObj);
-      }
-      
-      return { success: true };
-    } else {
+    if (response.getResponseCode() !== 200) {
+      console.error('Failed to add message:', response.getContentText());
       return { success: false, error: 'Failed to save message' };
     }
+    
+    // Send notification email
+    const messageObj = {
+      message: message,
+      author: author,
+      authorEmail: authorEmail
+    };
+    
+    if (isAdmin) {
+      this.sendUserNotification(ticket, messageObj);
+    } else {
+      this.sendAdminReplyNotification(ticket, messageObj);
+    }
+    
+    return { success: true };
   } catch (error) {
     console.error('Error adding message:', error);
     return { success: false, error: error.message };
@@ -255,34 +271,50 @@ SupportTicketService.addMessage = function(ticketId, message, isAdmin = false) {
 };
 
 /**
- * Updates ticket status
+ * Updates ticket status via backend
  * @param {string} ticketId - The ticket ID
  * @param {string} status - New status (open, in_progress, resolved, closed)
  * @return {Object} Result with success status
  */
 SupportTicketService.updateTicketStatus = function(ticketId, status) {
   try {
+    const userEmail = Session.getActiveUser().getEmail();
+    
     if (!this.isAdminUser()) {
       return { success: false, error: 'Access denied: Admin privileges required' };
     }
     
-    const ticket = this.getTicket(ticketId);
-    if (!ticket) {
-      return { success: false, error: 'Ticket not found' };
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const backendUrl = scriptProperties.getProperty('BACKEND_URL') || 'https://pipedrive-sheets.vercel.app';
+    
+    // Update status via backend
+    const response = UrlFetchApp.fetch(`${backendUrl}/api/tickets/status`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify({
+        ticketId: ticketId,
+        status: status,
+        adminEmail: userEmail
+      }),
+      muteHttpExceptions: true
+    });
+    
+    if (response.getResponseCode() !== 200) {
+      console.error('Failed to update status:', response.getContentText());
+      return { success: false, error: 'Failed to update status' };
     }
     
-    ticket.status = status;
-    ticket.updatedAt = new Date().toISOString();
-    ticket.lastAdminActivity = new Date().toISOString();
-    
-    const success = this.saveTicket(ticket);
-    
-    if (success && status === 'resolved') {
-      // Send resolution notification to user
-      this.sendResolutionNotification(ticket);
+    // If resolved, send notification
+    if (status === 'resolved') {
+      const ticket = this.getTicket(ticketId);
+      if (ticket) {
+        this.sendResolutionNotification(ticket);
+      }
     }
     
-    return { success: success };
+    return { success: true };
   } catch (error) {
     console.error('Error updating ticket status:', error);
     return { success: false, error: error.message };
@@ -327,8 +359,8 @@ SupportTicketService.sendAdminNotification = function(ticket) {
       templateId: 3,
       params: {
         TICKET_ID: ticket.id,
-        NAME: ticket.name,
-        EMAIL: ticket.email,
+        NAME: ticket.user_name,
+        EMAIL: ticket.contact_email,
         TYPE: ticket.type,
         PRIORITY: ticket.priority.toUpperCase(),
         PRIORITY_COLOR: priorityColors[ticket.priority] || '6B7280',
@@ -351,11 +383,11 @@ SupportTicketService.sendAdminNotification = function(ticket) {
 SupportTicketService.sendUserConfirmation = function(ticket) {
   try {
     const emailData = {
-      to: ticket.email,
+      to: ticket.contact_email,
       type: 'user_confirmation',
       templateId: 2,
       params: {
-        NAME: ticket.name,
+        NAME: ticket.user_name,
         TICKET_ID: ticket.id,
         SUBJECT: ticket.subject,
         PRIORITY: ticket.priority.charAt(0).toUpperCase() + ticket.priority.slice(1),
@@ -377,11 +409,11 @@ SupportTicketService.sendUserConfirmation = function(ticket) {
 SupportTicketService.sendUserNotification = function(ticket, message) {
   try {
     const emailData = {
-      to: ticket.email,
+      to: ticket.contact_email,
       type: 'admin_reply',
       templateId: 4,
       params: {
-        NAME: ticket.name,
+        NAME: ticket.user_name,
         TICKET_ID: ticket.id,
         SUBJECT: ticket.subject,
         MESSAGE: message.message
@@ -407,8 +439,8 @@ SupportTicketService.sendAdminReplyNotification = function(ticket, message) {
       templateId: 5,
       params: {
         TICKET_ID: ticket.id,
-        NAME: ticket.name,
-        EMAIL: ticket.email,
+        NAME: ticket.user_name,
+        EMAIL: ticket.contact_email,
         SUBJECT: ticket.subject,
         MESSAGE: message.message,
         ADMIN_LINK: SpreadsheetApp.getActiveSpreadsheet().getUrl()
@@ -428,11 +460,11 @@ SupportTicketService.sendAdminReplyNotification = function(ticket, message) {
 SupportTicketService.sendResolutionNotification = function(ticket) {
   try {
     const emailData = {
-      to: ticket.email,
+      to: ticket.contact_email,
       type: 'ticket_resolved',
       templateId: 6,
       params: {
-        NAME: ticket.name,
+        NAME: ticket.user_name,
         TICKET_ID: ticket.id,
         SUBJECT: ticket.subject
       }

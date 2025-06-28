@@ -616,6 +616,222 @@ app.post('/api/send-support-email', async (req, res) => {
   }
 });
 
+// Support Ticket endpoints
+app.post('/api/tickets/create', async (req, res) => {
+  try {
+    const ticketData = req.body;
+    
+    console.log('Creating ticket with data:', JSON.stringify(ticketData, null, 2));
+    
+    // Insert ticket into Supabase
+    const { data: ticket, error } = await supabase
+      .from('support_tickets')
+      .insert({
+        id: ticketData.id,
+        user_email: ticketData.userEmail,
+        user_name: ticketData.user_name,
+        contact_email: ticketData.contact_email,
+        type: ticketData.type,
+        priority: ticketData.priority,
+        subject: ticketData.subject,
+        description: ticketData.description,
+        status: 'open'
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error creating ticket:', error);
+      console.error('Ticket data received:', ticketData);
+      return res.status(500).json({ 
+        error: 'Failed to create ticket', 
+        details: error.message || error.toString(),
+        hint: error.hint || null
+      });
+    }
+    
+    // Insert initial message
+    const { error: messageError } = await supabase
+      .from('ticket_messages')
+      .insert([{
+        ticket_id: ticket.id,
+        author: ticketData.user_name,  // Fixed: was looking for 'name'
+        author_email: ticketData.contact_email,  // Fixed: was looking for 'email'
+        message: ticketData.description,
+        is_admin: false
+      }]);
+    
+    if (messageError) {
+      console.error('Error creating initial message:', messageError);
+    }
+    
+    res.json({ success: true, ticket });
+  } catch (error) {
+    console.error('Error in create ticket endpoint:', error);
+    res.status(500).json({ error: 'Failed to create ticket' });
+  }
+});
+
+// Get tickets for a user
+app.post('/api/tickets/user', async (req, res) => {
+  try {
+    const { userEmail } = req.body;
+    
+    const { data: tickets, error } = await supabase
+      .from('support_tickets')
+      .select('*')
+      .eq('user_email', userEmail)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching user tickets:', error);
+      return res.status(500).json({ error: 'Failed to fetch tickets' });
+    }
+    
+    res.json({ tickets });
+  } catch (error) {
+    console.error('Error in user tickets endpoint:', error);
+    res.status(500).json({ error: 'Failed to fetch tickets' });
+  }
+});
+
+// Get all tickets (admin)
+app.post('/api/tickets/all', async (req, res) => {
+  try {
+    const { adminEmail } = req.body;
+    
+    // Verify admin
+    const adminEmails = ['mhaye20@gmail.com', 'support@pipedrivesheets.com', 'connect@mikehaye.com'];
+    if (!adminEmails.includes(adminEmail.toLowerCase())) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    
+    const { data: tickets, error } = await supabase
+      .from('support_tickets')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching all tickets:', error);
+      return res.status(500).json({ error: 'Failed to fetch tickets' });
+    }
+    
+    res.json({ tickets });
+  } catch (error) {
+    console.error('Error in all tickets endpoint:', error);
+    res.status(500).json({ error: 'Failed to fetch tickets' });
+  }
+});
+
+// Get single ticket with messages
+app.post('/api/tickets/get', async (req, res) => {
+  try {
+    const { ticketId } = req.body;
+    
+    const { data: ticket, error: ticketError } = await supabase
+      .from('support_tickets')
+      .select('*')
+      .eq('id', ticketId)
+      .single();
+    
+    if (ticketError) {
+      console.error('Error fetching ticket:', ticketError);
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    
+    const { data: messages, error: messagesError } = await supabase
+      .from('ticket_messages')
+      .select('*')
+      .eq('ticket_id', ticketId)
+      .order('created_at', { ascending: true });
+    
+    if (messagesError) {
+      console.error('Error fetching messages:', messagesError);
+    }
+    
+    ticket.messages = messages || [];
+    res.json({ ticket });
+  } catch (error) {
+    console.error('Error in get ticket endpoint:', error);
+    res.status(500).json({ error: 'Failed to fetch ticket' });
+  }
+});
+
+// Add message to ticket
+app.post('/api/tickets/message', async (req, res) => {
+  try {
+    const { ticketId, message, author, authorEmail, isAdmin } = req.body;
+    
+    // Insert message
+    const { data: newMessage, error: messageError } = await supabase
+      .from('ticket_messages')
+      .insert([{
+        ticket_id: ticketId,
+        author: author,
+        author_email: authorEmail,
+        message: message,
+        is_admin: isAdmin
+      }])
+      .select()
+      .single();
+    
+    if (messageError) {
+      console.error('Error adding message:', messageError);
+      return res.status(500).json({ error: 'Failed to add message' });
+    }
+    
+    // Update ticket activity timestamps
+    const updateData = isAdmin 
+      ? { last_admin_activity: new Date().toISOString() }
+      : { last_user_activity: new Date().toISOString() };
+    
+    const { error: updateError } = await supabase
+      .from('support_tickets')
+      .update(updateData)
+      .eq('id', ticketId);
+    
+    if (updateError) {
+      console.error('Error updating ticket:', updateError);
+    }
+    
+    res.json({ success: true, message: newMessage });
+  } catch (error) {
+    console.error('Error in add message endpoint:', error);
+    res.status(500).json({ error: 'Failed to add message' });
+  }
+});
+
+// Update ticket status
+app.post('/api/tickets/status', async (req, res) => {
+  try {
+    const { ticketId, status, adminEmail } = req.body;
+    
+    // Verify admin
+    const adminEmails = ['mhaye20@gmail.com', 'support@pipedrivesheets.com', 'connect@mikehaye.com'];
+    if (!adminEmails.includes(adminEmail.toLowerCase())) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    
+    const { error } = await supabase
+      .from('support_tickets')
+      .update({ 
+        status: status,
+        last_admin_activity: new Date().toISOString()
+      })
+      .eq('id', ticketId);
+    
+    if (error) {
+      console.error('Error updating ticket status:', error);
+      return res.status(500).json({ error: 'Failed to update status' });
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error in update status endpoint:', error);
+    res.status(500).json({ error: 'Failed to update status' });
+  }
+});
+
 // Test endpoint for Brevo API
 app.post('/api/test-brevo', async (req, res) => {
   try {

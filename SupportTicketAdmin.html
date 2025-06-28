@@ -617,7 +617,7 @@
       meta.className = 'ticket-meta';
       
       const created = document.createElement('span');
-      created.textContent = `Created: ${formatDate(ticket.createdAt)}`;
+      created.textContent = `Created: ${formatDate(ticket.created_at || ticket.createdAt)}`;
       
       const messageCount = document.createElement('span');
       messageCount.textContent = `💬 ${ticket.messages ? ticket.messages.length : 1} messages`;
